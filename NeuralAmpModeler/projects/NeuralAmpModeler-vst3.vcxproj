@@ -362,6 +362,7 @@
     <ClInclude Include="..\ToneStack.h" />
     <ClInclude Include="..\ui\controls\T3kButton.h" />
     <ClInclude Include="..\ui\controls\T3kPill.h" />
+    <ClInclude Include="..\ui\controls\T3kBadge.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\iPlug2\Dependencies\IPlug\VST3_SDK\base\source\baseiids.cpp" />
@@ -450,6 +451,7 @@
     <ClCompile Include="..\ToneStack.cpp" />
     <ClCompile Include="..\ui\controls\T3kButton.cpp" />
     <ClCompile Include="..\ui\controls\T3kPill.cpp" />
+    <ClCompile Include="..\ui\controls\T3kBadge.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\resources\main.rc" />
