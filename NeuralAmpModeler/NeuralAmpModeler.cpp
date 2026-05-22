@@ -115,16 +115,19 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
     // Both ToneRoot::OnAttached AND ::Draw are gutted, but plug-in still
     // crashes before window draw. So the crash is in mLayoutFunc itself.
     // Gate each section; flip on one at a time to find the culprit.
-    constexpr bool kEnableNewFonts   = false;  // Anton + 4 Inter LoadFont calls
-    constexpr bool kEnableToneRoot   = false;  // attach ToneRoot
-    constexpr bool kEnableTextEntry  = false;  // AttachTextEntryControl
-    constexpr bool kEnableMouseOver  = false;  // EnableMouseOver
-    constexpr bool kEnableTooltips   = false;  // EnableTooltips
-    constexpr bool kEnableMultiTouch = false;  // EnableMultiTouch
-    constexpr bool kEnablePanelBg    = false;  // AttachPanelBackground(IColor)
+    constexpr bool kEnableCornerResizer = false; // AttachCornerResizer
+    constexpr bool kEnableUpstreamFonts = false; // Roboto + Michroma (always worked in P1!)
+    constexpr bool kEnableNewFonts      = false; // Anton + 4 Inter LoadFont calls
+    constexpr bool kEnableToneRoot      = false; // attach ToneRoot
+    constexpr bool kEnableTextEntry     = false; // AttachTextEntryControl
+    constexpr bool kEnableMouseOver     = false; // EnableMouseOver
+    constexpr bool kEnableTooltips      = false; // EnableTooltips
+    constexpr bool kEnableMultiTouch    = false; // EnableMultiTouch
+    constexpr bool kEnablePanelBg       = false; // AttachPanelBackground(IColor)
     // ──────────────────────────────────────────────────────────────────────
 
-    pGraphics->AttachCornerResizer(EUIResizerMode::Scale, false);
+    if (kEnableCornerResizer)
+      pGraphics->AttachCornerResizer(EUIResizerMode::Scale, false);
 
     if (kEnableTextEntry)  pGraphics->AttachTextEntryControl();
     if (kEnableMouseOver)  pGraphics->EnableMouseOver(true);
@@ -135,8 +138,10 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
       pGraphics->AttachPanelBackground(t3k::theme::kBgBase);
 
     // Upstream's two fonts — these worked in Phase 1.
-    pGraphics->LoadFont("Roboto-Regular",   ROBOTO_FN);
-    pGraphics->LoadFont("Michroma-Regular", MICHROMA_FN);
+    if (kEnableUpstreamFonts) {
+      pGraphics->LoadFont("Roboto-Regular",   ROBOTO_FN);
+      pGraphics->LoadFont("Michroma-Regular", MICHROMA_FN);
+    }
 
     if (kEnableNewFonts) {
       pGraphics->LoadFont("Anton-Regular",    ANTON_REGULAR_FN);
