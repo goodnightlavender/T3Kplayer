@@ -67,7 +67,7 @@ constexpr int kWindowMinW = 900;
 constexpr int kWindowMinH = 600;
 constexpr int kWindowMaxW = 1600;
 constexpr int kWindowMaxH = 1100;
-constexpr int kWindowDefW = 1100;
-constexpr int kWindowDefH = 740;
+constexpr int kWindowDefW = 940;
+constexpr int kWindowDefH = 590;
 
 }  // namespace t3k::theme

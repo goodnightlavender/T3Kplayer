@@ -30,8 +30,8 @@
 // Window bounds mirror t3k::theme::kWindowDefW/H, kWindowMinW/H, kWindowMaxW/H.
 // (Macros live here because iPlug2 reads them at compile-time for the
 // VST3/AAX/AU descriptors before any C++ namespace is in scope.)
-#define PLUG_WIDTH 1100
-#define PLUG_HEIGHT 740
+#define PLUG_WIDTH 940
+#define PLUG_HEIGHT 590
 #define PLUG_FPS 60
 #define PLUG_SHARED_RESOURCES 0
 #define PLUG_HOST_RESIZE 0
