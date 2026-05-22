@@ -364,6 +364,7 @@
     <ClInclude Include="..\ui\controls\T3kPill.h" />
     <ClInclude Include="..\ui\controls\T3kBadge.h" />
     <ClInclude Include="..\ui\controls\T3kSearchBar.h" />
+    <ClInclude Include="..\ui\controls\T3kKnob.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\iPlug2\Dependencies\IPlug\VST3_SDK\base\source\baseiids.cpp" />
@@ -454,6 +455,7 @@
     <ClCompile Include="..\ui\controls\T3kPill.cpp" />
     <ClCompile Include="..\ui\controls\T3kBadge.cpp" />
     <ClCompile Include="..\ui\controls\T3kSearchBar.cpp" />
+    <ClCompile Include="..\ui\controls\T3kKnob.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\resources\main.rc" />

@@ -1,0 +1,110 @@
+// T3kKnob implementation. See T3kKnob.h.
+
+#include "T3kKnob.h"
+
+#include <algorithm>
+#include <cmath>
+
+#include "IGraphics.h"
+#include "IGraphicsStructs.h"
+
+namespace t3k::ui {
+
+using namespace ::iplug::igraphics;
+
+namespace {
+
+// Sweep range: -135° → +135° (clockwise). 0° is up in iPlug2's PathArc.
+constexpr float kAngleMin = -135.f;
+constexpr float kAngleMax =  135.f;
+constexpr float kArcThickness = 3.f;
+constexpr float kIndicatorThickness = 2.f;
+
+float Lerp(float a, float b, float t) { return a + (b - a) * t; }
+
+// Convert iPlug2's "0° is up, clockwise" convention into (dx, dy) on a unit
+// circle. Result has dy negative when the angle is "up" (because screen Y is
+// inverted), matching how PathArc draws.
+void AngleToUnitVec(float angleDeg, float& outX, float& outY)
+{
+  const float r = angleDeg * 3.14159265358979323846f / 180.f;
+  outX = std::sin(r);
+  outY = -std::cos(r);
+}
+
+}  // namespace
+
+T3kKnob::T3kKnob(const IRECT& bounds, int paramIdx, const char* label)
+: IKnobControlBase(bounds, paramIdx)
+, mLabel(label)
+{
+}
+
+void T3kKnob::Draw(IGraphics& g)
+{
+  namespace th = ::t3k::theme;
+
+  // Reserve a strip at the bottom for the label.
+  const float labelH = th::kTypeLabel + th::kS1;
+  const IRECT knobR = mRECT.GetReducedFromBottom(labelH);
+
+  const float diameter = std::min(knobR.W(), knobR.H());
+  const float r = diameter * 0.5f;
+  const float cx = knobR.MW();
+  const float cy = knobR.MH();
+
+  // ── Recessed base: radial gradient (lighter top-left → darker edge). ──
+  const IColor kBaseInner(255, 26, 26, 26);
+  const IColor kBaseOuter(255,  5,  5,  5);
+  const IPattern basePat = IPattern::CreateRadialGradient(
+      cx - r * 0.3f, cy - r * 0.3f, r,
+      { IColorStop(kBaseInner, 0.f), IColorStop(kBaseOuter, 1.f) });
+
+  g.PathClear();
+  g.PathCircle(cx, cy, r);
+  g.PathFill(basePat);
+
+  // 1px outline around the base.
+  g.DrawCircle(th::kBorder, cx, cy, r, /*pBlend*/ nullptr, /*thickness*/ 1.f);
+
+  // ── Arc track ─────────────────────────────────────────────────────────
+  // The arc is drawn inside the base — pull it in slightly so it isn't
+  // clipped by the outline.
+  const float arcR = r - kArcThickness * 1.5f;
+
+  // Background arc (full 270° sweep).
+  g.DrawArc(th::kBgElevated, cx, cy, arcR, kAngleMin, kAngleMax,
+            /*pBlend*/ nullptr, kArcThickness);
+
+  // Filled arc: proportional to current normalized value.
+  const float v = float(std::clamp(GetValue(), 0.0, 1.0));
+  const float fillEnd = Lerp(kAngleMin, kAngleMax, v);
+  if (v > 0.f)
+  {
+    g.DrawArc(th::kAccent, cx, cy, arcR, kAngleMin, fillEnd,
+              /*pBlend*/ nullptr, kArcThickness);
+  }
+
+  // ── Indicator line ────────────────────────────────────────────────────
+  float dx, dy;
+  AngleToUnitVec(fillEnd, dx, dy);
+  // Run the line from a small inset to the inner edge of the arc track.
+  const float innerR = r * 0.25f;
+  const float outerR = arcR - kArcThickness;
+  g.DrawLine(th::kAccent,
+             cx + dx * innerR, cy + dy * innerR,
+             cx + dx * outerR, cy + dy * outerR,
+             /*pBlend*/ nullptr,
+             kIndicatorThickness);
+
+  // ── Label ─────────────────────────────────────────────────────────────
+  const IRECT labelRect(mRECT.L, knobR.B, mRECT.R, mRECT.B);
+  const IText label(th::kTypeLabel,
+                    th::kTextMuted,
+                    th::kFontBodyMed,
+                    EAlign::Center,
+                    EVAlign::Middle);
+  g.DrawText(label, mLabel, labelRect);
+}
+
+}  // namespace t3k::ui
