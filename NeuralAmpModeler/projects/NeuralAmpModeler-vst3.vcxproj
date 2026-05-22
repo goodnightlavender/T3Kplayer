@@ -372,6 +372,11 @@
     <ClInclude Include="..\ui\controls\T3kCard.h" />
     <ClInclude Include="..\ui\controls\T3kLogo.h" />
     <ClInclude Include="..\ui\views\AmpView.h" />
+    <ClInclude Include="..\ui\views\IRView.h" />
+    <ClInclude Include="..\ui\views\CloudView.h" />
+    <ClInclude Include="..\ui\views\LibraryView.h" />
+    <ClInclude Include="..\ui\views\DownloadsView.h" />
+    <ClInclude Include="..\ui\views\SettingsView.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\iPlug2\Dependencies\IPlug\VST3_SDK\base\source\baseiids.cpp" />
@@ -470,6 +475,11 @@
     <ClCompile Include="..\ui\controls\T3kCard.cpp" />
     <ClCompile Include="..\ui\controls\T3kLogo.cpp" />
     <ClCompile Include="..\ui\views\AmpView.cpp" />
+    <ClCompile Include="..\ui\views\IRView.cpp" />
+    <ClCompile Include="..\ui\views\CloudView.cpp" />
+    <ClCompile Include="..\ui\views\LibraryView.cpp" />
+    <ClCompile Include="..\ui\views\DownloadsView.cpp" />
+    <ClCompile Include="..\ui\views\SettingsView.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\resources\main.rc" />

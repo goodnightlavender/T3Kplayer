@@ -207,6 +207,21 @@
     <ClCompile Include="..\ui\views\AmpView.cpp">
       <Filter>ui\views</Filter>
     </ClCompile>
+    <ClCompile Include="..\ui\views\IRView.cpp">
+      <Filter>ui\views</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ui\views\CloudView.cpp">
+      <Filter>ui\views</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ui\views\LibraryView.cpp">
+      <Filter>ui\views</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ui\views\DownloadsView.cpp">
+      <Filter>ui\views</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ui\views\SettingsView.cpp">
+      <Filter>ui\views</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="../config.h" />
@@ -533,6 +548,21 @@
       <Filter>ui\controls</Filter>
     </ClInclude>
     <ClInclude Include="..\ui\views\AmpView.h">
+      <Filter>ui\views</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ui\views\IRView.h">
+      <Filter>ui\views</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ui\views\CloudView.h">
+      <Filter>ui\views</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ui\views\LibraryView.h">
+      <Filter>ui\views</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ui\views\DownloadsView.h">
+      <Filter>ui\views</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ui\views\SettingsView.h">
       <Filter>ui\views</Filter>
     </ClInclude>
   </ItemGroup>
