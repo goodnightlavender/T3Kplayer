@@ -49,6 +49,19 @@ IRECT T3kTabBar::UnderlineForLabel(const IRECT& labelRect)
 
 void T3kTabBar::EnsureLabelRects(IGraphics& g)
 {
+  // Invalidate the cache if the bar's rect changed since we last measured
+  // (e.g., parent ToneRoot resized us via SetTargetAndDrawRECTs). Without
+  // this, cached label positions point to the old mRECT and clicks/underline
+  // land at stale coordinates.
+  if (mLabelRectsValid &&
+      (mLabelRectsForBar.L != mRECT.L ||
+       mLabelRectsForBar.T != mRECT.T ||
+       mLabelRectsForBar.R != mRECT.R ||
+       mLabelRectsForBar.B != mRECT.B))
+  {
+    mLabelRectsValid = false;
+  }
+
   if (mLabelRectsValid) return;
 
   namespace th = ::t3k::theme;
@@ -71,6 +84,7 @@ void T3kTabBar::EnsureLabelRects(IGraphics& g)
     x += w + th::kS6;  // gap between tabs
   }
 
+  mLabelRectsForBar = mRECT;
   mLabelRectsValid = true;
 
   // Seed the underline animation source/target on the active tab.
@@ -97,10 +111,16 @@ void T3kTabBar::Draw(IGraphics& g)
 
   // Animated underline. If an animation is running, interpolate; otherwise
   // draw at the target.
+  //
+  // Progress is clamped to [0,1] because iPlug2's animation pump can briefly
+  // expose values > 1.0 after the animation should have completed but before
+  // OnEndAnimation has cleared mAnimationFunc. Without the clamp, Lerp
+  // extrapolates *past* mUnderlineTo and the underline visibly overshoots —
+  // that was the "drift off to the sides" symptom users reported.
   IRECT u = mUnderlineTo;
   if (GetAnimationFunction())
   {
-    const float t = float(GetAnimationProgress());
+    const float t = std::clamp(float(GetAnimationProgress()), 0.f, 1.f);
     u = IRECT(Lerp(mUnderlineFrom.L, mUnderlineTo.L, t),
               mUnderlineTo.T,
               Lerp(mUnderlineFrom.R, mUnderlineTo.R, t),
@@ -120,15 +140,22 @@ void T3kTabBar::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
       if (int(i) == mActiveIndex) return;
 
       // Kick off the slide animation from the current underline rect to the
-      // new tab's underline rect.
-      mUnderlineFrom = (GetAnimationFunction()
-                         ? IRECT(Lerp(mUnderlineFrom.L, mUnderlineTo.L,
-                                      float(GetAnimationProgress())),
-                                 mUnderlineTo.T,
-                                 Lerp(mUnderlineFrom.R, mUnderlineTo.R,
-                                      float(GetAnimationProgress())),
-                                 mUnderlineTo.B)
-                         : mUnderlineTo);
+      // new tab's underline rect. Clamp progress to [0,1] for the same
+      // reason as in Draw — a rapid click during the last frame of the
+      // previous animation could otherwise capture an over-extrapolated
+      // "from" position and start the new slide from off-screen.
+      if (GetAnimationFunction())
+      {
+        const float t = std::clamp(float(GetAnimationProgress()), 0.f, 1.f);
+        mUnderlineFrom = IRECT(Lerp(mUnderlineFrom.L, mUnderlineTo.L, t),
+                               mUnderlineTo.T,
+                               Lerp(mUnderlineFrom.R, mUnderlineTo.R, t),
+                               mUnderlineTo.B);
+      }
+      else
+      {
+        mUnderlineFrom = mUnderlineTo;
+      }
       mUnderlineTo = UnderlineForLabel(mLabelRects[i]);
       mActiveIndex = int(i);
 

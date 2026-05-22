@@ -53,6 +53,10 @@ private:
   // Cached label hit-rects (computed lazily — depends on font metrics).
   std::vector<IRECT> mLabelRects;
   bool mLabelRectsValid = false;
+  // mRECT at the moment mLabelRects was last computed. If mRECT differs
+  // from this on the next EnsureLabelRects call (parent resized us), the
+  // cache is invalidated and labels are re-measured.
+  IRECT mLabelRectsForBar;
 
   // Animation source/target. We interpolate L and R independently.
   IRECT mUnderlineFrom;
