@@ -122,23 +122,46 @@ void ToneRoot::OnAttached()
   IGraphics* g = GetUI();
   if (!g) return;
 
+  // ─── BISECT DEBUG GATE ────────────────────────────────────────────────────
+  // The plugin crashed on first load. To isolate which child control attach
+  // is the culprit, we gate them with toggles. Flip these one at a time:
+  //   1. Build with all OFF → plug-in must open with just black bg + avatar.
+  //   2. Flip one ON, rebuild → if it still loads, that one's clean.
+  //   3. Continue until one flip causes the crash → that control is the bug.
+  // After diagnosis, remove this entire block and restore the original flow.
+  constexpr bool kEnableLogo       = false;
+  constexpr bool kEnableSearch     = false;
+  constexpr bool kEnableDownloads  = false;
+  constexpr bool kEnableTabBar     = false;
+  constexpr bool kEnableKnobs      = false;
+  constexpr bool kEnableBodyViews  = false;
+  constexpr bool kEnableOverlays   = false;
+  // ──────────────────────────────────────────────────────────────────────────
+
   // --- Header ---
+  if (kEnableLogo) {
   mLogo = new T3kLogo(mLogoRect);
   g->AttachControl(mLogo);
+  }
 
+  if (kEnableSearch) {
   mSearchBar = new T3kSearchBar(mSearchRect,
     /*onChanged*/ [](const std::string& /*text*/) {
       // Phase 6 wires this to the Cloud tab's debounced search.
     },
     /*placeholder*/ "Search\xE2\x80\xA6");
   g->AttachControl(mSearchBar);
+  }
 
+  if (kEnableDownloads) {
   mDownloadsPill = new T3kButton(mDownloadsRect, "Downloads",
     /*onClick*/ [this]() { this->toggleDownloadsOverlay(); },
     T3kButton::Variant::Secondary);
   g->AttachControl(mDownloadsPill);
+  }
 
   // --- Tab strip ---
+  if (kEnableTabBar) {
   mTabBar = new T3kTabBar(
     t3k::layout::pad(mTabStripRect, 0.f, t3k::theme::kS4,
                                     0.f, t3k::theme::kS4),
@@ -146,9 +169,11 @@ void ToneRoot::OnAttached()
     /*onChanged*/ [this](int idx) { this->switchTab(static_cast<Tab>(idx)); },
     /*initial*/ static_cast<int>(Tab::Amp));
   g->AttachControl(mTabBar);
+  }
 
   // --- Knob row (persistent across tabs) ---
   // Param indices come from NeuralAmpModeler.h's EParams enum.
+  if (kEnableKnobs) {
   auto knobCells = t3k::layout::row(
     t3k::layout::pad(mKnobRowRect, t3k::theme::kS3, t3k::theme::kS5,
                                    t3k::theme::kS3, t3k::theme::kS5),
@@ -164,8 +189,10 @@ void ToneRoot::OnAttached()
   g->AttachControl(mKnobMid);
   g->AttachControl(mKnobTreble);
   g->AttachControl(mKnobOut);
+  }
 
   // --- Tab body views (all created; non-active ones hidden) ---
+  if (kEnableBodyViews) {
   mAmpView     = new AmpView(mBodyRect);
   mIRView      = new IRView(mBodyRect);
   mCloudView   = new CloudView(mBodyRect);
@@ -178,14 +205,17 @@ void ToneRoot::OnAttached()
   mIRView->Hide(true);
   mCloudView->Hide(true);
   mLibraryView->Hide(true);
+  }
 
   // --- Overlays (hidden by default) ---
+  if (kEnableOverlays) {
   mDownloadsView = new DownloadsView(IRECT(0.f, 0.f, 1.f, 1.f));
   mSettingsView  = new SettingsView(IRECT(0.f, 0.f, 1.f, 1.f));
   g->AttachControl(mDownloadsView);
   g->AttachControl(mSettingsView);
   mDownloadsView->Hide(true);
   mSettingsView->Hide(true);
+  }
 
   // Resize all children to their proper bounds now that they exist.
   OnResize();
