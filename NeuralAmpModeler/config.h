@@ -1,16 +1,16 @@
-#define PLUG_NAME "NeuralAmpModeler"
-#define PLUG_MFR "Steven Atkinson"
-#define PLUG_VERSION_HEX 0x0000070e
-#define PLUG_VERSION_STR "0.7.14"
+#define PLUG_NAME "TONE3000 Player"
+#define PLUG_MFR "TONE3000 Player Contributors"
+#define PLUG_VERSION_HEX 0x00000100
+#define PLUG_VERSION_STR "0.1.0"
 #define PLUG_UNIQUE_ID '1YEo'
 #define PLUG_MFR_ID 'SDAa'
-#define PLUG_URL_STR "https://github.com/sdatkinson/NeuralAmpModelerPlugin"
-#define PLUG_EMAIL_STR "spam@me.com"
+#define PLUG_URL_STR "https://github.com/goodnightlavender/tone3000-player"
+#define PLUG_EMAIL_STR ""
 #define PLUG_COPYRIGHT_STR "Copyright 2022 Steven Atkinson"
 #define PLUG_CLASS_NAME NeuralAmpModeler
-#define BUNDLE_NAME "NeuralAmpModeler"
-#define BUNDLE_MFR "StevenAtkinson"
-#define BUNDLE_DOMAIN "com"
+#define BUNDLE_NAME "TONE3000Player"
+#define BUNDLE_MFR "TONE3000PlayerContributors"
+#define BUNDLE_DOMAIN "com.tone3000.player"
 
 #define SHARED_RESOURCES_SUBPATH "NeuralAmpModeler"
 
