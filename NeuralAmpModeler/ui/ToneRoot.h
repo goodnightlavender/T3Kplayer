@@ -1,6 +1,6 @@
 // ToneRoot.h
 // Root view for TONE3000 Player. Owns:
-//   - A single-row header (logo + loose ↶/↷ glyphs · centered tabs ·
+//   - A single-row header (logo + loose undo/redo glyphs · centered tabs ·
 //     preset pill + avatar) — Phase 2b v6 layout.
 //   - The Tone-tab body (ToneView), which holds the slot strip, the
 //     T3kModelInfoPane, and the 5 persistent tone knobs.
@@ -15,6 +15,8 @@
 // drawn into.
 
 #pragma once
+
+#include <cstdint>
 
 #include "IControl.h"
 #include "IGraphics.h"
@@ -93,6 +95,17 @@ private:
 
   // Hide all three body views (used during tab switching).
   void hideAllBodies();
+
+  // Build + attach the preset overlay (called from OnAttached, and again
+  // from recreatePresetOverlayOnTop). Sets mPresetOverlay.
+  void attachPresetOverlay(bool startVisible, int64_t activeId);
+
+  // Destroy the existing overlay and re-attach a fresh one so it lands at
+  // the end of IGraphics's control list (top of z-order). Preserves the
+  // active-preset selection. Required after ToneView::rebuildStrip()
+  // pushes new strip tiles onto the control list — iPlug2 doesn't expose
+  // a "move to front" or "detach without delete" path at this revision.
+  void recreatePresetOverlayOnTop();
 };
 
 }  // namespace t3k::ui

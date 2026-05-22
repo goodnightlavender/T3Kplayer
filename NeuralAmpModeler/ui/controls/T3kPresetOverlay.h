@@ -47,6 +47,12 @@ public:
   void setActiveId(int64_t id);
   const std::vector<PresetRow>& presets() const { return mPresets; }
 
+  // Returns the id of the currently-active preset, or 0 if none.
+  int64_t activePresetId() const {
+    for (const auto& r : mPresets) if (r.active) return r.id;
+    return 0;
+  }
+
   // Callbacks — wired by the parent (ToneRoot).
   std::function<void(int64_t)>            onSelect;
   std::function<void()>                   onSave;

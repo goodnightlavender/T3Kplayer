@@ -54,11 +54,17 @@ void ToneView::OnResize()
   mInfoRect        = bottomSplit.first;
   mKnobRect        = bottomSplit.second;
 
-  // Resize already-created children. The strip's contents are recreated
-  // on chain changes; existing tiles get fresh rects here too so a
-  // window resize doesn't require rebuilding the strip.
   if (mInfoPane) mInfoPane->SetTargetAndDrawRECTs(mInfoRect);
-  if (!mSlots.empty() || mAddTile) rebuildStrip();
+
+  // Resize strip tiles in place — do NOT detach/reattach them. Earlier
+  // versions called rebuildStrip() here, which removed all existing tiles
+  // and re-added them. Because iPlug2 appends new controls to the end of
+  // mControls, that re-add ran AFTER the preset overlay had already been
+  // attached (ToneRoot::OnAttached ends with OnResize() to size children),
+  // which pushed the tiles in front of the overlay in z-order — and the
+  // overlay then drew under the strip. Updating positions in place keeps
+  // existing z-order intact.
+  layoutStripTiles();
 
   if (mKnobIn || mKnobBass || mKnobMid || mKnobTreble || mKnobOut) {
     auto cells = t3k::layout::row(
@@ -131,11 +137,8 @@ void ToneView::clearStripChildren()
   }
 }
 
-void ToneView::rebuildStrip()
+void ToneView::computeStripLayout(float& outStartX, float& outTopY) const
 {
-  IGraphics* g = GetUI();
-  if (!g) return;
-
   // Compute total width so the row can be horizontally centered (matches
   // the mockup's `justify-content: center` on .plg-strip).
   float totalW = 0.f;
@@ -145,8 +148,37 @@ void ToneView::rebuildStrip()
   if (!mChain.loaded.empty()) totalW += kSlotGap * mChain.loaded.size();  // gap after each tile + before Add
   totalW += kSlotAddW;
 
-  const float startX = mStripRect.MW() - totalW * 0.5f;
-  const float topY   = mStripRect.MH() - kSlotH * 0.5f;
+  outStartX = mStripRect.MW() - totalW * 0.5f;
+  outTopY   = mStripRect.MH() - kSlotH * 0.5f;
+}
+
+void ToneView::layoutStripTiles()
+{
+  if (mSlots.empty() && !mAddTile) return;
+  // Sanity: mSlots and mChain.loaded should stay in sync (rebuildStrip is
+  // the only way they diverge, and rebuildStrip rebuilds both in lockstep).
+  if (mSlots.size() != mChain.loaded.size()) return;
+
+  float startX, topY;
+  computeStripLayout(startX, topY);
+  float x = startX;
+  for (size_t i = 0; i < mChain.loaded.size(); ++i) {
+    const float w = widthForSlot(mChain.loaded[i].iconType);
+    if (mSlots[i]) mSlots[i]->SetTargetAndDrawRECTs(IRECT(x, topY, x + w, topY + kSlotH));
+    x += w + kSlotGap;
+  }
+  if (mAddTile) {
+    mAddTile->SetTargetAndDrawRECTs(IRECT(x, topY, x + kSlotAddW, topY + kSlotH));
+  }
+}
+
+void ToneView::rebuildStrip()
+{
+  IGraphics* g = GetUI();
+  if (!g) return;
+
+  float startX, topY;
+  computeStripLayout(startX, topY);
 
   // Detach existing tiles before laying out fresh ones.
   clearStripChildren();
@@ -176,6 +208,13 @@ void ToneView::rebuildStrip()
       /*onRemove*/ {},
       /*onAdd*/    [this](int /*slot*/) { onSlotAdded(); });
   g->AttachControl(mAddTile);
+
+  // The rebuild appended new tiles to the end of the IGraphics control
+  // list. If anything was attached later (e.g. the preset overlay), that
+  // control would now sit BELOW the strip in z-order. Notify any listener
+  // (ToneRoot, currently) so it can re-promote overlays that should stay
+  // on top.
+  if (mOnStripRebuilt) mOnStripRebuilt();
 }
 
 void ToneView::onSlotSelected(int slotIndex)

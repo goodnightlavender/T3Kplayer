@@ -44,6 +44,12 @@ public:
   void OnResize() override;
   void OnAttached() override;
 
+  // Fired immediately after rebuildStrip() reattaches the strip tiles to
+  // IGraphics. Lets the parent (ToneRoot) re-promote any control that
+  // needs to stay above the strip in z-order (the preset overlay, in
+  // particular — see ToneRoot::OnStripRebuilt). Optional.
+  void setOnStripRebuilt(std::function<void()> cb) { mOnStripRebuilt = std::move(cb); }
+
 private:
   // ── Chain snapshot ────────────────────────────────────────────────
   struct ChainView {
@@ -63,9 +69,21 @@ private:
   void onSlotRemoved(int slotIndex);
   void onSlotAdded();
 
-  // Rebuild the strip's child controls from mChain. Called on resize and
-  // whenever mChain changes (add/remove). Idempotent.
+  // Rebuild the strip's child controls from mChain. Called on chain
+  // changes (add/remove). NOT called from OnResize — see layoutStripTiles
+  // for the in-place position update used during resize. Idempotent.
   void rebuildStrip();
+
+  // Update positions on existing strip tiles in place — no detach/reattach.
+  // Used by OnResize so the strip's z-order isn't disrupted by window
+  // resizes (the earlier rebuildStrip-on-resize implementation pushed
+  // tiles in front of later-attached controls like the preset overlay).
+  void layoutStripTiles();
+
+  // Common math used by rebuildStrip + layoutStripTiles: computes the
+  // top-left coordinate where the centered strip should begin given the
+  // current mChain and mStripRect.
+  void computeStripLayout(float& outStartX, float& outTopY) const;
 
   // Drop all existing strip child controls (detached + deleted via
   // IGraphics) before a rebuild.
@@ -94,6 +112,9 @@ private:
   T3kKnob*              mKnobMid = nullptr;
   T3kKnob*              mKnobTreble = nullptr;
   T3kKnob*              mKnobOut = nullptr;
+
+  // Optional z-order-promotion notifier (see setOnStripRebuilt).
+  std::function<void()> mOnStripRebuilt;
 };
 
 }  // namespace t3k::ui

@@ -165,35 +165,19 @@ void ToneRoot::OnAttached()
   mLibraryView->Hide(true);
   mCloudView->Hide(true);
 
-  // ── Preset overlay — created hidden ────────────────────────────
-  mPresetOverlay = new T3kPresetOverlay(IRECT(0.f, 0.f, 1.f, 1.f));
-  std::vector<PresetRow> demo = {
-      { 1, "Default Setting", true  },
-      { 2, "My Rhythm Tone",  false },
-      { 3, "Lead Tone",       false },
-      { 4, "Clean Sparkle",   false },
-      { 5, "Heavy Metal Rig", false },
-  };
-  mPresetOverlay->setPresets(std::move(demo));
-  mPresetOverlay->onSelect = [this](int64_t id) {
-    if (!mPresetPill || !mPresetOverlay) return;
-    for (const auto& p : mPresetOverlay->presets()) {
-      if (p.id == id) {
-        mPresetPill->setActivePresetName(p.name);
-        // Selecting a preset clears the dirty marker.
-        mPresetPill->setDirty(false);
-        break;
-      }
+  // If the strip rebuilds while the overlay is open (chain add/remove
+  // races a visible overlay — rare with current UX but defensive), the
+  // strip's new tiles would be inserted at the end of mControls, in front
+  // of the overlay. Recreate the overlay to push it back on top.
+  mToneView->setOnStripRebuilt([this]() {
+    if (mPresetOverlay && !mPresetOverlay->IsHidden()) {
+      recreatePresetOverlayOnTop();
     }
-  };
-  // Save/SaveAs/More are stubs until Phase 3 wires real preset persistence.
-  mPresetOverlay->onSave     = []() {};
-  mPresetOverlay->onSaveAs   = []() {};
-  mPresetOverlay->onMoreMenu = []() {};
-  g->AttachControl(mPresetOverlay);
-  mPresetOverlay->Hide(true);
+  });
 
   // ── Legacy overlays — hidden; no longer reachable from the v6 header.
+  // Attach BEFORE the preset overlay so the latter stays at the very end
+  // of the IGraphics control list (highest z-order). These two never show.
   mDownloadsView = new DownloadsView(IRECT(0.f, 0.f, 1.f, 1.f));
   mSettingsView  = new SettingsView(IRECT(0.f, 0.f, 1.f, 1.f));
   g->AttachControl(mDownloadsView);
@@ -201,7 +185,13 @@ void ToneRoot::OnAttached()
   mDownloadsView->Hide(true);
   mSettingsView->Hide(true);
 
+  // ── Preset overlay — created hidden, must be attached last ────
+  attachPresetOverlay(/*startVisible*/ false, /*activeId*/ 1);
+
   // Resize all children to their proper bounds now that they exist.
+  // (ToneView::OnResize now updates strip tile positions in place — it
+  // does NOT detach/reattach, so the preset overlay we just attached
+  // stays at the top of the z-order through this call.)
   OnResize();
 }
 
@@ -255,8 +245,75 @@ void ToneRoot::hideAllBodies()
 void ToneRoot::togglePresetOverlay()
 {
   if (!mPresetOverlay) return;
-  mPresetOverlay->Hide(!mPresetOverlay->IsHidden());
+  const bool willShow = mPresetOverlay->IsHidden();
+  if (willShow) {
+    // Ensure the overlay is the last (top-most) control before showing.
+    // Anything attached after the overlay (the strip tiles, in particular,
+    // if rebuildStrip() ran post-OnAttached) would otherwise draw on top.
+    recreatePresetOverlayOnTop();
+  }
+  if (mPresetOverlay) mPresetOverlay->Hide(!willShow);
   SetDirty(false);
+}
+
+void ToneRoot::attachPresetOverlay(bool startVisible, int64_t activeId)
+{
+  IGraphics* g = GetUI();
+  if (!g) return;
+
+  mPresetOverlay = new T3kPresetOverlay(IRECT(0.f, 0.f, 1.f, 1.f));
+  std::vector<PresetRow> demo = {
+      { 1, "Default Setting", true  },
+      { 2, "My Rhythm Tone",  false },
+      { 3, "Lead Tone",       false },
+      { 4, "Clean Sparkle",   false },
+      { 5, "Heavy Metal Rig", false },
+  };
+  mPresetOverlay->setPresets(std::move(demo));
+  mPresetOverlay->setActiveId(activeId);
+  mPresetOverlay->onSelect = [this](int64_t id) {
+    if (!mPresetPill || !mPresetOverlay) return;
+    for (const auto& p : mPresetOverlay->presets()) {
+      if (p.id == id) {
+        mPresetPill->setActivePresetName(p.name);
+        // Selecting a preset clears the dirty marker.
+        mPresetPill->setDirty(false);
+        break;
+      }
+    }
+  };
+  // Save/SaveAs/More are stubs until Phase 3 wires real preset persistence.
+  mPresetOverlay->onSave     = []() {};
+  mPresetOverlay->onSaveAs   = []() {};
+  mPresetOverlay->onMoreMenu = []() {};
+  g->AttachControl(mPresetOverlay);
+  mPresetOverlay->Hide(!startVisible);
+
+  // Size to the anchored rect computed in OnResize. If OnResize hasn't run
+  // yet (first attach path) the overlay carries the 1×1 placeholder until
+  // it does; subsequent paint cycles inherit the proper rect.
+  const float top  = mPresetPillRect.B + t3k::theme::kS2;
+  const float left = mPresetPillRect.R - kPresetOverlayW;
+  mPresetOverlay->SetTargetAndDrawRECTs(
+      IRECT(left, top, left + kPresetOverlayW, top + kPresetOverlayH));
+}
+
+void ToneRoot::recreatePresetOverlayOnTop()
+{
+  IGraphics* g = GetUI();
+  if (!g || !mPresetOverlay) return;
+
+  // iPlug2's RemoveControl(IControl*) always frees the underlying control
+  // (the iPlug2 in this tree does not expose a "detach without delete"
+  // variant — see WDL_PtrList::Delete with wantDelete=false, which is not
+  // surfaced through IGraphics's public API). So z-order promotion has to
+  // go through destroy-and-recreate; we preserve user-visible state
+  // (active preset id) and re-attach with a fresh control.
+  const int64_t activeId = mPresetOverlay->activePresetId();
+  const bool wasVisible = !mPresetOverlay->IsHidden();
+  g->RemoveControl(mPresetOverlay);
+  mPresetOverlay = nullptr;
+  attachPresetOverlay(/*startVisible*/ wasVisible, activeId);
 }
 
 }  // namespace t3k::ui
