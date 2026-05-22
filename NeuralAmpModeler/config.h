@@ -2,8 +2,8 @@
 #define PLUG_MFR "TONE3000 Player Contributors"
 #define PLUG_VERSION_HEX 0x00000100
 #define PLUG_VERSION_STR "0.1.0"
-#define PLUG_UNIQUE_ID '1YEo'
-#define PLUG_MFR_ID 'SDAa'
+#define PLUG_UNIQUE_ID 'T3kP'
+#define PLUG_MFR_ID 'T3k0'
 #define PLUG_URL_STR "https://github.com/goodnightlavender/tone3000-player"
 #define PLUG_EMAIL_STR ""
 #define PLUG_COPYRIGHT_STR "Copyright 2022 Steven Atkinson"
