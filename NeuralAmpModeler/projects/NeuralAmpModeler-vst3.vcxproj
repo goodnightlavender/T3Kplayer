@@ -371,6 +371,7 @@
     <ClInclude Include="..\ui\controls\T3kVScrollList.h" />
     <ClInclude Include="..\ui\controls\T3kCard.h" />
     <ClInclude Include="..\ui\controls\T3kLogo.h" />
+    <ClInclude Include="..\ui\views\AmpView.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\iPlug2\Dependencies\IPlug\VST3_SDK\base\source\baseiids.cpp" />
@@ -468,6 +469,7 @@
     <ClCompile Include="..\ui\controls\T3kVScrollList.cpp" />
     <ClCompile Include="..\ui\controls\T3kCard.cpp" />
     <ClCompile Include="..\ui\controls\T3kLogo.cpp" />
+    <ClCompile Include="..\ui\views\AmpView.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\resources\main.rc" />
