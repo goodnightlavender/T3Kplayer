@@ -369,6 +369,7 @@
     <ClInclude Include="..\ui\controls\T3kTabBar.h" />
     <ClInclude Include="..\ui\controls\T3kAccordion.h" />
     <ClInclude Include="..\ui\controls\T3kVScrollList.h" />
+    <ClInclude Include="..\ui\controls\T3kCard.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\iPlug2\Dependencies\IPlug\VST3_SDK\base\source\baseiids.cpp" />
@@ -464,6 +465,7 @@
     <ClCompile Include="..\ui\controls\T3kTabBar.cpp" />
     <ClCompile Include="..\ui\controls\T3kAccordion.cpp" />
     <ClCompile Include="..\ui\controls\T3kVScrollList.cpp" />
+    <ClCompile Include="..\ui\controls\T3kCard.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\resources\main.rc" />
