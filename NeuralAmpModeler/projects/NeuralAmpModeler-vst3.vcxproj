@@ -372,6 +372,7 @@
     <ClInclude Include="..\ui\controls\T3kCard.h" />
     <ClInclude Include="..\ui\controls\T3kLogo.h" />
     <ClInclude Include="..\ui\controls\T3kGearIcon.h" />
+    <ClInclude Include="..\ui\controls\T3kSlot.h" />
     <ClInclude Include="..\ui\views\AmpView.h" />
     <ClInclude Include="..\ui\views\IRView.h" />
     <ClInclude Include="..\ui\views\CloudView.h" />
@@ -477,6 +478,7 @@
     <ClCompile Include="..\ui\controls\T3kCard.cpp" />
     <ClCompile Include="..\ui\controls\T3kLogo.cpp" />
     <ClCompile Include="..\ui\controls\T3kGearIcon.cpp" />
+    <ClCompile Include="..\ui\controls\T3kSlot.cpp" />
     <ClCompile Include="..\ui\views\AmpView.cpp" />
     <ClCompile Include="..\ui\views\IRView.cpp" />
     <ClCompile Include="..\ui\views\CloudView.cpp" />

@@ -21,6 +21,10 @@ inline const IColor kText         {255, 255, 255, 255};
 inline const IColor kTextMuted    {255, 136, 136, 136};
 inline const IColor kTextDim      {255,  85,  85,  85};
 
+// Status colors (Phase 2b).
+inline const IColor kError        {255, 255,  58,  58};   // #ff3a3a — destructive (hover-X on T3kSlot)
+inline const IColor kWarning      {255, 255, 184,  77};   // #ffb84d — unsaved preset (T3kPresetPill dot)
+
 // Signature rainbow (used on the audio scrubber + select accents)
 inline const IColor kRainbowR     {255, 255,  45,  45};
 inline const IColor kRainbowY     {255, 255, 212,   0};

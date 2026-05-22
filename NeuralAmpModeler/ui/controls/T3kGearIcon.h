@@ -32,11 +32,19 @@ class T3kGearIcon : public iplug::igraphics::IControl {
 
   void Draw(iplug::igraphics::IGraphics& g) override;
 
- private:
-  // Returns the C-string filename macro for the current mType.
-  // Defined in .cpp so config.h doesn't bleed into the header.
-  const char* svgFilename() const;
+  // Static composition helpers — for callers that want to render a gear
+  // icon inline without attaching a T3kGearIcon child IControl (e.g.,
+  // T3kSlot inlines its icon to avoid IGraphics parent/child plumbing).
+  // The caller owns the ISVG cache and invalidates it when the type
+  // changes.
+  static const char* filenameFor(GearType t);
+  static float       aspectFor(GearType t);
+  static void        drawInto(iplug::igraphics::IGraphics& g,
+                              iplug::igraphics::ISVG& svg,
+                              GearType type,
+                              const iplug::igraphics::IRECT& bounds);
 
+ private:
   GearType mType;
   // mSvg is std::nullopt until first Draw, then holds the loaded ISVG for
   // mType. setType() resets it so the next Draw reloads the right file.
