@@ -13,3 +13,13 @@ mkcert*
 
 NeuralAmpModeler/*.wav
 NeuralAmpModeler/peaks/
+
+# TONE3000 Player fork additions
+NeuralAmpModeler/build-win/
+NeuralAmpModeler/build-mac/
+NeuralAmpModeler/build/
+.vs/
+*.vsidx
+*.vcxproj.user
+iPlug2/Dependencies/IPlug/VST3_SDK/
+iPlug2/Dependencies/Build/
