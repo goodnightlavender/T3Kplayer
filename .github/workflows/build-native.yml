@@ -14,6 +14,11 @@ env:
 
 jobs:
   build:
+    # This is upstream NAM's cross-platform workflow. The TONE3000 Player fork is
+    # Windows-only at 0.1; its dedicated CI lives in build-windows.yml. We keep
+    # this file in sync with upstream so future merges stay clean, but the job is
+    # gated to only run on upstream's repository.
+    if: github.repository == 'sdatkinson/NeuralAmpModelerPlugin'
     name: Build-native-plugins
     runs-on: ${{matrix.os}}
     strategy:

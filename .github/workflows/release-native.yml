@@ -11,6 +11,9 @@ env:
 
 jobs:
   create_release:
+    # Upstream NAM's release workflow. Gated to upstream only — the fork has its
+    # own release path (when 0.1 ships, it'll be added in Phase 8).
+    if: github.repository == 'sdatkinson/NeuralAmpModelerPlugin'
     name: Create release
     runs-on: ubuntu-latest
     outputs:
@@ -33,6 +36,8 @@ jobs:
           body_path: ${{env.PROJECT_NAME}}/installer/changelog.txt
 
   build:
+    # See note on create_release above.
+    if: github.repository == 'sdatkinson/NeuralAmpModelerPlugin'
     name: Build
     needs: create_release
     runs-on: ${{matrix.os}}
