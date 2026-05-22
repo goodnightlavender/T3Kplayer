@@ -1,0 +1,74 @@
+TONE3000 Player
+Copyright (c) 2026 Kai van Deursen
+Licensed under the MIT License — see LICENSE.
+
+This software is a fork of the Neural Amp Modeler Plugin and incorporates
+code from the following projects. Each retains its own license.
+
+================================================================================
+Upstream — Neural Amp Modeler Plugin
+================================================================================
+
+  Copyright (c) Steve Atkinson
+  License: MIT
+  Source:  https://github.com/sdatkinson/NeuralAmpModelerPlugin
+
+  The entire audio engine, plug-in framework integration, and original UI
+  controls in this repository derive from upstream NAM Plugin.
+
+================================================================================
+Submodule — Neural Amp Modeler Core (NAM inference engine)
+================================================================================
+
+  Copyright (c) Steve Atkinson
+  License: MIT
+  Source:  https://github.com/sdatkinson/NeuralAmpModelerCore
+
+================================================================================
+Submodule — AudioDSPTools
+================================================================================
+
+  Copyright (c) Steve Atkinson
+  License: MIT
+  Source:  https://github.com/sdatkinson/AudioDSPTools
+
+================================================================================
+Submodule — iPlug2
+================================================================================
+
+  Copyright (c) Oli Larkin and iPlug2 contributors
+  License: see iPlug2/LICENSE.txt (zlib-style, permissive)
+  Source:  https://github.com/iPlug2/iPlug2
+
+================================================================================
+Submodule — Eigen
+================================================================================
+
+  Copyright (c) Eigen contributors
+  License: Mozilla Public License 2.0
+  Source:  https://gitlab.com/libeigen/eigen
+
+================================================================================
+External — VST 3 SDK
+================================================================================
+
+  Copyright (c) Steinberg Media Technologies GmbH
+  License: Steinberg VST 3 dual license (GPLv3 or proprietary)
+           — see iPlug2/Dependencies/IPlug/VST3_SDK/LICENSE.txt after download
+  Source:  https://github.com/steinbergmedia/vst3sdk
+
+  Fetched at build-time by iPlug2/Dependencies/IPlug/download-vst3-sdk.sh;
+  not redistributed in this repository's source tree.
+
+================================================================================
+Planned dependencies (Phase 4+)
+================================================================================
+
+  libcurl       https://curl.se/                       curl/libcurl license
+  SQLite        https://www.sqlite.org/                public domain
+  nlohmann/json https://github.com/nlohmann/json       MIT
+  Anton font    https://fonts.google.com/specimen/Anton SIL Open Font License 1.1
+  Inter font    https://rsms.me/inter/                  SIL Open Font License 1.1
+  Catch2        https://github.com/catchorg/Catch2     Boost Software License 1.0
+
+These will be added in Phases 4–8 and this NOTICE updated accordingly.
