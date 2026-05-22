@@ -69,6 +69,15 @@ private:
   void onSlotRemoved(int slotIndex);
   void onSlotAdded();
 
+  // Drag-to-reorder: only pedal (slotIndex 0..4) and outboard (7..11)
+  // tiles fire these. Within those categories the user can drag a tile
+  // onto another same-category tile to swap positions. Drops outside
+  // the category — or on the Amp/Cab single-position slots, or onto the
+  // trailing "+" tile, or off the strip entirely — are rejected and the
+  // tile snaps back.
+  void onSlotDragMove(int slotIndex, float x, float y);
+  void onSlotDragEnd (int slotIndex, float x, float y);
+
   // Rebuild the strip's child controls from mChain. Called on chain
   // changes (add/remove). NOT called from OnResize — see layoutStripTiles
   // for the in-place position update used during resize. Idempotent.

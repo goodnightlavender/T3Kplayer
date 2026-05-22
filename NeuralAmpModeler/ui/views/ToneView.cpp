@@ -34,6 +34,31 @@ float widthForSlot(GearType t)
   return (t == GearType::FullRig) ? kSlotFullRigW : kSlotW;
 }
 
+// Category id derived from slotIndex. Pedals share category 0 (slot indices
+// 0..4), outboards share category 2 (slot indices 7..11). Amp (5), Cab (6),
+// and any FullRig occupying slot 5 are single-position slots and each get
+// their own unique category so the same-category check below rules out a
+// drop on a different gear type.
+//   0 → pedals
+//   1 → amp (single)
+//   2 → outboards
+//   3 → cab (single)
+int slotCategory(int slotIndex)
+{
+  if (slotIndex >= 0 && slotIndex <= 4) return 0;   // pedals
+  if (slotIndex == 5)                   return 1;   // amp
+  if (slotIndex == 6)                   return 3;   // cab
+  if (slotIndex >= 7 && slotIndex <= 11) return 2;  // outboards
+  return -1;
+}
+
+// Only categories with more than one possible position support reorder.
+bool isReorderableCategory(int slotIndex)
+{
+  const int c = slotCategory(slotIndex);
+  return c == 0 || c == 2;
+}
+
 }  // namespace
 
 ToneView::ToneView(const IRECT& bounds, NeuralAmpModeler& plugin)
@@ -195,6 +220,19 @@ void ToneView::rebuildStrip()
         /*onRemove*/ [this](int slot) { onSlotRemoved(slot); },
         /*onAdd*/    {});
     tile->setSelected(idx == mChain.selectedIndex);
+
+    // Only pedal / outboard tiles support drag-to-reorder. Amp / Cab /
+    // FullRig live at fixed positions, so we leave their drag callbacks
+    // null and T3kSlot disables drag accordingly.
+    if (isReorderableCategory(idx)) {
+      tile->setOnDragMove([this](int slot, float mx, float my) {
+        onSlotDragMove(slot, mx, my);
+      });
+      tile->setOnDragEnd([this](int slot, float mx, float my) {
+        onSlotDragEnd(slot, mx, my);
+      });
+    }
+
     g->AttachControl(tile);
     mSlots.push_back(tile);
     x += w + kSlotGap;
@@ -244,6 +282,89 @@ void ToneView::onSlotRemoved(int slotIndex)
       mInfoPane->clear();
     }
   }
+  rebuildStrip();
+  if (mChain.selectedIndex >= 0) onSlotSelected(mChain.selectedIndex);
+}
+
+void ToneView::onSlotDragMove(int /*slotIndex*/, float /*x*/, float /*y*/)
+{
+  // No-op for Phase 2b. The dragged tile already paints itself shifted
+  // (see T3kSlot::Draw), which is enough visual feedback for the smoke
+  // test. Phase 3 can layer in a drop-target indicator here (e.g. paint a
+  // 2px kAccent strip on the leading edge of whichever same-category
+  // tile is currently under the cursor).
+}
+
+void ToneView::onSlotDragEnd(int slotIndex, float x, float y)
+{
+  // Find the source index in mChain.loaded.
+  auto srcIt = std::find_if(mChain.loaded.begin(), mChain.loaded.end(),
+                            [slotIndex](const ChainView::LoadedSlot& s) {
+                              return s.slotIndex == slotIndex;
+                            });
+  if (srcIt == mChain.loaded.end()) {
+    rebuildStrip();  // safety: re-snap the tile back to its original rect
+    return;
+  }
+  const size_t srcPos = static_cast<size_t>(srcIt - mChain.loaded.begin());
+  const int srcCat = slotCategory(slotIndex);
+
+  // Find which tile (by parallel index in mSlots) sits under (x, y).
+  // mSlots is sized to mChain.loaded; each tile's mRECT was set by
+  // computeStripLayout(). A drop outside any tile is a no-op (we just
+  // rebuildStrip to snap the visual back).
+  int dstPos = -1;
+  for (size_t i = 0; i < mSlots.size(); ++i) {
+    if (mSlots[i] && mSlots[i]->GetRECT().Contains(x, y)) {
+      dstPos = static_cast<int>(i);
+      break;
+    }
+  }
+  if (dstPos < 0) {
+    rebuildStrip();
+    return;
+  }
+
+  // Same source as drop target → no-op (the user just twitched).
+  if (static_cast<size_t>(dstPos) == srcPos) {
+    rebuildStrip();
+    return;
+  }
+
+  // Cross-category drops are rejected. The dragged tile snaps back.
+  const int dstSlotIdx = mChain.loaded[dstPos].slotIndex;
+  if (slotCategory(dstSlotIdx) != srcCat) {
+    rebuildStrip();
+    return;
+  }
+
+  // Reorder by moving the source entry to the destination position. After
+  // erasing srcPos, dstPos shifts left by one if it sat past srcPos; the
+  // adjustedDst below compensates so the moved entry lands at the visual
+  // position the user dropped on. We also rotate the slotIndex values so
+  // the chain DSP order stays consistent with the visual order — the
+  // slotIndex is what audio code will use to look up effects in chain
+  // position once Phase 3 wires it.
+  ChainView::LoadedSlot moved = std::move(mChain.loaded[srcPos]);
+  mChain.loaded.erase(mChain.loaded.begin() + srcPos);
+  const size_t adjustedDst = (static_cast<size_t>(dstPos) > srcPos)
+                                 ? static_cast<size_t>(dstPos - 1)
+                                 : static_cast<size_t>(dstPos);
+  mChain.loaded.insert(mChain.loaded.begin() + adjustedDst, std::move(moved));
+
+  // Re-number slotIndices within the source category so they stay
+  // contiguous and reflect the new visual order. Pedals get 0..4,
+  // outboards 7..11. Other categories don't reorder so they're
+  // untouched.
+  int nextIdx = (srcCat == 0) ? 0 : 7;
+  for (auto& ls : mChain.loaded) {
+    if (slotCategory(ls.slotIndex) == srcCat) {
+      ls.slotIndex = nextIdx++;
+    }
+  }
+  // Keep the selection on the just-moved item.
+  mChain.selectedIndex = mChain.loaded[adjustedDst].slotIndex;
+
   rebuildStrip();
   if (mChain.selectedIndex >= 0) onSlotSelected(mChain.selectedIndex);
 }

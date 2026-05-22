@@ -93,26 +93,35 @@ void T3kSlot::Draw(IGraphics& g)
     return;
   }
 
-  // Loaded variant.
-  g.FillRoundRect(th::kBgSurface, mRECT, th::kRadiusLg);
+  // Loaded variant. When dragging, render the entire tile shifted by the
+  // accumulated drag offset so it visually follows the cursor. mRECT
+  // itself stays fixed (the parent's layoutStripTiles relies on stable
+  // rects for hit-testing), so we paint into a translated rect here.
+  const IRECT drawRect = mDragging
+      ? IRECT(mRECT.L + mDragOffsetX, mRECT.T + mDragOffsetY,
+              mRECT.R + mDragOffsetX, mRECT.B + mDragOffsetY)
+      : mRECT;
+
+  g.FillRoundRect(th::kBgSurface, drawRect, th::kRadiusLg);
 
   // Selection ring: 1px kAccent border (replaces the default 1px subtle
-  // border when selected). Decision 47.
-  if (mSelected) {
-    g.DrawRoundRect(th::kAccent, mRECT, th::kRadiusLg, nullptr, 1.f);
+  // border when selected). Decision 47. Dragging also draws kAccent so
+  // the user can track the floating tile.
+  if (mSelected || mDragging) {
+    g.DrawRoundRect(th::kAccent, drawRect, th::kRadiusLg, nullptr, 1.f);
   } else {
-    g.DrawRoundRect(th::kBorder, mRECT, th::kRadiusLg, nullptr, 1.f);
+    g.DrawRoundRect(th::kBorder, drawRect, th::kRadiusLg, nullptr, 1.f);
   }
 
   // ── Gear icon (inline draw — no child IControl) ─────────────────────
   if (!mIconSvg.has_value())
     mIconSvg.emplace(g.LoadSVG(T3kGearIcon::filenameFor(mIconType)));
 
-  const IRECT iconRect = mRECT.GetPadded(-kIconInset);
+  const IRECT iconRect = drawRect.GetPadded(-kIconInset);
   T3kGearIcon::drawInto(g, *mIconSvg, mIconType, iconRect);
 
-  // ── Hover-X (only when this tile is hovered) ────────────────────────
-  if (mMouseIsOver) {
+  // ── Hover-X (only when hovered AND not dragging) ────────────────────
+  if (mMouseIsOver && !mDragging) {
     const IRECT xr = hoverXRect();
     const float cx = xr.MW();
     const float cy = xr.MH();
@@ -138,13 +147,59 @@ void T3kSlot::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
     return;
   }
 
-  // Loaded tile: click-on-X removes, click-elsewhere selects.
+  // Loaded tile: click-on-X removes, click-elsewhere arms a potential drag.
+  // The actual onSelect fires on OnMouseUp if no drag motion happened
+  // (so a click still selects, but a click-and-drag is a reorder gesture).
   if (mMouseIsOver && hoverXRect().Contains(x, y)) {
     if (mOnRemove) mOnRemove(mSlotIndex);
     SetDirty(false);
     return;
   }
 
+  // Reset drag offset. mDragging stays false until OnMouseDrag actually
+  // fires — keeps simple clicks click-y.
+  mDragOffsetX = 0.f;
+  mDragOffsetY = 0.f;
+  SetDirty(false);
+}
+
+void T3kSlot::OnMouseDrag(float x, float y, float dX, float dY,
+                          const IMouseMod& /*mod*/)
+{
+  // Add tiles never drag. Loaded tiles drag only when the parent wired up
+  // mOnDragMove (categories that don't support reordering pass null).
+  if (mVariant == Variant::Add) return;
+  if (!mOnDragMove) return;
+
+  // First drag tick: flip on mDragging. iPlug2 only delivers OnMouseDrag
+  // after the cursor has actually moved past its mouse-down position, so
+  // we don't need an explicit motion threshold here.
+  mDragging = true;
+  mDragOffsetX += dX;
+  mDragOffsetY += dY;
+  mOnDragMove(mSlotIndex, x, y);
+  SetDirty(false);
+}
+
+void T3kSlot::OnMouseUp(float x, float y, const IMouseMod& /*mod*/)
+{
+  if (mVariant == Variant::Add) {
+    return;  // OnMouseDown already fired the Add callback for that case.
+  }
+
+  if (mDragging) {
+    // Drag-release: fire onDragEnd, then snap the visual back to mRECT
+    // (the parent decides whether to rebuild the strip — if it does, this
+    // tile gets destroyed anyway; if it doesn't, the visual just snaps).
+    mDragging = false;
+    mDragOffsetX = 0.f;
+    mDragOffsetY = 0.f;
+    if (mOnDragEnd) mOnDragEnd(mSlotIndex, x, y);
+    SetDirty(false);
+    return;
+  }
+
+  // No drag — treat as a click → select.
   if (mOnSelect) mOnSelect(mSlotIndex);
   SetDirty(false);
 }

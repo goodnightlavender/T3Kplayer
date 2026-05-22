@@ -58,11 +58,25 @@ public:
   void setSelected(bool s);
   void setVariant(Variant v);
 
+  // Drag-to-reorder hooks. Only Loaded variants drag — Add tiles never do.
+  // Called by the parent (ToneView) after construction; either may be null
+  // (in which case drag is disabled even on Loaded tiles).
+  //   onDragMove(slotIndex, mouseX, mouseY) — fired on every drag tick.
+  //   onDragEnd (slotIndex, mouseX, mouseY) — fired on mouse-up after drag.
+  void setOnDragMove(std::function<void(int, float, float)> cb) { mOnDragMove = std::move(cb); }
+  void setOnDragEnd (std::function<void(int, float, float)> cb) { mOnDragEnd  = std::move(cb); }
+
+  // True between OnMouseDown and OnMouseUp while the user is dragging a
+  // Loaded tile. Read by ToneView's drop-indicator paint, if any.
+  bool isDragging() const { return mDragging; }
+
   Variant variant()  const { return mVariant; }
   bool    selected() const { return mSelected; }
 
   void Draw(IGraphics& g) override;
   void OnMouseDown(float x, float y, const IMouseMod& mod) override;
+  void OnMouseDrag(float x, float y, float dX, float dY, const IMouseMod& mod) override;
+  void OnMouseUp(float x, float y, const IMouseMod& mod) override;
   void OnMouseOver(float x, float y, const IMouseMod& mod) override;
   void OnMouseOut() override;
 
@@ -84,6 +98,18 @@ private:
   std::function<void(int)> mOnSelect;
   std::function<void(int)> mOnRemove;
   std::function<void(int)> mOnAdd;
+
+  // Drag state. mDragging flips on after OnMouseDown moves a few pixels;
+  // it stays true through OnMouseDrag and resets on OnMouseUp. The offset
+  // tracks the cumulative drag delta so Draw can shift the visual to
+  // follow the cursor without moving the actual mRECT (which keeps mouse
+  // hit-testing predictable from the parent's perspective).
+  bool  mDragging = false;
+  float mDragOffsetX = 0.f;
+  float mDragOffsetY = 0.f;
+
+  std::function<void(int, float, float)> mOnDragMove;
+  std::function<void(int, float, float)> mOnDragEnd;
 };
 
 }  // namespace t3k::ui
