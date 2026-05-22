@@ -174,6 +174,9 @@
     <ClCompile Include="..\ui\controls\T3kButton.cpp">
       <Filter>ui\controls</Filter>
     </ClCompile>
+    <ClCompile Include="..\ui\controls\T3kPill.cpp">
+      <Filter>ui\controls</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="../config.h" />
@@ -467,6 +470,9 @@
       <Filter>NAM</Filter>
     </ClInclude>
     <ClInclude Include="..\ui\controls\T3kButton.h">
+      <Filter>ui\controls</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ui\controls\T3kPill.h">
       <Filter>ui\controls</Filter>
     </ClInclude>
   </ItemGroup>
