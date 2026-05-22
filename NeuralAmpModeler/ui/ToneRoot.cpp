@@ -223,29 +223,35 @@ void ToneRoot::OnAttached()
 
 void ToneRoot::Draw(IGraphics& g)
 {
-  // The plug-in's panel background is solid black via AttachPanelBackground.
-  // We draw the avatar circle + initials here since it has no dedicated
-  // control. (When Phase 5 lands signed-in user state, the avatar may
-  // become a T3kButton.)
+  // ─── BISECT DEBUG GATE ────────────────────────────────────────────────────
+  // ToneRoot::Draw gutted while bisecting the load-time crash. With all child
+  // controls disabled AND this Draw a no-op, the plug-in window should at
+  // least open (showing whatever AttachPanelBackground draws). If it STILL
+  // crashes, the issue is in mLayoutFunc (font loading) or further up.
+  // After diagnosis, restore the original Draw and remove this comment block.
+  constexpr bool kEnableAvatar     = false;
+  constexpr bool kEnableSeparators = false;
 
-  // Avatar — filled circle with a subtle border and white "KV" initials.
-  const IRECT& a = mAvatarRect;
-  const float cx = a.MW();
-  const float cy = a.MH();
-  const float r  = std::min(a.W(), a.H()) * 0.5f - 2.f;
+  if (kEnableAvatar) {
+    const IRECT& a = mAvatarRect;
+    const float cx = a.MW();
+    const float cy = a.MH();
+    const float r  = std::min(a.W(), a.H()) * 0.5f - 2.f;
 
-  g.FillCircle(t3k::theme::kBgSurface, cx, cy, r);
-  g.DrawCircle(t3k::theme::kBorder, cx, cy, r, nullptr, 1.f);
-  g.DrawText(IText(t3k::theme::kTypeSmall, t3k::theme::kTextMuted,
-                   t3k::theme::kFontBodyMed, EAlign::Center, EVAlign::Middle),
-             "KV",
-             IRECT(cx - r, cy - r, cx + r, cy + r));
+    g.FillCircle(t3k::theme::kBgSurface, cx, cy, r);
+    g.DrawCircle(t3k::theme::kBorder, cx, cy, r, nullptr, 1.f);
+    g.DrawText(IText(t3k::theme::kTypeSmall, t3k::theme::kTextMuted,
+                     t3k::theme::kFontBodyMed, EAlign::Center, EVAlign::Middle),
+               "KV",
+               IRECT(cx - r, cy - r, cx + r, cy + r));
+  }
 
-  // Subtle 1px separators below the header and above the knob row.
-  g.FillRect(t3k::theme::kBorder,
-             IRECT(mRECT.L, mHeaderRect.B - 1.f, mRECT.R, mHeaderRect.B));
-  g.FillRect(t3k::theme::kBorder,
-             IRECT(mRECT.L, mKnobRowRect.T, mRECT.R, mKnobRowRect.T + 1.f));
+  if (kEnableSeparators) {
+    g.FillRect(t3k::theme::kBorder,
+               IRECT(mRECT.L, mHeaderRect.B - 1.f, mRECT.R, mHeaderRect.B));
+    g.FillRect(t3k::theme::kBorder,
+               IRECT(mRECT.L, mKnobRowRect.T, mRECT.R, mKnobRowRect.T + 1.f));
+  }
 }
 
 void ToneRoot::switchTab(Tab tab)
