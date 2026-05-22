@@ -10,13 +10,15 @@ using namespace iplug::igraphics;
 
 T3kLogo::T3kLogo(const IRECT& bounds)
   : IControl(bounds)
-  , mSvg{}  // loaded lazily on first Draw — IGraphics must be alive
-{}
+{
+  // mSvg is std::nullopt by default — populated on first Draw when
+  // IGraphics is guaranteed alive (ISVG has no default constructor).
+}
 
 void T3kLogo::Draw(IGraphics& g)
 {
-  if (!mSvg.IsValid())
-    mSvg = g.LoadSVG(TONE3000_LOGO_FN);
+  if (!mSvg.has_value())
+    mSvg.emplace(g.LoadSVG(TONE3000_LOGO_FN));
 
   // Scale to fit while preserving the source 210x32 aspect ratio.
   const float srcAspect = 210.f / 32.f;
@@ -34,7 +36,7 @@ void T3kLogo::Draw(IGraphics& g)
                 mRECT.R, mRECT.MH() + h * 0.5f);
   }
 
-  g.DrawSVG(mSvg, dst);
+  g.DrawSVG(*mSvg, dst);
 }
 
 }  // namespace t3k::ui

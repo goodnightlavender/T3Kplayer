@@ -1,6 +1,7 @@
 // T3kLogo.h
 #pragma once
 #include "IControl.h"
+#include <optional>
 
 namespace t3k::ui {
 
@@ -10,7 +11,9 @@ public:
   void Draw(iplug::igraphics::IGraphics& g) override;
 
 private:
-  iplug::igraphics::ISVG mSvg;
+  // ISVG has no default constructor — populate lazily on first Draw,
+  // when IGraphics is guaranteed alive.
+  std::optional<iplug::igraphics::ISVG> mSvg;
 };
 
 }  // namespace t3k::ui
