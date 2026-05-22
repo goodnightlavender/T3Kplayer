@@ -1,0 +1,55 @@
+name: Build (Windows)
+
+on:
+  push:
+    branches: [main, "feat/**", "fix/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-vst3:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Download VST3 SDK
+        shell: bash
+        run: |
+          cd iPlug2/Dependencies/IPlug
+          bash download-vst3-sdk.sh
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build NeuralAmpModeler-vst3 (Release|x64)
+        shell: cmd
+        run: |
+          msbuild NeuralAmpModeler\NeuralAmpModeler.sln ^
+            /p:Configuration=Release ^
+            /p:Platform=x64 ^
+            /t:NeuralAmpModeler-vst3 ^
+            /verbosity:minimal
+
+      - name: Verify the bundle exists
+        shell: pwsh
+        run: |
+          $bundle = Get-ChildItem -Recurse -Filter "TONE3000Player.vst3" -Directory `
+            | Select-Object -First 1
+          if (-not $bundle) {
+            Write-Error "TONE3000Player.vst3 bundle not produced"
+            exit 1
+          }
+          Write-Host "Built bundle at: $($bundle.FullName)"
+          Get-ChildItem -Recurse $bundle.FullName | Select-Object FullName, Length
+
+      - name: Upload VST3 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TONE3000Player-vst3-windows-x64
+          path: NeuralAmpModeler/build-win/TONE3000Player.vst3/**
+          if-no-files-found: error
+          retention-days: 30
