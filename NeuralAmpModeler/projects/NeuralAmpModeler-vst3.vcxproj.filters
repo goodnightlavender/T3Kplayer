@@ -225,6 +225,9 @@
     <ClCompile Include="..\ui\views\IRView.cpp">
       <Filter>ui\views</Filter>
     </ClCompile>
+    <ClCompile Include="..\ui\views\T3kModelInfoPane.cpp">
+      <Filter>ui\views</Filter>
+    </ClCompile>
     <ClCompile Include="..\ui\views\CloudView.cpp">
       <Filter>ui\views</Filter>
     </ClCompile>
@@ -584,6 +587,9 @@
       <Filter>ui\views</Filter>
     </ClInclude>
     <ClInclude Include="..\ui\views\IRView.h">
+      <Filter>ui\views</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ui\views\T3kModelInfoPane.h">
       <Filter>ui\views</Filter>
     </ClInclude>
     <ClInclude Include="..\ui\views\CloudView.h">
