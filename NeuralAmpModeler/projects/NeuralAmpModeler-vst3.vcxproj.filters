@@ -171,6 +171,9 @@
       <Filter>dsp</Filter>
     </ClCompile>
     <ClCompile Include="..\ToneStack.cpp" />
+    <ClCompile Include="..\ui\controls\T3kButton.cpp">
+      <Filter>ui\controls</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="../config.h" />
@@ -463,6 +466,9 @@
     <ClInclude Include="..\NeuralAmpModelerCore\NAM\get_dsp.h">
       <Filter>NAM</Filter>
     </ClInclude>
+    <ClInclude Include="..\ui\controls\T3kButton.h">
+      <Filter>ui\controls</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="resources">
@@ -539,6 +545,12 @@
     </Filter>
     <Filter Include="dsp\ResamplingContainer\Dependencies\WDL">
       <UniqueIdentifier>{a467e512-e643-4711-ad15-f0cf98f8eef2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ui">
+      <UniqueIdentifier>{b919d76a-5072-4ac5-96d5-233b7604a310}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ui\controls">
+      <UniqueIdentifier>{ed3d3356-bd39-4bf6-bf0a-d7eaebcd2756}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
