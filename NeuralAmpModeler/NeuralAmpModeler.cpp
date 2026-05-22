@@ -111,28 +111,43 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
   };
 
   mLayoutFunc = [&](IGraphics* pGraphics) {
-    // Global IGraphics config — preserved from upstream.
+    // ─── BISECT DEBUG GATES — Phase 2 load-time crash ──────────────────────
+    // Both ToneRoot::OnAttached AND ::Draw are gutted, but plug-in still
+    // crashes before window draw. So the crash is in mLayoutFunc itself.
+    // Gate each section; flip on one at a time to find the culprit.
+    constexpr bool kEnableNewFonts   = false;  // Anton + 4 Inter LoadFont calls
+    constexpr bool kEnableToneRoot   = false;  // attach ToneRoot
+    constexpr bool kEnableTextEntry  = false;  // AttachTextEntryControl
+    constexpr bool kEnableMouseOver  = false;  // EnableMouseOver
+    constexpr bool kEnableTooltips   = false;  // EnableTooltips
+    constexpr bool kEnableMultiTouch = false;  // EnableMultiTouch
+    constexpr bool kEnablePanelBg    = false;  // AttachPanelBackground(IColor)
+    // ──────────────────────────────────────────────────────────────────────
+
     pGraphics->AttachCornerResizer(EUIResizerMode::Scale, false);
-    pGraphics->AttachTextEntryControl();   // needed by T3kSearchBar
-    pGraphics->EnableMouseOver(true);
-    pGraphics->EnableTooltips(true);
-    pGraphics->EnableMultiTouch(true);
 
-    // Pure-black panel background (TONE3000 brand).
-    pGraphics->AttachPanelBackground(t3k::theme::kBgBase);
+    if (kEnableTextEntry)  pGraphics->AttachTextEntryControl();
+    if (kEnableMouseOver)  pGraphics->EnableMouseOver(true);
+    if (kEnableTooltips)   pGraphics->EnableTooltips(true);
+    if (kEnableMultiTouch) pGraphics->EnableMultiTouch(true);
 
-    // Fonts: upstream's Roboto/Michroma + Phase 2 Anton/Inter family.
+    if (kEnablePanelBg)
+      pGraphics->AttachPanelBackground(t3k::theme::kBgBase);
+
+    // Upstream's two fonts — these worked in Phase 1.
     pGraphics->LoadFont("Roboto-Regular",   ROBOTO_FN);
     pGraphics->LoadFont("Michroma-Regular", MICHROMA_FN);
-    pGraphics->LoadFont("Anton-Regular",    ANTON_REGULAR_FN);
-    pGraphics->LoadFont("Inter-Regular",    INTER_REGULAR_FN);
-    pGraphics->LoadFont("Inter-Medium",     INTER_MEDIUM_FN);
-    pGraphics->LoadFont("Inter-SemiBold",   INTER_SEMIBOLD_FN);
-    pGraphics->LoadFont("Inter-Bold",       INTER_BOLD_FN);
 
-    // The whole UI is one root that owns everything (header, tabs, body,
-    // knob row, overlays). See ui/ToneRoot.{h,cpp}.
-    pGraphics->AttachControl(new t3k::ui::ToneRoot(pGraphics->GetBounds(), *this));
+    if (kEnableNewFonts) {
+      pGraphics->LoadFont("Anton-Regular",    ANTON_REGULAR_FN);
+      pGraphics->LoadFont("Inter-Regular",    INTER_REGULAR_FN);
+      pGraphics->LoadFont("Inter-Medium",     INTER_MEDIUM_FN);
+      pGraphics->LoadFont("Inter-SemiBold",   INTER_SEMIBOLD_FN);
+      pGraphics->LoadFont("Inter-Bold",       INTER_BOLD_FN);
+    }
+
+    if (kEnableToneRoot)
+      pGraphics->AttachControl(new t3k::ui::ToneRoot(pGraphics->GetBounds(), *this));
   };
 }
 
