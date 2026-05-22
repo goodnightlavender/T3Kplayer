@@ -117,6 +117,11 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
 
     pGraphics->LoadFont("Roboto-Regular", ROBOTO_FN);
     pGraphics->LoadFont("Michroma-Regular", MICHROMA_FN);
+    pGraphics->LoadFont("Anton-Regular", ANTON_REGULAR_FN);
+    pGraphics->LoadFont("Inter-Regular", INTER_REGULAR_FN);
+    pGraphics->LoadFont("Inter-Medium", INTER_MEDIUM_FN);
+    pGraphics->LoadFont("Inter-SemiBold", INTER_SEMIBOLD_FN);
+    pGraphics->LoadFont("Inter-Bold", INTER_BOLD_FN);
 
     const auto gearSVG = pGraphics->LoadSVG(GEAR_FN);
     const auto fileSVG = pGraphics->LoadSVG(FILE_FN);

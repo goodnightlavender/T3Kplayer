@@ -58,6 +58,11 @@
 
 #define ROBOTO_FN "Roboto-Regular.ttf"
 #define MICHROMA_FN "Michroma-Regular.ttf"
+#define ANTON_REGULAR_FN "Anton-Regular.ttf"
+#define INTER_REGULAR_FN "Inter-Regular.ttf"
+#define INTER_MEDIUM_FN "Inter-Medium.ttf"
+#define INTER_SEMIBOLD_FN "Inter-SemiBold.ttf"
+#define INTER_BOLD_FN "Inter-Bold.ttf"
 
 #define GEAR_FN "Gear.svg"
 #define FILE_FN "File.svg"
