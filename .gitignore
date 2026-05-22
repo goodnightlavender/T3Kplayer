@@ -1,7 +1,7 @@
 .DS_Store
 xcuserdata
 *.RPP-bak
-build-*
+build-*/
 .idea/
 
 *.ipch
