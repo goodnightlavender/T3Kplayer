@@ -16,6 +16,8 @@
 #include "architecture.hpp"
 
 #include "NeuralAmpModelerControls.h"
+#include "ui/ToneRoot.h"
+#include "ui/theme.h"
 
 using namespace iplug;
 using namespace igraphics;
@@ -109,213 +111,28 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
   };
 
   mLayoutFunc = [&](IGraphics* pGraphics) {
+    // Global IGraphics config — preserved from upstream.
     pGraphics->AttachCornerResizer(EUIResizerMode::Scale, false);
-    pGraphics->AttachTextEntryControl();
+    pGraphics->AttachTextEntryControl();   // needed by T3kSearchBar
     pGraphics->EnableMouseOver(true);
     pGraphics->EnableTooltips(true);
     pGraphics->EnableMultiTouch(true);
 
-    pGraphics->LoadFont("Roboto-Regular", ROBOTO_FN);
+    // Pure-black panel background (TONE3000 brand).
+    pGraphics->AttachPanelBackground(t3k::theme::kBgBase);
+
+    // Fonts: upstream's Roboto/Michroma + Phase 2 Anton/Inter family.
+    pGraphics->LoadFont("Roboto-Regular",   ROBOTO_FN);
     pGraphics->LoadFont("Michroma-Regular", MICHROMA_FN);
-    pGraphics->LoadFont("Anton-Regular", ANTON_REGULAR_FN);
-    pGraphics->LoadFont("Inter-Regular", INTER_REGULAR_FN);
-    pGraphics->LoadFont("Inter-Medium", INTER_MEDIUM_FN);
-    pGraphics->LoadFont("Inter-SemiBold", INTER_SEMIBOLD_FN);
-    pGraphics->LoadFont("Inter-Bold", INTER_BOLD_FN);
+    pGraphics->LoadFont("Anton-Regular",    ANTON_REGULAR_FN);
+    pGraphics->LoadFont("Inter-Regular",    INTER_REGULAR_FN);
+    pGraphics->LoadFont("Inter-Medium",     INTER_MEDIUM_FN);
+    pGraphics->LoadFont("Inter-SemiBold",   INTER_SEMIBOLD_FN);
+    pGraphics->LoadFont("Inter-Bold",       INTER_BOLD_FN);
 
-    const auto gearSVG = pGraphics->LoadSVG(GEAR_FN);
-    const auto fileSVG = pGraphics->LoadSVG(FILE_FN);
-    const auto globeSVG = pGraphics->LoadSVG(GLOBE_ICON_FN);
-    const auto crossSVG = pGraphics->LoadSVG(CLOSE_BUTTON_FN);
-    const auto rightArrowSVG = pGraphics->LoadSVG(RIGHT_ARROW_FN);
-    const auto leftArrowSVG = pGraphics->LoadSVG(LEFT_ARROW_FN);
-    const auto modelIconSVG = pGraphics->LoadSVG(MODEL_ICON_FN);
-    const auto irIconOnSVG = pGraphics->LoadSVG(IR_ICON_ON_FN);
-    const auto irIconOffSVG = pGraphics->LoadSVG(IR_ICON_OFF_FN);
-    const auto slimIconSVG = pGraphics->LoadSVG(SLIMMABLE_ICON_FN);
-
-    const auto backgroundBitmap = pGraphics->LoadBitmap(BACKGROUND_FN);
-    const auto fileBackgroundBitmap = pGraphics->LoadBitmap(FILEBACKGROUND_FN);
-    const auto inputLevelBackgroundBitmap = pGraphics->LoadBitmap(INPUTLEVELBACKGROUND_FN);
-    const auto linesBitmap = pGraphics->LoadBitmap(LINES_FN);
-    const auto knobBackgroundBitmap = pGraphics->LoadBitmap(KNOBBACKGROUND_FN);
-    const auto switchHandleBitmap = pGraphics->LoadBitmap(SLIDESWITCHHANDLE_FN);
-    const auto meterBackgroundBitmap = pGraphics->LoadBitmap(METERBACKGROUND_FN);
-
-    const auto b = pGraphics->GetBounds();
-    const auto mainArea = b.GetPadded(-20);
-    const auto contentArea = mainArea.GetPadded(-10);
-    const auto titleHeight = 50.0f;
-    const auto titleArea = contentArea.GetFromTop(titleHeight);
-
-    // Areas for knobs
-    const auto knobsPad = 20.0f;
-    const auto knobsExtraSpaceBelowTitle = 25.0f;
-    const auto singleKnobPad = -2.0f;
-    const auto knobsArea = contentArea.GetFromTop(NAM_KNOB_HEIGHT)
-                             .GetReducedFromLeft(knobsPad)
-                             .GetReducedFromRight(knobsPad)
-                             .GetVShifted(titleHeight + knobsExtraSpaceBelowTitle);
-    const auto inputKnobArea = knobsArea.GetGridCell(0, kInputLevel, 1, numKnobs).GetPadded(-singleKnobPad);
-    const auto noiseGateArea = knobsArea.GetGridCell(0, kNoiseGateThreshold, 1, numKnobs).GetPadded(-singleKnobPad);
-    const auto bassKnobArea = knobsArea.GetGridCell(0, kToneBass, 1, numKnobs).GetPadded(-singleKnobPad);
-    const auto midKnobArea = knobsArea.GetGridCell(0, kToneMid, 1, numKnobs).GetPadded(-singleKnobPad);
-    const auto trebleKnobArea = knobsArea.GetGridCell(0, kToneTreble, 1, numKnobs).GetPadded(-singleKnobPad);
-    const auto outputKnobArea = knobsArea.GetGridCell(0, kOutputLevel, 1, numKnobs).GetPadded(-singleKnobPad);
-
-    const auto ngToggleArea =
-      noiseGateArea.GetVShifted(noiseGateArea.H()).SubRectVertical(2, 0).GetReducedFromTop(10.0f);
-    const auto eqToggleArea = midKnobArea.GetVShifted(midKnobArea.H()).SubRectVertical(2, 0).GetReducedFromTop(10.0f);
-
-    // Areas for model and IR
-    const auto fileWidth = 200.0f;
-    const auto fileHeight = 30.0f;
-    const auto irYOffset = 38.0f;
-    const auto modelArea =
-      contentArea.GetFromBottom((2.0f * fileHeight)).GetFromTop(fileHeight).GetMidHPadded(fileWidth).GetVShifted(-1);
-    const auto slimIconArea =
-      IRECT(modelArea.R + 6.f, modelArea.MH() - 14.f, modelArea.R + 6.f + 2.f * 28.f, modelArea.MH() + 14.f);
-    const auto modelIconArea = modelArea.GetFromLeft(30).GetTranslated(-40, 10);
-    const auto irArea = modelArea.GetVShifted(irYOffset);
-    const auto irSwitchArea = irArea.GetFromLeft(30.0f).GetHShifted(-40.0f).GetScaledAboutCentre(0.6f);
-
-    // Areas for meters
-    const auto inputMeterArea = contentArea.GetFromLeft(30).GetHShifted(-20).GetMidVPadded(100).GetVShifted(-25);
-    const auto outputMeterArea = contentArea.GetFromRight(30).GetHShifted(20).GetMidVPadded(100).GetVShifted(-25);
-
-    // Misc Areas
-    const auto settingsButtonArea = CornerButtonArea(b);
-
-    // Model loader button
-    auto loadModelCompletionHandler = [&](const WDL_String& fileName, const WDL_String& path) {
-      if (fileName.GetLength())
-      {
-        // Sets mNAMPath and mStagedNAM
-        const std::string msg = _StageModel(fileName);
-        // TODO error messages like the IR loader.
-        if (msg.size())
-        {
-          std::stringstream ss;
-          ss << "Failed to load NAM model. Message:\n\n" << msg;
-          _ShowMessageBox(GetUI(), ss.str().c_str(), "Failed to load model!", kMB_OK);
-        }
-        std::cout << "Loaded: " << fileName.Get() << std::endl;
-      }
-    };
-
-    // IR loader button
-    auto loadIRCompletionHandler = [&](const WDL_String& fileName, const WDL_String& path) {
-      if (fileName.GetLength())
-      {
-        mIRPath = fileName;
-        const dsp::wav::LoadReturnCode retCode = _StageIR(fileName);
-        if (retCode != dsp::wav::LoadReturnCode::SUCCESS)
-        {
-          std::stringstream message;
-          message << "Failed to load IR file " << fileName.Get() << ":\n";
-          message << dsp::wav::GetMsgForLoadReturnCode(retCode);
-
-          _ShowMessageBox(GetUI(), message.str().c_str(), "Failed to load IR!", kMB_OK);
-        }
-      }
-    };
-
-    pGraphics->AttachBackground(BACKGROUND_FN);
-    pGraphics->AttachControl(new IBitmapControl(b, linesBitmap));
-    pGraphics->AttachControl(new IVLabelControl(titleArea, "NEURAL AMP MODELER", titleStyle));
-    pGraphics->AttachControl(new ISVGControl(modelIconArea, modelIconSVG));
-
-#ifdef NAM_PICK_DIRECTORY
-    const std::string defaultNamFileString = "Select model directory...";
-    const std::string defaultIRString = "Select IR directory...";
-#else
-    const std::string defaultNamFileString = "Select model...";
-    const std::string defaultIRString = "Select IR...";
-#endif
-    // Getting started page listing additional resources
-    const char* const getUrl = "https://www.neuralampmodeler.com/users#comp-marb84o5";
-    pGraphics->AttachControl(
-      new NAMFileBrowserControl(modelArea, kMsgTagClearModel, defaultNamFileString.c_str(), "nam",
-                                loadModelCompletionHandler, style, fileSVG, crossSVG, leftArrowSVG, rightArrowSVG,
-                                fileBackgroundBitmap, globeSVG, "Get NAM Models", getUrl),
-      kCtrlTagModelFileBrowser);
-
-    auto hideSlimOverlay = [](IControl* pCaller) {
-      IGraphics* ui = pCaller->GetUI();
-      if (auto* backdrop = ui->GetControlWithTag(kCtrlTagSlimOverlayBackdrop))
-        backdrop->Hide(true);
-      if (auto* knob = ui->GetControlWithTag(kCtrlTagSlimKnob))
-        knob->Hide(true);
-      ui->SetAllControlsDirty();
-    };
-    auto showSlimOverlay = [](IControl* pCaller) {
-      IGraphics* ui = pCaller->GetUI();
-      if (auto* backdrop = ui->GetControlWithTag(kCtrlTagSlimOverlayBackdrop))
-        backdrop->Hide(false);
-      if (auto* knob = ui->GetControlWithTag(kCtrlTagSlimKnob))
-        knob->Hide(false);
-      ui->SetAllControlsDirty();
-    };
-
-    pGraphics
-      ->AttachControl(
-        new NAMSquareButtonControl(slimIconArea, DefaultClickActionFunc, slimIconSVG), kCtrlTagSlimmableIcon)
-      ->SetAnimationEndActionFunction(showSlimOverlay)
-      ->Hide(true);
-
-    pGraphics->AttachControl(new ISVGSwitchControl(irSwitchArea, {irIconOffSVG, irIconOnSVG}, kIRToggle));
-    pGraphics->AttachControl(
-      new NAMFileBrowserControl(irArea, kMsgTagClearIR, defaultIRString.c_str(), "wav", loadIRCompletionHandler, style,
-                                fileSVG, crossSVG, leftArrowSVG, rightArrowSVG, fileBackgroundBitmap, globeSVG,
-                                "Get IRs", getUrl),
-      kCtrlTagIRFileBrowser);
-    pGraphics->AttachControl(
-      new NAMSwitchControl(ngToggleArea, kNoiseGateActive, "Noise Gate", style, switchHandleBitmap));
-    pGraphics->AttachControl(new NAMSwitchControl(eqToggleArea, kEQActive, "EQ", style, switchHandleBitmap));
-
-    // The knobs
-    pGraphics->AttachControl(new NAMKnobControl(inputKnobArea, kInputLevel, "", style, knobBackgroundBitmap));
-    pGraphics->AttachControl(new NAMKnobControl(noiseGateArea, kNoiseGateThreshold, "", style, knobBackgroundBitmap));
-    pGraphics->AttachControl(
-      new NAMKnobControl(bassKnobArea, kToneBass, "", style, knobBackgroundBitmap), -1, "EQ_KNOBS");
-    pGraphics->AttachControl(
-      new NAMKnobControl(midKnobArea, kToneMid, "", style, knobBackgroundBitmap), -1, "EQ_KNOBS");
-    pGraphics->AttachControl(
-      new NAMKnobControl(trebleKnobArea, kToneTreble, "", style, knobBackgroundBitmap), -1, "EQ_KNOBS");
-    pGraphics->AttachControl(new NAMKnobControl(outputKnobArea, kOutputLevel, "", style, knobBackgroundBitmap));
-
-    // The meters
-    pGraphics->AttachControl(new NAMMeterControl(inputMeterArea, meterBackgroundBitmap, style), kCtrlTagInputMeter);
-    pGraphics->AttachControl(new NAMMeterControl(outputMeterArea, meterBackgroundBitmap, style), kCtrlTagOutputMeter);
-
-    // Settings/help/about box
-    pGraphics->AttachControl(new NAMCircleButtonControl(
-      settingsButtonArea,
-      [pGraphics](IControl* pCaller) {
-        pGraphics->GetControlWithTag(kCtrlTagSettingsBox)->As<NAMSettingsPageControl>()->HideAnimated(false);
-      },
-      gearSVG));
-
-    pGraphics
-      ->AttachControl(new NAMSettingsPageControl(b, backgroundBitmap, inputLevelBackgroundBitmap, switchHandleBitmap,
-                                                 crossSVG, style, radioButtonStyle),
-                      kCtrlTagSettingsBox)
-      ->Hide(true);
-
-    const auto slimKnobArea = b.GetCentredInside(100.f, NAM_KNOB_HEIGHT + 24.f);
-    pGraphics->AttachControl(new NAMSlimOverlayBackdropControl(b, hideSlimOverlay), kCtrlTagSlimOverlayBackdrop)
-      ->Hide(true);
-    pGraphics
-      ->AttachControl(new NAMKnobControl(slimKnobArea, kSlim, "Slim", style, knobBackgroundBitmap), kCtrlTagSlimKnob)
-      ->Hide(true);
-
-    pGraphics->ForAllControlsFunc([](IControl* pControl) {
-      pControl->SetMouseEventsWhenDisabled(true);
-      pControl->SetMouseOverWhenDisabled(true);
-    });
-
-    // pGraphics->GetControlWithTag(kCtrlTagOutNorm)->SetMouseEventsWhenDisabled(false);
-    // pGraphics->GetControlWithTag(kCtrlTagCalibrateInput)->SetMouseEventsWhenDisabled(false);
+    // The whole UI is one root that owns everything (header, tabs, body,
+    // knob row, overlays). See ui/ToneRoot.{h,cpp}.
+    pGraphics->AttachControl(new t3k::ui::ToneRoot(pGraphics->GetBounds(), *this));
   };
 }
 

@@ -27,13 +27,18 @@
 #define PLUG_DOES_MPE 0
 #define PLUG_DOES_STATE_CHUNKS 0
 #define PLUG_HAS_UI 1
-#define PLUG_WIDTH 600
-#define PLUG_HEIGHT 400
+// Window bounds mirror t3k::theme::kWindowDefW/H, kWindowMinW/H, kWindowMaxW/H.
+// (Macros live here because iPlug2 reads them at compile-time for the
+// VST3/AAX/AU descriptors before any C++ namespace is in scope.)
+#define PLUG_WIDTH 1100
+#define PLUG_HEIGHT 740
 #define PLUG_FPS 60
 #define PLUG_SHARED_RESOURCES 0
 #define PLUG_HOST_RESIZE 0
-#define PLUG_MAX_WIDTH PLUG_WIDTH * 4
-#define PLUG_MAX_HEIGHT PLUG_HEIGHT * 4
+#define PLUG_MIN_WIDTH 900
+#define PLUG_MIN_HEIGHT 600
+#define PLUG_MAX_WIDTH 1600
+#define PLUG_MAX_HEIGHT 1100
 
 #define AUV2_ENTRY NeuralAmpModeler_Entry
 #define AUV2_ENTRY_STR "NeuralAmpModeler_Entry"
