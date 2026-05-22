@@ -219,13 +219,10 @@
     <ClCompile Include="..\ui\controls\T3kPresetOverlay.cpp">
       <Filter>ui\controls</Filter>
     </ClCompile>
-    <ClCompile Include="..\ui\views\AmpView.cpp">
-      <Filter>ui\views</Filter>
-    </ClCompile>
-    <ClCompile Include="..\ui\views\IRView.cpp">
-      <Filter>ui\views</Filter>
-    </ClCompile>
     <ClCompile Include="..\ui\views\T3kModelInfoPane.cpp">
+      <Filter>ui\views</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ui\views\ToneView.cpp">
       <Filter>ui\views</Filter>
     </ClCompile>
     <ClCompile Include="..\ui\views\CloudView.cpp">
@@ -583,13 +580,10 @@
     <ClInclude Include="..\ui\controls\T3kPresetOverlay.h">
       <Filter>ui\controls</Filter>
     </ClInclude>
-    <ClInclude Include="..\ui\views\AmpView.h">
-      <Filter>ui\views</Filter>
-    </ClInclude>
-    <ClInclude Include="..\ui\views\IRView.h">
-      <Filter>ui\views</Filter>
-    </ClInclude>
     <ClInclude Include="..\ui\views\T3kModelInfoPane.h">
+      <Filter>ui\views</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ui\views\ToneView.h">
       <Filter>ui\views</Filter>
     </ClInclude>
     <ClInclude Include="..\ui\views\CloudView.h">

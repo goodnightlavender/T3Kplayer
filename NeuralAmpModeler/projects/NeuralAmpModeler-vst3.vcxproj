@@ -376,9 +376,8 @@
     <ClInclude Include="..\ui\controls\T3kLooseGlyph.h" />
     <ClInclude Include="..\ui\controls\T3kPresetPill.h" />
     <ClInclude Include="..\ui\controls\T3kPresetOverlay.h" />
-    <ClInclude Include="..\ui\views\AmpView.h" />
-    <ClInclude Include="..\ui\views\IRView.h" />
     <ClInclude Include="..\ui\views\T3kModelInfoPane.h" />
+    <ClInclude Include="..\ui\views\ToneView.h" />
     <ClInclude Include="..\ui\views\CloudView.h" />
     <ClInclude Include="..\ui\views\LibraryView.h" />
     <ClInclude Include="..\ui\views\DownloadsView.h" />
@@ -486,9 +485,8 @@
     <ClCompile Include="..\ui\controls\T3kLooseGlyph.cpp" />
     <ClCompile Include="..\ui\controls\T3kPresetPill.cpp" />
     <ClCompile Include="..\ui\controls\T3kPresetOverlay.cpp" />
-    <ClCompile Include="..\ui\views\AmpView.cpp" />
-    <ClCompile Include="..\ui\views\IRView.cpp" />
     <ClCompile Include="..\ui\views\T3kModelInfoPane.cpp" />
+    <ClCompile Include="..\ui\views\ToneView.cpp" />
     <ClCompile Include="..\ui\views\CloudView.cpp" />
     <ClCompile Include="..\ui\views\LibraryView.cpp" />
     <ClCompile Include="..\ui\views\DownloadsView.cpp" />
