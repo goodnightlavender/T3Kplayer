@@ -1,33 +1,55 @@
-# Neural Amp Modeler Plug-in
+# TONE3000 Player
 
-[![Build](https://github.com/sdatkinson/NeuralAmpModelerPlugin/actions/workflows/build-native.yml/badge.svg)](https://github.com/sdatkinson/NeuralAmpModelerPlugin/actions/workflows/build-native.yml)
+> A modern, TONE3000-integrated fork of [Neural Amp Modeler Plugin](https://github.com/sdatkinson/NeuralAmpModelerPlugin) with in-plug-in browsing, downloading, and library management of TONE3000 community NAM profiles and impulse responses.
 
-A VST3/AudioUnit plug-in\* for [Neural Amp Modeler](https://github.com/sdatkinson/neural-amp-modeler), built with [iPlug2](https://iplug2.github.io).
+**Status:** Pre-release (0.1.0 in development). Windows VST3 only at this stage.
 
-- https://www.youtube.com/user/RunawayThumbtack
-- https://github.com/sdatkinson/neural-amp-modeler
+## What this is
+
+TONE3000 Player is a fork of Steve Atkinson's excellent open-source [Neural Amp Modeler plugin](https://github.com/sdatkinson/NeuralAmpModelerPlugin). The audio engine is unchanged — same NAM inference, same tonestack, same DSP quality. What's new:
+
+- A redesigned UI mirroring [tone3000.com](https://www.tone3000.com)'s visual language.
+- An in-plug-in **Cloud** tab: search, filter, preview, and one-click-download NAM profiles and IRs from TONE3000 without leaving your DAW.
+- A **Library** tab: tag, favorite, and browse your downloaded TONE3000 content with metadata intact.
+- OAuth 2.0 + PKCE sign-in via your system browser; refresh tokens stored securely (Windows DPAPI).
+- All network and disk I/O strictly off the audio thread.
 
 ## Installation
 
-Check the [Releases](https://github.com/sdatkinson/NeuralAmpModelerPlugin/releases) for pre-built installers for the plugin!
+See [`docs/setup/BUILD-WIN.md`](./docs/setup/BUILD-WIN.md) for the verified build runbook. Pre-built installers will land on the [Releases](../../releases) page when 0.1.0 ships.
 
-## Supported Platforms
+## Project layout
 
-The Neural Amp Modeler plugin currently supports Windows 10 (64bit) or later, and macOS 10.15 (Catalina) or later.
+- `NeuralAmpModeler/` — plugin source (upstream's tree, with our additions under `ui/`, `library/`, `cloud/`, `net/`, `settings/`, `tests/` planned across Phases 2–4)
+- `iPlug2/`, `NeuralAmpModelerCore/`, `AudioDSPTools/`, `eigen/` — upstream submodules
+- `docs/setup/` — build runbook and discovered-layout doc
+- `docs/superpowers/specs/` — design specifications (private dev notes)
+- `docs/superpowers/plans/` — implementation plans
 
-For Linux support, there is an LV2 plugin available: https://github.com/mikeoliphant/neural-amp-modeler-lv2.
+## Building from source
 
-## About
+Short version (Windows):
 
-This is a cleaned up version of [the original iPlug2-based NAM plugin](https://github.com/sdatkinson/iPlug2) with some refactoring to adopt better practices recommended by the developers of iPlug2.
-(Thanks [Oli](https://github.com/olilarkin) for your generous suggestions!)
+1. Install Visual Studio 2022 or 2026 Community with the C++ workload + Windows 11 SDK.
+2. Clone with `--recurse-submodules`.
+3. From Git Bash, run `bash iPlug2/Dependencies/IPlug/download-vst3-sdk.sh` once.
+4. Open `NeuralAmpModeler/NeuralAmpModeler.sln` in Visual Studio.
+5. Set Configuration = Release, Platform = x64.
+6. Right-click `NeuralAmpModeler-vst3` → Build.
+7. Copy the resulting `.vst3` bundle to `C:\Program Files\Common Files\VST3\` (admin required).
 
-\*could also support AAX, CLAP, Linux, iOS soon.
+Full instructions: [`docs/setup/BUILD-WIN.md`](./docs/setup/BUILD-WIN.md).
 
-## Rough edges
+## Credits
 
-### Standalone I/O
-The I/O for the standalone doesn't inherit the stability of most plugin hosts (DAWs), so it's a bit sparser on features. For complex routing, the plugin (VST3/AU) inside a plugin host is still the most reliable option.
+This project would not exist without [Steve Atkinson](https://github.com/sdatkinson)'s [Neural Amp Modeler Plugin](https://github.com/sdatkinson/NeuralAmpModelerPlugin), which provides the entire audio engine. Steve's work is released under the MIT License and remains the upstream of this fork. See [`NOTICE`](./NOTICE) for the full list of upstream dependencies and their licenses.
 
-### Graphics backend
-If you're having trouble with NAM crashing before the GUI comes up, then you might have an unsupported graphics configuration. Usually, this is when you have a dedicated graphics card (like an nVIDIA GPU) and you're using the integrated (CPU) graphics on a Windows system. To fix this, Go to the control panel, pick NAM (or your DAW), and make sure that it uses your graphics card. (If you know more and can help fix this, please make an Issue and let me know more!)
+TONE3000 ([tone3000.com](https://www.tone3000.com)) hosts the community library this plug-in browses. TONE3000 is operated independently of this project — this is a third-party client of their public API, not an officially endorsed product.
+
+## License
+
+MIT — see [`LICENSE`](./LICENSE). Inherited from upstream NAM.
+
+## Contributing
+
+Pre-release stage; contribution guidelines will solidify after 0.1.0 ships. For now: file an issue before working on anything substantive.
