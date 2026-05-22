@@ -367,6 +367,7 @@
     <ClInclude Include="..\ui\controls\T3kKnob.h" />
     <ClInclude Include="..\ui\controls\T3kRainbowScrubber.h" />
     <ClInclude Include="..\ui\controls\T3kTabBar.h" />
+    <ClInclude Include="..\ui\controls\T3kAccordion.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\iPlug2\Dependencies\IPlug\VST3_SDK\base\source\baseiids.cpp" />
@@ -460,6 +461,7 @@
     <ClCompile Include="..\ui\controls\T3kKnob.cpp" />
     <ClCompile Include="..\ui\controls\T3kRainbowScrubber.cpp" />
     <ClCompile Include="..\ui\controls\T3kTabBar.cpp" />
+    <ClCompile Include="..\ui\controls\T3kAccordion.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\resources\main.rc" />
