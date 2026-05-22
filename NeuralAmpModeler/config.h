@@ -1,5 +1,5 @@
 #define PLUG_NAME "TONE3000 Player"
-#define PLUG_MFR "TONE3000 Player Contributors"
+#define PLUG_MFR "Kai van Deursen"
 #define PLUG_VERSION_HEX 0x00000100
 #define PLUG_VERSION_STR "0.1.0"
 #define PLUG_UNIQUE_ID 'T3kP'
@@ -9,7 +9,7 @@
 #define PLUG_COPYRIGHT_STR "Copyright 2022 Steven Atkinson"
 #define PLUG_CLASS_NAME NeuralAmpModeler
 #define BUNDLE_NAME "TONE3000Player"
-#define BUNDLE_MFR "TONE3000PlayerContributors"
+#define BUNDLE_MFR "KaivanDeursen"
 #define BUNDLE_DOMAIN "com.tone3000.player"
 
 #define SHARED_RESOURCES_SUBPATH "NeuralAmpModeler"
