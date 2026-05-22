@@ -53,16 +53,12 @@ void T3kKnob::Draw(IGraphics& g)
   const float cx = knobR.MW();
   const float cy = knobR.MH();
 
-  // ── Recessed base: radial gradient (lighter top-left → darker edge). ──
-  const IColor kBaseInner(255, 26, 26, 26);
-  const IColor kBaseOuter(255,  5,  5,  5);
-  const IPattern basePat = IPattern::CreateRadialGradient(
-      cx - r * 0.3f, cy - r * 0.3f, r,
-      { IColorStop(kBaseInner, 0.f), IColorStop(kBaseOuter, 1.f) });
-
-  g.PathClear();
-  g.PathCircle(cx, cy, r);
-  g.PathFill(basePat);
+  // ── Recessed base: flat surface fill. A radial gradient here used to
+  // produce faint diagonal banding bleed-through when multiple knobs sat
+  // side-by-side — the user reported it as "random lines all over the UI".
+  // Solid fill matches the rest of the v6 surface palette and reads as a
+  // recessed dial via the 1px outline below.
+  g.FillCircle(th::kBgSurface, cx, cy, r);
 
   // 1px outline around the base.
   g.DrawCircle(th::kBorder, cx, cy, r, /*pBlend*/ nullptr, /*thickness*/ 1.f);

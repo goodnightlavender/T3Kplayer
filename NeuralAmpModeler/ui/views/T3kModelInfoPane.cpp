@@ -96,25 +96,16 @@ std::string clampToWidth(IGraphics& g, const IText& text,
   return std::string("\xE2\x80\xA6");
 }
 
-// Render the placeholder gradient image. Approximates the v6 mockup's
-// .plg-info-img fallback when no real bitmap is available — iPlug2/NanoVG
-// at this revision doesn't expose linear gradients, so we stack
-// semi-transparent rainbow fills to get a similar atmospheric tint.
+// Render the placeholder image. Solid surface fill + 1px border. The
+// earlier revision stacked translucent rainbow tints on top of each other
+// to approximate a gradient — but those overlapping rects produced visible
+// diagonal banding at the layer boundaries (the user reported it as
+// "random lines"). Phase 2b ships a flat fill; a real bitmap loads on top
+// when one is provided via ModelInfoSnapshot::imagePath.
 void DrawPlaceholderImage(IGraphics& g, const IRECT& r)
 {
   namespace th = ::t3k::theme;
   g.FillRoundRect(th::kBgElevated, r, th::kRadiusLg);
-
-  const IColor b   = IColor(64, th::kRainbowB.R, th::kRainbowB.G, th::kRainbowB.B);
-  const IColor red = IColor(48, th::kRainbowR.R, th::kRainbowR.G, th::kRainbowR.B);
-  const IColor y   = IColor(48, th::kRainbowY.R, th::kRainbowY.G, th::kRainbowY.B);
-
-  g.FillRoundRect(b,   r, th::kRadiusLg);
-  g.FillRoundRect(red, IRECT(r.L + r.W() * 0.25f, r.T + r.H() * 0.25f, r.R, r.B),
-                  th::kRadiusLg);
-  g.FillRoundRect(y,   IRECT(r.L + r.W() * 0.5f,  r.T + r.H() * 0.5f,  r.R, r.B),
-                  th::kRadiusLg);
-
   g.DrawRoundRect(th::kBorder, r, th::kRadiusLg, nullptr, 1.f);
 }
 
