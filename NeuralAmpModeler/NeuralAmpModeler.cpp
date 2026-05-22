@@ -276,7 +276,8 @@ void NeuralAmpModeler::OnIdle()
     {
       // FIXME -- need to disable only the "normalized" model
       // pGraphics->GetControlWithTag(kCtrlTagOutputMode)->SetDisabled(false);
-      static_cast<NAMSettingsPageControl*>(pGraphics->GetControlWithTag(kCtrlTagSettingsBox))->ClearModelInfo();
+      if (auto* pSettingsBox = pGraphics->GetControlWithTag(kCtrlTagSettingsBox))
+        static_cast<NAMSettingsPageControl*>(pSettingsBox)->ClearModelInfo();
       if (auto* p = pGraphics->GetControlWithTag(kCtrlTagSlimmableIcon))
         p->Hide(true);
       if (auto* p = pGraphics->GetControlWithTag(kCtrlTagSlimOverlayBackdrop))
@@ -376,11 +377,17 @@ void NeuralAmpModeler::OnParamChangeUI(int paramIdx, EParamSource source)
 
     switch (paramIdx)
     {
-      case kNoiseGateActive: pGraphics->GetControlWithParamIdx(kNoiseGateThreshold)->SetDisabled(!active); break;
+      case kNoiseGateActive:
+        if (auto* c = pGraphics->GetControlWithParamIdx(kNoiseGateThreshold))
+          c->SetDisabled(!active);
+        break;
       case kEQActive:
         pGraphics->ForControlInGroup("EQ_KNOBS", [active](IControl* pControl) { pControl->SetDisabled(!active); });
         break;
-      case kIRToggle: pGraphics->GetControlWithTag(kCtrlTagIRFileBrowser)->SetDisabled(!active); break;
+      case kIRToggle:
+        if (auto* c = pGraphics->GetControlWithTag(kCtrlTagIRFileBrowser))
+          c->SetDisabled(!active);
+        break;
       default: break;
     }
   }
@@ -787,13 +794,16 @@ void NeuralAmpModeler::_UpdateControlsFromModel()
     modelInfo.outputCalibrationLevel.known = mModel->HasOutputLevel();
     modelInfo.outputCalibrationLevel.value = mModel->HasOutputLevel() ? mModel->GetOutputLevel() : 0.0;
 
-    static_cast<NAMSettingsPageControl*>(pGraphics->GetControlWithTag(kCtrlTagSettingsBox))->SetModelInfo(modelInfo);
+    if (auto* pSettingsBox = pGraphics->GetControlWithTag(kCtrlTagSettingsBox))
+      static_cast<NAMSettingsPageControl*>(pSettingsBox)->SetModelInfo(modelInfo);
 
     const bool disableInputCalibrationControls = !mModel->HasInputLevel();
-    pGraphics->GetControlWithTag(kCtrlTagCalibrateInput)->SetDisabled(disableInputCalibrationControls);
-    pGraphics->GetControlWithTag(kCtrlTagInputCalibrationLevel)->SetDisabled(disableInputCalibrationControls);
-    {
-      auto* c = static_cast<OutputModeControl*>(pGraphics->GetControlWithTag(kCtrlTagOutputMode));
+    if (auto* c = pGraphics->GetControlWithTag(kCtrlTagCalibrateInput))
+      c->SetDisabled(disableInputCalibrationControls);
+    if (auto* c = pGraphics->GetControlWithTag(kCtrlTagInputCalibrationLevel))
+      c->SetDisabled(disableInputCalibrationControls);
+    if (auto* pOutputMode = pGraphics->GetControlWithTag(kCtrlTagOutputMode)) {
+      auto* c = static_cast<OutputModeControl*>(pOutputMode);
       c->SetNormalizedDisable(!mModel->HasLoudness());
       c->SetCalibratedDisable(!mModel->HasOutputLevel());
     }
