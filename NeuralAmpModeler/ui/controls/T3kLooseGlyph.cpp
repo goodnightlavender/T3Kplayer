@@ -2,18 +2,30 @@
 
 #include "T3kLooseGlyph.h"
 
+#include <algorithm>
+
 #include "IGraphics.h"
 
 namespace t3k::ui {
 
 using namespace ::iplug::igraphics;
 
+namespace {
+
+// The SVG ships at #cfcfcf strokes; that's our default state. For the
+// disabled state we paint a translucent black overlay on top of the SVG
+// to fake the dimmer color (iPlug2/NanoVG at this revision doesn't expose
+// stroke-color override on a loaded SVG without rewriting the file).
+constexpr float kIconPad = 2.f;
+
+}  // namespace
+
 T3kLooseGlyph::T3kLooseGlyph(const IRECT& bounds,
-                             const char* glyph,
+                             const char* svgFilename,
                              std::function<void()> onClick,
                              bool disabled)
 : IControl(bounds)
-, mGlyph(glyph ? glyph : "")
+, mSvgFilename(svgFilename ? svgFilename : "")
 , mOnClick(std::move(onClick))
 , mDisabled(disabled)
 {
@@ -30,24 +42,28 @@ void T3kLooseGlyph::Draw(IGraphics& g)
 {
   namespace th = ::t3k::theme;
 
-  // Default → muted. Hover (and not disabled) → bright text. Disabled →
-  // border color (very dim) so the glyph reads as inactive.
-  IColor col;
-  if (mDisabled)
-    col = th::kBorder;
-  else if (mMouseIsOver)
-    col = th::kText;
-  else
-    col = th::kTextMuted;
+  if (mSvgFilename.empty()) return;
 
-  // Slightly larger than body text — these glyphs are pure decoration and
-  // need to read as icons rather than letters.
-  const IText label(th::kTypeH2,
-                    col,
-                    th::kFontBody,
-                    EAlign::Center,
-                    EVAlign::Middle);
-  g.DrawText(label, mGlyph.c_str(), mRECT);
+  if (!mSvg.has_value())
+    mSvg.emplace(g.LoadSVG(mSvgFilename.c_str()));
+
+  // Center the icon in a square sized to the smaller of the bounds. The
+  // header lays this out as ~18×~36 (kLooseW × header padding), so the
+  // square keeps the icon a consistent 14×14 visual weight.
+  const float side = std::min(mRECT.W(), mRECT.H()) - kIconPad * 2.f;
+  const float cx = mRECT.MW();
+  const float cy = mRECT.MH();
+  const IRECT iconR(cx - side * 0.5f, cy - side * 0.5f,
+                    cx + side * 0.5f, cy + side * 0.5f);
+  g.DrawSVG(*mSvg, iconR);
+
+  // Disabled = dim by painting a translucent black rect on top. (Same
+  // limitation T3kSlot's icon faces — no stroke retint without reloading
+  // the SVG with a different fill color string.)
+  if (mDisabled) {
+    const IColor dimOverlay(160, 0, 0, 0);
+    g.FillRect(dimOverlay, mRECT);
+  }
 }
 
 void T3kLooseGlyph::OnMouseDown(float /*x*/, float /*y*/, const IMouseMod& /*mod*/)

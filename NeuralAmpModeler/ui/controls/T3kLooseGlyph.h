@@ -1,16 +1,25 @@
-// T3kLooseGlyph — bare-glyph button used for the loose `↶ ↷` undo/redo
-// icons in the v6 header. Phase 2b, Decision 42.
+// T3kLooseGlyph — bare-icon button used for the loose undo/redo icons in
+// the v6 header. Phase 2b, Decision 42.
 //
-// No background, no border. Just a single Unicode glyph rendered in
-// kTextMuted (default) or kText (hover), with a kBorder color when
-// disabled. Clicking fires onClick unless mDisabled is true.
+// No background, no border. Just a single SVG glyph rendered at the
+// caller-provided bounds. The earlier revision drew Unicode U+21B6 / U+21B7
+// as text in Inter-Regular, but Inter's vendored subset doesn't ship those
+// curved-arrow code points — they rendered as tofu boxes. SVGs solve that
+// (their stroke color is baked into the file at #cfcfcf, which sits between
+// kTextMuted and kText so the default state reads correctly; we don't
+// retint on hover — the SVG path doesn't expose stroke override cleanly in
+// this iPlug2 revision, so hover state is communicated by the cursor
+// changing only). Disabled state dims by drawing the SVG at lower alpha
+// via a translucent rect overlay.
 
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <string>
 
 #include "IControl.h"
+#include "IGraphicsStructs.h"  // for ISVG
 #include "../theme.h"
 
 namespace t3k::ui {
@@ -18,13 +27,14 @@ namespace t3k::ui {
 using ::iplug::igraphics::IControl;
 using ::iplug::igraphics::IGraphics;
 using ::iplug::igraphics::IRECT;
+using ::iplug::igraphics::ISVG;
 using ::iplug::igraphics::IMouseMod;
 
 class T3kLooseGlyph : public IControl
 {
 public:
   T3kLooseGlyph(const IRECT& bounds,
-                const char* glyph,
+                const char* svgFilename,
                 std::function<void()> onClick,
                 bool disabled = false);
 
@@ -37,7 +47,10 @@ public:
   void OnMouseOut() override;
 
 private:
-  std::string mGlyph;
+  std::string mSvgFilename;
+  // ISVG has no default constructor — populated on first Draw, when
+  // IGraphics is guaranteed alive. Same lazy-load pattern as T3kLogo.
+  std::optional<ISVG> mSvg;
   std::function<void()> mOnClick;
   bool mDisabled;
 };

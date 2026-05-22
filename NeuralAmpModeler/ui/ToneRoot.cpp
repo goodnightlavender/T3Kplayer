@@ -7,6 +7,7 @@
 
 #include "theme.h"
 #include "layout.h"
+#include "../config.h"  // ICON_UNDO_FN, ICON_REDO_FN
 
 // Child controls + views.
 #include "controls/T3kLogo.h"
@@ -121,13 +122,16 @@ void ToneRoot::OnAttached()
   mLogo = new T3kLogo(mLogoRect);
   g->AttachControl(mLogo);
 
-  // Loose ↶ / ↷ glyphs. Undo enabled, Redo disabled by default (matches
-  // the v6 mockup state). Phase 2b stubs the click handlers — Phase 3
-  // wires the real undo stack.
-  mUndoGlyph = new T3kLooseGlyph(mUndoRect, "\xE2\x86\xB6",
+  // Loose undo / redo glyphs. Undo enabled, Redo disabled by default
+  // (matches the v6 mockup state). Phase 2b stubs the click handlers —
+  // Phase 3 wires the real undo stack. The earlier revision passed UTF-8
+  // for U+21B6 / U+21B7 here; Inter's vendored subset doesn't include
+  // those code points so they rendered as tofu — see ICON_UNDO_FN /
+  // ICON_REDO_FN SVG icons instead.
+  mUndoGlyph = new T3kLooseGlyph(mUndoRect, ICON_UNDO_FN,
                                  /*onClick*/ []() {},
                                  /*disabled*/ false);
-  mRedoGlyph = new T3kLooseGlyph(mRedoRect, "\xE2\x86\xB7",
+  mRedoGlyph = new T3kLooseGlyph(mRedoRect, ICON_REDO_FN,
                                  /*onClick*/ []() {},
                                  /*disabled*/ true);
   g->AttachControl(mUndoGlyph);

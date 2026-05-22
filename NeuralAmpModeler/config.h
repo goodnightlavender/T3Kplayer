@@ -90,6 +90,13 @@
 #define ICON_OUTBOARD_FN "icon-outboard.svg"
 #define ICON_FULLRIG_FN  "icon-fullrig.svg"
 
+// Header loose-glyph icons (Phase 2b). The earlier revision rendered the
+// undo/redo arrows via Unicode U+21B6 / U+21B7 in Inter-Regular, but Inter's
+// vendored subset doesn't include those glyphs — they rendered as tofu boxes.
+// Replaced with vector SVGs.
+#define ICON_UNDO_FN     "icon-undo.svg"
+#define ICON_REDO_FN     "icon-redo.svg"
+
 #define BACKGROUND_FN "Background.jpg"
 #define BACKGROUND2X_FN "Background@2x.jpg"
 #define BACKGROUND3X_FN "Background@3x.jpg"
