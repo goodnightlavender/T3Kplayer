@@ -81,6 +81,15 @@
 #define SLIMMABLE_ICON_FN "SlimmableIcon.svg"
 #define TONE3000_LOGO_FN "tone3000-logo.svg"
 
+// Gear-type silhouettes used by T3kGearIcon (Phase 2b — spec §4 Decision 47).
+// Loaded via LoadSVG; stroke color is overridden at draw time so the raw file
+// ships with #cfcfcf strokes.
+#define ICON_PEDAL_FN    "icon-pedal.svg"
+#define ICON_AMP_FN      "icon-amp.svg"
+#define ICON_CAB_FN      "icon-cab.svg"
+#define ICON_OUTBOARD_FN "icon-outboard.svg"
+#define ICON_FULLRIG_FN  "icon-fullrig.svg"
+
 #define BACKGROUND_FN "Background.jpg"
 #define BACKGROUND2X_FN "Background@2x.jpg"
 #define BACKGROUND3X_FN "Background@3x.jpg"
