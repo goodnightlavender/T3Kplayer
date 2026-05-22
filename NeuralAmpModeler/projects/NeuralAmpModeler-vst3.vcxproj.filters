@@ -195,6 +195,9 @@
     <ClCompile Include="..\ui\controls\T3kAccordion.cpp">
       <Filter>ui\controls</Filter>
     </ClCompile>
+    <ClCompile Include="..\ui\controls\T3kVScrollList.cpp">
+      <Filter>ui\controls</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="../config.h" />
@@ -509,6 +512,9 @@
       <Filter>ui\controls</Filter>
     </ClInclude>
     <ClInclude Include="..\ui\controls\T3kAccordion.h">
+      <Filter>ui\controls</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ui\controls\T3kVScrollList.h">
       <Filter>ui\controls</Filter>
     </ClInclude>
   </ItemGroup>
