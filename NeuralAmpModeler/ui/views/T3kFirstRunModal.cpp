@@ -112,11 +112,12 @@ void T3kFirstRunModal::Draw(IGraphics& g)
              "We'll scan it now and watch it for new downloads.",
              line2R);
 
-  // Suggested-path line.
+  // Suggested-path line — anchored to the bottom of the two-line body
+  // (line2R is the lower of the pair from the Phase 3 polish split).
   const IRECT pathR(mCardRect.L + th::kS5,
-                    bodyR.B + th::kS3,
+                    line2R.B + th::kS3,
                     mCardRect.R - th::kS5,
-                    bodyR.B + th::kS3 + th::kTypeSmall + 8.f);
+                    line2R.B + th::kS3 + th::kTypeSmall + 8.f);
   g.DrawText(IText(th::kTypeSmall, th::kTextDim, th::kFontBody,
                    EAlign::Center, EVAlign::Middle),
              mSuggestedPath.empty()
