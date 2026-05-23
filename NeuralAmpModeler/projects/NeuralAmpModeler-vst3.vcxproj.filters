@@ -270,6 +270,9 @@
     <ClCompile Include="..\ui\ToneRoot.cpp">
       <Filter>ui</Filter>
     </ClCompile>
+    <ClCompile Include="..\net\UrlEncode.cpp">
+      <Filter>net</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="../config.h" />
@@ -677,6 +680,12 @@
       <Filter>net</Filter>
     </ClInclude>
     <ClInclude Include="..\net\CancellationToken.h">
+      <Filter>net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\net\UrlEncode.h">
+      <Filter>net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\net\Logging.h">
       <Filter>net</Filter>
     </ClInclude>
   </ItemGroup>

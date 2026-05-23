@@ -399,6 +399,8 @@
     <ClInclude Include="..\net\HttpRequest.h" />
     <ClInclude Include="..\net\HttpResponse.h" />
     <ClInclude Include="..\net\CancellationToken.h" />
+    <ClInclude Include="..\net\UrlEncode.h" />
+    <ClInclude Include="..\net\Logging.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\iPlug2\Dependencies\IPlug\VST3_SDK\base\source\baseiids.cpp" />
@@ -526,6 +528,7 @@
     <ClCompile Include="..\ui\views\SettingsView.cpp" />
     <ClCompile Include="..\ui\views\T3kFirstRunModal.cpp" />
     <ClCompile Include="..\ui\ToneRoot.cpp" />
+    <ClCompile Include="..\net\UrlEncode.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\resources\main.rc" />
