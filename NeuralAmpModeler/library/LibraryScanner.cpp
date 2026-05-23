@@ -19,6 +19,7 @@
 #include "EventBus.h"
 #include "LibraryDb.h"
 #include "ModelMeta.h"
+#include "Paths.h"  // for pathToUtf8 — bridges C++20 u8string ABI change
 #include "ModelSidecar.h"
 #include "../settings/Settings.h"
 
@@ -108,10 +109,10 @@ void LibraryScanner::walk(std::string root)
         continue;
       }
       const fs::path& p = de.path();
-      const std::string ext = AsciiLower(p.extension().u8string());
+      const std::string ext = AsciiLower(pathToUtf8(p.extension()));
       if (!IsModelExtension(ext)) continue;
 
-      auto meta = loadSidecarFor(p.u8string());
+      auto meta = loadSidecarFor(pathToUtf8(p));
       if (!meta.has_value()) continue;  // no sidecar → ignore
 
       const int64_t id = LibraryDb::instance().upsertModel(*meta);

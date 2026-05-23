@@ -11,9 +11,27 @@
 
 #pragma once
 
+#include <filesystem>
 #include <string>
 
 namespace t3k::library {
+
+// Convert a std::filesystem::path to a UTF-8 std::string. Bridges a
+// C++17→C++20 ABI change: C++20's `path::u8string()` returns
+// `std::u8string` (a `basic_string<char8_t>`) which doesn't implicitly
+// convert to `std::string`. This helper reinterprets the underlying
+// bytes — safe because both share the same UTF-8 byte layout. Under
+// C++17 the helper just forwards to the historical `path::u8string()`
+// which already returns `std::string`.
+inline std::string pathToUtf8(const std::filesystem::path& p)
+{
+#if defined(__cpp_lib_char8_t)
+  const std::u8string u = p.u8string();
+  return std::string(reinterpret_cast<const char*>(u.data()), u.size());
+#else
+  return p.u8string();
+#endif
+}
 
 namespace Paths {
 

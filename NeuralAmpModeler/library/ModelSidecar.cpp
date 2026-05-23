@@ -18,6 +18,8 @@
 
 #include "nlohmann/json.hpp"
 
+#include "Paths.h"  // for pathToUtf8 — bridges C++20 u8string ABI change
+
 namespace t3k::library {
 
 namespace {
@@ -115,8 +117,8 @@ std::optional<ModelMeta> loadSidecarFor(const std::string& modelPath)
   if (wrap != j.end() && wrap->is_object()) t = &(*wrap);
 
   ModelMeta m;
-  m.uri        = mp.u8string();
-  m.filename   = mp.filename().u8string();
+  m.uri        = pathToUtf8(mp);
+  m.filename   = pathToUtf8(mp.filename());
   m.size_bytes = StatSizeBytes(mp);
   m.mtime      = StatMtimeMs(mp);
 
@@ -128,7 +130,7 @@ std::optional<ModelMeta> loadSidecarFor(const std::string& modelPath)
 
   m.display_name    = GetStr(*t, "tone_name");
   if (m.display_name.empty()) {
-    m.display_name = mp.stem().u8string();
+    m.display_name = pathToUtf8(mp.stem());
   }
   m.t3k_description = GetStr(*t, "description");
   m.t3k_image_url   = GetStr(*t, "image_url");
@@ -158,12 +160,12 @@ std::optional<ModelMeta> loadSidecarFor(const std::string& modelPath)
   if (const std::string imgName = GetStr(*t, "image_filename"); !imgName.empty()) {
     const fs::path imgPath = mp.parent_path() / fs::u8path(imgName);
     if (fs::exists(imgPath, ec) && !ec) {
-      m.t3k_image_path = imgPath.u8string();
+      m.t3k_image_path = pathToUtf8(imgPath);
     }
   }
 
   // Kind from the file extension.
-  const std::string ext = AsciiLower(mp.extension().u8string());
+  const std::string ext = AsciiLower(pathToUtf8(mp.extension()));
   if (ext == ".nam") {
     m.kind = "nam";
   } else if (ext == ".wav" || ext == ".flac" || ext == ".ogg") {
