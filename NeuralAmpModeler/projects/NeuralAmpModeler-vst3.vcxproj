@@ -376,6 +376,7 @@
     <ClInclude Include="..\ui\controls\T3kLooseGlyph.h" />
     <ClInclude Include="..\ui\controls\T3kPresetPill.h" />
     <ClInclude Include="..\ui\controls\T3kPresetOverlay.h" />
+    <ClInclude Include="..\..\Dependencies\sqlite\sqlite3.h" />
     <ClInclude Include="..\ui\views\T3kModelInfoPane.h" />
     <ClInclude Include="..\ui\views\ToneView.h" />
     <ClInclude Include="..\ui\views\CloudView.h" />
@@ -485,6 +486,15 @@
     <ClCompile Include="..\ui\controls\T3kLooseGlyph.cpp" />
     <ClCompile Include="..\ui\controls\T3kPresetPill.cpp" />
     <ClCompile Include="..\ui\controls\T3kPresetOverlay.cpp" />
+    <ClCompile Include="..\..\Dependencies\sqlite\sqlite3.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Tracer|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Tracer|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\ui\views\T3kModelInfoPane.cpp" />
     <ClCompile Include="..\ui\views\ToneView.cpp" />
     <ClCompile Include="..\ui\views\CloudView.cpp" />

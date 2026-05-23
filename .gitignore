@@ -23,3 +23,8 @@ NeuralAmpModeler/build/
 *.vcxproj.user
 iPlug2/Dependencies/IPlug/VST3_SDK/
 iPlug2/Dependencies/Build/
+
+# Vendored SQLite — sqlite3.c / sqlite3.h are checked in, but the zip and
+# the unpacked sqlite-amalgamation-* folder produced by the refresh script
+# (see Dependencies/sqlite/README.md) are not.
+Dependencies/sqlite/sqlite-amalgamation*
