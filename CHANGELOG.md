@@ -28,4 +28,36 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `README.md` replaced with TONE3000 Player-specific content; upstream
   README preserved in git history.
 
+### Added (Phase 3 — Local library subsystem)
+
+- **SQLite-backed `library.db`** under `%LOCALAPPDATA%\TONE3000\`. WAL
+  mode, foreign keys on. Schema lifted verbatim from spec §8.
+- **First-run modal** picks a TONE3000 models folder (default
+  `%USERPROFILE%\Documents\TONE3000\`). `settings.json` persists the
+  choice.
+- **`LibraryScanner`** walks the folder on a background thread;
+  sidecar JSON (`.tone3000.json`) drives metadata. Manual "Rescan"
+  button in the Library tab.
+- **`LibraryView` rewritten** from placeholder to a real
+  `T3kVScrollList` of model rows. Search-as-you-type filters by
+  display name or creator.
+- **Inline rename** via right-click → "Rename". Writes
+  `display_name_override` to the local DB; `display_name` stays
+  TONE3000-canonical. Renames persist across DAW restarts.
+- **Click a library row** → loads the model into the next free
+  pedal slot on the Tone tab.
+- **Preset pill backed by `PresetStore`** — saved rigs round-trip
+  through the `presets` SQLite table. `state_json` schema v2 captures
+  the chain (no per-slot bypass/gain — Decision 44) + 5 tone-knob
+  values.
+
+### Notes
+
+- Filesystem watcher (`ReadDirectoryChangesW`) is deferred — only
+  manual Rescan ships in 0.1.
+- Tags / favorites / recents tables are present in the schema but not
+  surfaced in the UI yet.
+- Image **downloading** lives in Phase 7. Phase 3 only renders images
+  already on disk.
+
 [Unreleased]: https://github.com/goodnightlavender/tone3000-player/compare/main...HEAD
