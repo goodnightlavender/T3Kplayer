@@ -28,6 +28,7 @@
 #include "../theme.h"
 #include "../layout.h"
 #include "../controls/T3kButton.h"
+#include "../controls/T3kRenameOverlay.h"
 #include "../controls/T3kSearchBar.h"
 #include "../controls/T3kVScrollList.h"
 #include "../../library/EventBus.h"
@@ -172,6 +173,21 @@ void LibraryView::OnAttached()
       });
   g->AttachControl(mScrollList);
 
+  // Shared rename overlay — hidden until showRenameOverlay positions it
+  // and Hide(false)s it. Attaching last keeps it on top of the scroll
+  // list in z-order.
+  mRenameOverlay = new T3kRenameOverlay(IRECT(0.f, 0.f, 1.f, 1.f));
+  mRenameOverlay->setOnSave([this](const std::string& newName) {
+    if (mRenameTargetId <= 0) return;
+    ::t3k::library::LibraryDb::instance().setDisplayNameOverride(
+        mRenameTargetId,
+        newName.empty() ? std::optional<std::string>(std::nullopt)
+                        : std::optional<std::string>(newName));
+    mRenameTargetId = 0;
+    refresh();
+  });
+  g->AttachControl(mRenameOverlay);
+
   // Subscribe to scanner events — refresh the list when the scan
   // adds/removes models.
   mBusToken = ::t3k::library::EventBus::instance().subscribe(
@@ -291,12 +307,22 @@ void LibraryView::hideRenameOverlay()
 
 void LibraryView::showRenameOverlay(int64_t modelId)
 {
-  // Task 9 wires the actual T3kRenameOverlay. For now we just stash
-  // the target id — the popup-menu flow is otherwise complete (right-
-  // click → "Rename" lands here). Once Task 9 attaches the overlay,
-  // this method will reposition + Hide(false) it.
   mRenameTargetId = modelId;
-  SetDirty(false);
+  if (!mRenameOverlay || !mScrollList) return;
+
+  const int rowIdx = findRowIndexById(modelId);
+  if (rowIdx < 0) return;
+
+  // Anchor the overlay under the current visible row rect. The hit-test
+  // math in OnMouseDown already approximates the visible row top, so we
+  // reuse the same approximation here.
+  const int first = mScrollList->firstVisibleIndex();
+  if (first < 0 || rowIdx < first) return;
+  const float top = mListRect.T + (rowIdx - first) * kRowH;
+  const IRECT rowRect(mListRect.L, top, mListRect.R, top + kRowH);
+
+  const auto& row = mRows[rowIdx];
+  mRenameOverlay->show(rowRect, row.effectiveDisplayName());
 }
 
 int LibraryView::findRowIndexById(int64_t modelId) const
