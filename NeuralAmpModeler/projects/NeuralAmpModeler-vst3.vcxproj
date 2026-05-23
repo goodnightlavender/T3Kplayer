@@ -407,6 +407,7 @@
     <ClInclude Include="..\net\RateLimiter.h" />
     <ClInclude Include="..\net\ResponseCache.h" />
     <ClInclude Include="..\cloud\Crypto.h" />
+    <ClInclude Include="..\cloud\TokenStore.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\iPlug2\Dependencies\IPlug\VST3_SDK\base\source\baseiids.cpp" />
@@ -541,6 +542,7 @@
     <ClCompile Include="..\net\RateLimiter.cpp" />
     <ClCompile Include="..\net\ResponseCache.cpp" />
     <ClCompile Include="..\cloud\Crypto.cpp" />
+    <ClCompile Include="..\cloud\TokenStore.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\resources\main.rc" />

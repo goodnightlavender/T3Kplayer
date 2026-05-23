@@ -291,6 +291,9 @@
     <ClCompile Include="..\cloud\Crypto.cpp">
       <Filter>cloud</Filter>
     </ClCompile>
+    <ClCompile Include="..\cloud\TokenStore.cpp">
+      <Filter>cloud</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="../config.h" />
@@ -722,6 +725,9 @@
       <Filter>net</Filter>
     </ClInclude>
     <ClInclude Include="..\cloud\Crypto.h">
+      <Filter>cloud</Filter>
+    </ClInclude>
+    <ClInclude Include="..\cloud\TokenStore.h">
       <Filter>cloud</Filter>
     </ClInclude>
   </ItemGroup>
