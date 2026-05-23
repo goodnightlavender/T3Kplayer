@@ -84,4 +84,39 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - No real TONE3000 endpoints are hit this phase. Phase 5 wires the
   OAuth flow; Phase 6 consumes Cloud-tab endpoints.
 
+### Added (Phase 5 — OAuth 2.0 + PKCE + Session)
+
+- **`cloud::OAuthFlow`** — PKCE handshake with SHA-256 code challenge,
+  state nonce validation, and a temporary Winsock2 loopback HTTP
+  listener on `127.0.0.1:53000-53009`. Token exchange piped through
+  the Phase 4 `net::HttpClient`.
+- **`cloud::TokenStore`** — DPAPI-backed refresh-token persistence under
+  `%LOCALAPPDATA%\TONE3000\tokens.dpapi`. `CryptProtectData` with
+  `CRYPTPROTECT_UI_FORBIDDEN`, user-scoped, 16-byte fixed entropy.
+- **`cloud::Session`** — state machine (`SignedOut` / `SigningIn` /
+  `SignedIn` / `Refreshing`). Decrypts saved refresh token on plug-in
+  load and proactively refreshes ~60s before expiry. Publishes events
+  through its own listener registry (modelled on `library::EventBus`).
+- **`cloud::Crypto`** — BCrypt SHA-256, RFC 4648 §5 base64url, and
+  CSPRNG (BCryptGenRandom) helpers; PKCE verifier/challenge + state
+  nonce generators.
+- **Header UI**: blue "Sign in" pill (signed-out) ↔ clickable avatar
+  (signed-in) with a dropdown menu (Settings, Sign out, and a Debug-
+  only "Dev: mock sign in" entry).
+- **Mock sign-in path** — Debug builds expose a `Dev: mock sign in as
+  @testuser` menu entry. Mints a fake session with a synthetic
+  `"MOCK-..."` refresh token so the full UI + DPAPI persistence cycle
+  is testable without a registered TONE3000 OAuth client_id.
+
+### Notes
+
+- `cloud/OAuthConfig.h::kClientId` is `"REPLACE_ME"` by default. Until
+  it's replaced, clicking "Sign in" surfaces a toast directing the user
+  to that file. The mock path still works in Debug builds.
+- The mock refresh token uses a `"MOCK-..."` prefix;
+  `Session::attemptRefresh` detects it and short-circuits without
+  hitting the network.
+- New link libraries: `bcrypt.lib;ws2_32.lib;crypt32.lib;shell32.lib`
+  (added alongside Phase 4's `winhttp.lib` in every `<Link>` block).
+
 [Unreleased]: https://github.com/goodnightlavender/tone3000-player/compare/main...HEAD
