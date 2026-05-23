@@ -396,6 +396,9 @@
     <ClInclude Include="..\ui\views\SettingsView.h" />
     <ClInclude Include="..\ui\views\T3kFirstRunModal.h" />
     <ClInclude Include="..\ui\ToneRoot.h" />
+    <ClInclude Include="..\net\HttpRequest.h" />
+    <ClInclude Include="..\net\HttpResponse.h" />
+    <ClInclude Include="..\net\CancellationToken.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\iPlug2\Dependencies\IPlug\VST3_SDK\base\source\baseiids.cpp" />

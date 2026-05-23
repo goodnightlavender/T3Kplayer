@@ -670,6 +670,15 @@
     <ClInclude Include="..\ui\ToneRoot.h">
       <Filter>ui</Filter>
     </ClInclude>
+    <ClInclude Include="..\net\HttpRequest.h">
+      <Filter>net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\net\HttpResponse.h">
+      <Filter>net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\net\CancellationToken.h">
+      <Filter>net</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="resources">
@@ -767,6 +776,9 @@
     </Filter>
     <Filter Include="settings">
       <UniqueIdentifier>{8b9b2a40-6f1c-4f7d-9f4d-7d8a6c1d4c11}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="net">
+      <UniqueIdentifier>{2e8c4d91-3f7a-4b56-9e2d-1c8f5b6a9d20}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
