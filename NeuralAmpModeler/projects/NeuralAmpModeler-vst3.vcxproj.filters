@@ -273,6 +273,9 @@
     <ClCompile Include="..\net\UrlEncode.cpp">
       <Filter>net</Filter>
     </ClCompile>
+    <ClCompile Include="..\net\WorkerPool.cpp">
+      <Filter>net</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="../config.h" />
@@ -686,6 +689,9 @@
       <Filter>net</Filter>
     </ClInclude>
     <ClInclude Include="..\net\Logging.h">
+      <Filter>net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\net\WorkerPool.h">
       <Filter>net</Filter>
     </ClInclude>
   </ItemGroup>
