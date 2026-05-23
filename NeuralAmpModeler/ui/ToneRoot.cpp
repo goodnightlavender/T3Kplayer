@@ -3,6 +3,7 @@
 #include "ToneRoot.h"
 
 #include <algorithm>
+#include <cctype>
 #include <vector>
 
 #include "theme.h"
@@ -10,11 +11,13 @@
 #include "../config.h"  // ICON_UNDO_FN, ICON_REDO_FN
 
 // Child controls + views.
+#include "controls/T3kAccountMenu.h"
 #include "controls/T3kClickBackdrop.h"
 #include "controls/T3kLogo.h"
 #include "controls/T3kLooseGlyph.h"
 #include "controls/T3kPresetOverlay.h"
 #include "controls/T3kPresetPill.h"
+#include "controls/T3kSignInPill.h"
 #include "controls/T3kTabBar.h"
 #include "views/CloudView.h"
 #include "views/DownloadsView.h"
@@ -23,6 +26,9 @@
 #include "views/T3kFirstRunModal.h"
 #include "views/ToneView.h"
 
+#include "../cloud/OAuthFlow.h"
+#include "../cloud/Session.h"
+#include "../cloud/SessionEvent.h"
 #include "../library/LibraryScanner.h"
 #include "../library/PresetStore.h"
 #include "../library/PresetState.h"
@@ -46,6 +52,10 @@ constexpr float kPresetGap      = 10.f;  // between preset pill and avatar
 constexpr float kPresetOverlayW = 280.f;
 constexpr float kPresetOverlayH = 210.f;
 
+// Phase 5 — account menu sized to comfortably hold the header + 3 rows.
+constexpr float kAccountMenuW = 220.f;
+constexpr float kAccountMenuH = 140.f;
+
 }  // namespace
 
 ToneRoot::ToneRoot(const IRECT& bounds, NeuralAmpModeler& plugin)
@@ -53,6 +63,17 @@ ToneRoot::ToneRoot(const IRECT& bounds, NeuralAmpModeler& plugin)
 {
   // Compute initial sub-rects so OnAttached can size children correctly.
   OnResize();
+}
+
+ToneRoot::~ToneRoot()
+{
+  // Drop our Session subscription so the listener callback can't fire
+  // into a dangling `this` after teardown. Safe to call even if the
+  // subscribe never ran (signature treats id<=0 as no-op).
+  if (mSessionListenerId > 0) {
+    ::t3k::cloud::Session::instance().unsubscribe(mSessionListenerId);
+    mSessionListenerId = 0;
+  }
 }
 
 void ToneRoot::OnResize()
@@ -101,6 +122,22 @@ void ToneRoot::OnResize()
   if (mRedoGlyph)  mRedoGlyph->SetTargetAndDrawRECTs(mRedoRect);
   if (mTabBar)     mTabBar->SetTargetAndDrawRECTs(mTabStripRect);
   if (mPresetPill) mPresetPill->SetTargetAndDrawRECTs(mPresetPillRect);
+  // Sign-in pill occupies the avatar slot when signed-out. It's
+  // narrower than the avatar circle is wide, so we anchor right and
+  // give it a fixed ~80px width.
+  if (mSignInPill) {
+    const float pillW = 84.f;
+    const float pillH = 24.f;
+    const float cx    = mAvatarRect.MW();
+    const float cy    = mAvatarRect.MH();
+    mSignInPill->SetTargetAndDrawRECTs(
+        IRECT(cx - pillW * 0.5f, cy - pillH * 0.5f,
+              cx + pillW * 0.5f, cy + pillH * 0.5f));
+  }
+  if (mAccountMenu) {
+    mAccountMenu->SetTargetAndDrawRECTs(accountMenuRect());
+  }
+  if (mAccountBackdrop) mAccountBackdrop->SetTargetAndDrawRECTs(mRECT);
 
   // ── Body — all three tab views share mBodyRect ─────────────────────
   if (mToneView)    mToneView->SetTargetAndDrawRECTs(mBodyRect);
@@ -224,9 +261,46 @@ void ToneRoot::OnAttached()
   mDownloadsView->Hide(true);
   mSettingsView->Hide(true);
 
+  // ── Phase 5: sign-in pill — created hidden; toggled by session events.
+  // Sized in OnResize() relative to mAvatarRect; gets a 1×1 placeholder
+  // here so iPlug2 has a valid rect at attach time.
+  mSignInPill = new T3kSignInPill(
+      IRECT(0.f, 0.f, 1.f, 1.f),
+      /*onClick*/ [this] {
+        // When OAuth is unconfigured, surface the toast — the user
+        // would otherwise see the browser open and immediately bail
+        // with the SignInFailed event below. Either path lands the
+        // same message; surfacing inline avoids the browser flash
+        // when it's clearly going to fail.
+        if (!::t3k::cloud::OAuthFlow::isConfigured()) {
+          this->setSignInStatus("Configure OAuth client_id in OAuthConfig.h");
+        }
+        // Open the account menu so the user can pick mock-sign-in
+        // (Debug builds) without having to know to click the avatar.
+        this->toggleAccountMenu();
+      });
+  g->AttachControl(mSignInPill);
+  // Initial state pulled from Session below.
+
   // ── Preset overlay — created hidden, must be attached last ────
   attachPresetOverlay(/*startVisible*/ false,
                       /*activeId*/ ::t3k::library::PresetStore::instance().activeId());
+
+  // ── Phase 5: account menu — attached AFTER preset overlay so it
+  //    sits at the top of the z-order (clicking the avatar after the
+  //    preset overlay was just shown still works).
+  attachAccountMenu(/*startVisible*/ false);
+
+  // ── Phase 5: subscribe to Session for state transitions ───────
+  mSignedIn =
+      (::t3k::cloud::Session::instance().state() ==
+       ::t3k::cloud::Session::State::SignedIn);
+  if (mSignInPill) mSignInPill->Hide(mSignedIn);
+  refreshAccountMenuItems();
+  mSessionListenerId = ::t3k::cloud::Session::instance().subscribe(
+      [this](const ::t3k::cloud::SessionEvent& ev) {
+        this->onSessionEvent(ev);
+      });
 
   // ── First-run modal ───────────────────────────────────────────
   // Attached LAST so it sits at the top of the z-order and intercepts
@@ -278,23 +352,68 @@ void ToneRoot::Draw(IGraphics& g)
 
   // The plug-in's panel background is solid black via AttachPanelBackground.
   // We draw the avatar circle + initials here since it has no dedicated
-  // control. (When Phase 5 lands signed-in user state, the avatar may
-  // become a T3kButton.)
-  const IRECT& a = mAvatarRect;
-  const float cx = a.MW();
-  const float cy = a.MH();
-  const float r  = std::min(a.W(), a.H()) * 0.5f - 2.f;
+  // control. The avatar is hidden in the signed-out state — the
+  // T3kSignInPill child takes its slot instead.
+  if (mSignedIn) {
+    const IRECT& a = mAvatarRect;
+    const float cx = a.MW();
+    const float cy = a.MH();
+    const float r  = std::min(a.W(), a.H()) * 0.5f - 2.f;
 
-  g.FillCircle(th::kBgSurface, cx, cy, r);
-  g.DrawCircle(th::kBorder, cx, cy, r, nullptr, 1.f);
-  g.DrawText(IText(th::kTypeSmall, th::kTextMuted,
-                   th::kFontBodyMed, EAlign::Center, EVAlign::Middle),
-             "KV",
-             IRECT(cx - r, cy - r, cx + r, cy + r));
+    g.FillCircle(th::kBgSurface, cx, cy, r);
+    g.DrawCircle(th::kBorder, cx, cy, r, nullptr, 1.f);
+
+    // Initials — first char of username (uppercased) when known.
+    // Defaults to "T" for the @testuser mock + the unknown-username
+    // signed-in state.
+    std::string initials = "T";
+    if (auto u = ::t3k::cloud::Session::instance().currentUser();
+        u.has_value() && !u->username.empty()) {
+      initials = std::string(1, static_cast<char>(std::toupper(
+          static_cast<unsigned char>(u->username[0]))));
+    }
+    g.DrawText(IText(th::kTypeSmall, th::kText,
+                     th::kFontBodyBold, EAlign::Center, EVAlign::Middle),
+               initials.c_str(),
+               IRECT(cx - r, cy - r, cx + r, cy + r));
+  }
 
   // 1px separator below the header row.
   g.FillRect(th::kBorder,
              IRECT(mRECT.L, mHeaderRect.B - 1.f, mRECT.R, mHeaderRect.B));
+
+  // ── Phase 5 sign-in status line ────────────────────────────────
+  // Drawn just below the header divider, centered. Auto-clears when
+  // expiry passes.
+  std::string status;
+  {
+    std::lock_guard<std::mutex> lk(mSignInStatusMtx);
+    if (!mSignInStatus.empty()) {
+      if (std::chrono::steady_clock::now() < mSignInStatusExpiry) {
+        status = mSignInStatus;
+      } else {
+        mSignInStatus.clear();
+      }
+    }
+  }
+  if (!status.empty()) {
+    const IRECT toastR(mRECT.L, mHeaderRect.B + 4.f,
+                       mRECT.R, mHeaderRect.B + 22.f);
+    g.DrawText(IText(th::kTypeSmall, th::kTextMuted,
+                     th::kFontBody, EAlign::Center, EVAlign::Middle),
+               status.c_str(), toastR);
+  }
+}
+
+void ToneRoot::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
+{
+  // Avatar circle is drawn directly by ToneRoot — no child control
+  // intercepts the click. Route avatar hits to the account menu when
+  // we're signed-in. (Signed-out state uses the sign-in pill, which
+  // IS a child IControl and handles its own clicks.)
+  if (mSignedIn && mAvatarRect.Contains(x, y)) {
+    toggleAccountMenu();
+  }
 }
 
 void ToneRoot::switchTab(Tab tab)
@@ -500,6 +619,149 @@ void ToneRoot::recreatePresetOverlayOnTop()
   g->RemoveControl(mPresetOverlay);
   mPresetOverlay = nullptr;
   attachPresetOverlay(/*startVisible*/ wasVisible, activeId);
+}
+
+// ── Phase 5: account-menu wiring ────────────────────────────────
+
+IRECT ToneRoot::accountMenuRect() const
+{
+  // Anchored right-aligned beneath the avatar/pill rect (same pattern
+  // as the preset overlay anchors beneath the preset pill).
+  const float top  = mAvatarRect.B + t3k::theme::kS2;
+  const float left = mAvatarRect.R - kAccountMenuW;
+  return IRECT(left, top, left + kAccountMenuW, top + kAccountMenuH);
+}
+
+void ToneRoot::attachAccountMenu(bool startVisible)
+{
+  IGraphics* g = GetUI();
+  if (!g) return;
+
+  // Backdrop FIRST so the menu z-orders above it.
+  mAccountBackdrop = new T3kClickBackdrop(mRECT,
+      /*onClick*/ [this] {
+        if (mAccountMenu && !mAccountMenu->IsHidden()) {
+          toggleAccountMenu();
+        }
+      });
+  g->AttachControl(mAccountBackdrop);
+  mAccountBackdrop->Hide(!startVisible);
+
+  mAccountMenu = new T3kAccountMenu(accountMenuRect());
+  mAccountMenu->onSettings = [this]() {
+    // Phase 5 stub — Settings panel comes online in Phase 9.
+    this->setSignInStatus("Settings panel: TODO (Phase 9)");
+    if (mAccountMenu && !mAccountMenu->IsHidden()) toggleAccountMenu();
+  };
+  mAccountMenu->onMockSignIn = [this]() {
+    ::t3k::cloud::Session::instance().mockSignIn();
+    if (mAccountMenu && !mAccountMenu->IsHidden()) toggleAccountMenu();
+  };
+  mAccountMenu->onSignOut = [this]() {
+    ::t3k::cloud::Session::instance().signOut();
+    if (mAccountMenu && !mAccountMenu->IsHidden()) toggleAccountMenu();
+  };
+  g->AttachControl(mAccountMenu);
+  mAccountMenu->Hide(!startVisible);
+  refreshAccountMenuItems();
+}
+
+void ToneRoot::recreateAccountMenuOnTop()
+{
+  IGraphics* g = GetUI();
+  if (!g || !mAccountMenu) return;
+
+  const bool wasVisible = !mAccountMenu->IsHidden();
+  if (mAccountBackdrop) {
+    g->RemoveControl(mAccountBackdrop);
+    mAccountBackdrop = nullptr;
+  }
+  g->RemoveControl(mAccountMenu);
+  mAccountMenu = nullptr;
+  attachAccountMenu(/*startVisible*/ wasVisible);
+}
+
+void ToneRoot::toggleAccountMenu()
+{
+  if (!mAccountMenu) return;
+  const bool willShow = mAccountMenu->IsHidden();
+  if (willShow) {
+    // Push backdrop+menu to the top of the z-order so they draw above
+    // any strip tiles re-attached by ToneView::rebuildStrip().
+    recreateAccountMenuOnTop();
+    refreshAccountMenuItems();
+  }
+  if (mAccountBackdrop) mAccountBackdrop->Hide(!willShow);
+  if (mAccountMenu)     mAccountMenu->Hide(!willShow);
+  SetDirty(false);
+}
+
+void ToneRoot::refreshAccountMenuItems()
+{
+  if (!mAccountMenu) return;
+  AccountMenuItems items;
+  const bool signedIn =
+      (::t3k::cloud::Session::instance().state() ==
+       ::t3k::cloud::Session::State::SignedIn);
+
+#ifdef _DEBUG
+  // Mock sign-in visible only when signed-out (in Debug builds).
+  items.showMockSignIn = !signedIn;
+#else
+  items.showMockSignIn = false;
+#endif
+  items.showSignOut    = signedIn;
+  if (signedIn) {
+    if (auto u = ::t3k::cloud::Session::instance().currentUser();
+        u.has_value()) {
+      items.activeUsername = u->username;
+    }
+  }
+  mAccountMenu->setItems(items);
+}
+
+void ToneRoot::onSessionEvent(const ::t3k::cloud::SessionEvent& ev)
+{
+  using K = ::t3k::cloud::SessionEvent::Kind;
+  switch (ev.kind) {
+    case K::SignInStarted:
+      // No-op for Phase 5 UI — the browser is already up; the user
+      // doesn't need a spinner.
+      break;
+    case K::SignedIn:
+      mSignedIn = true;
+      if (mSignInPill) mSignInPill->Hide(true);
+      refreshAccountMenuItems();
+      SetDirty(false);
+      break;
+    case K::SignedOut:
+    case K::SessionExpired:
+      mSignedIn = false;
+      if (mSignInPill) mSignInPill->Hide(false);
+      refreshAccountMenuItems();
+      SetDirty(false);
+      break;
+    case K::SignInFailed:
+      // Toast the error so the user knows why the browser didn't lead
+      // anywhere (the most common case is "OAuth client_id not
+      // configured" which only happens to fork operators who haven't
+      // set up their app yet).
+      setSignInStatus(ev.error_message.empty()
+                          ? std::string("Sign-in failed")
+                          : "Sign-in: " + ev.error_message);
+      break;
+  }
+}
+
+void ToneRoot::setSignInStatus(const std::string& msg, int durationMs)
+{
+  std::lock_guard<std::mutex> lk(mSignInStatusMtx);
+  mSignInStatus = msg;
+  mSignInStatusExpiry = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(durationMs);
+  // SetDirty(false) — safe to call from any thread per iPlug2's
+  // tolerance for the dirty flag. The next paint cycle picks it up.
+  SetDirty(false);
 }
 
 }  // namespace t3k::ui

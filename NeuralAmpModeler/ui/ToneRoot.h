@@ -16,13 +16,18 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
+#include <mutex>
+#include <string>
 
 #include "IControl.h"
 #include "IGraphics.h"
 
 // Forward-declare upstream plug-in to avoid pulling its full header chain in.
 class NeuralAmpModeler;
+
+namespace t3k::cloud { struct SessionEvent; }
 
 namespace t3k::ui {
 
@@ -35,6 +40,8 @@ class T3kPresetPill;
 class T3kPresetOverlay;
 class T3kClickBackdrop;
 class T3kFirstRunModal;
+class T3kSignInPill;
+class T3kAccountMenu;
 class ToneView;
 class CloudView;
 class LibraryView;
@@ -47,6 +54,7 @@ public:
   enum class Tab { Tone = 0, Library, Cloud, kCount };
 
   ToneRoot(const iplug::igraphics::IRECT& bounds, NeuralAmpModeler& plugin);
+  ~ToneRoot() override;
 
   // IControl overrides.
   void Draw(iplug::igraphics::IGraphics& g) override;
@@ -57,10 +65,15 @@ public:
   // OnTextEntryCompletion fires on the control that initiated the
   // entry — here that's us).
   void OnTextEntryCompletion(const char* str, int valIdx) override;
+  // Avatar circle is drawn directly by ToneRoot (not a child IControl)
+  // so we intercept clicks here. Routes avatar-rect clicks to the
+  // account-menu toggle.
+  void OnMouseDown(float x, float y, const iplug::igraphics::IMouseMod& mod) override;
 
   // Tab + overlay control.
   void switchTab(Tab tab);
   void togglePresetOverlay();
+  void toggleAccountMenu();
 
 private:
   // Layout helpers — computed in OnResize, used in OnAttached to size children.
@@ -79,11 +92,16 @@ private:
   NeuralAmpModeler& mPlugin;
 
   // Header children (owned by IGraphics after AttachControl).
-  T3kLogo*        mLogo       = nullptr;
-  T3kLooseGlyph*  mUndoGlyph  = nullptr;
-  T3kLooseGlyph*  mRedoGlyph  = nullptr;
-  T3kTabBar*      mTabBar     = nullptr;
-  T3kPresetPill*  mPresetPill = nullptr;
+  T3kLogo*         mLogo        = nullptr;
+  T3kLooseGlyph*   mUndoGlyph   = nullptr;
+  T3kLooseGlyph*   mRedoGlyph   = nullptr;
+  T3kTabBar*       mTabBar      = nullptr;
+  T3kPresetPill*   mPresetPill  = nullptr;
+  // Phase 5 auth surface — pill OR avatar shows depending on Session
+  // state; the account menu drops under the avatar/pill when clicked.
+  T3kSignInPill*   mSignInPill  = nullptr;
+  T3kAccountMenu*  mAccountMenu = nullptr;
+  T3kClickBackdrop* mAccountBackdrop = nullptr;
 
   // Tab body views — all created once, visibility toggled by switchTab.
   ToneView*    mToneView    = nullptr;
@@ -108,6 +126,21 @@ private:
   T3kFirstRunModal* mFirstRunModal = nullptr;
 
   Tab mActiveTab = Tab::Tone;
+
+  // Phase 5 auth-surface state.
+  // - mSessionListenerId: subscription token returned by cloud::Session;
+  //   unsubscribed in the dtor.
+  // - mSignedIn: cached Session state so Draw() can swap pill/avatar
+  //   without taking the Session mutex on every paint.
+  // - mSignInStatus: transient toast-style line drawn under the
+  //   header (e.g. "Sign in: OAuth client_id not configured"). Auto-
+  //   clears after `mSignInStatusExpiry` passes. Written from the
+  //   OAuth worker thread; read on the GUI thread under the mutex.
+  int                                  mSessionListenerId = 0;
+  bool                                 mSignedIn          = false;
+  mutable std::mutex                   mSignInStatusMtx;
+  std::string                          mSignInStatus;
+  std::chrono::steady_clock::time_point mSignInStatusExpiry;
 
   // Hide all three body views (used during tab switching).
   void hideAllBodies();
@@ -134,6 +167,24 @@ private:
   // pushes new strip tiles onto the control list — iPlug2 doesn't expose
   // a "move to front" or "detach without delete" path at this revision.
   void recreatePresetOverlayOnTop();
+
+  // ── Phase 5 helpers ───────────────────────────────────────────
+  // Build the account menu + backdrop. Called from OnAttached, and
+  // again from recreateAccountMenuOnTop to keep the overlay at the
+  // top of the z-order (same pattern as the preset overlay).
+  void attachAccountMenu(bool startVisible);
+  void recreateAccountMenuOnTop();
+  // Listen for cloud::Session state transitions and flip pill/avatar
+  // visibility + repopulate the account-menu items.
+  void onSessionEvent(const ::t3k::cloud::SessionEvent& ev);
+  // Refresh the menu's items based on the current Session state.
+  // Mock sign-in is gated behind `#ifdef _DEBUG` inside this helper.
+  void refreshAccountMenuItems();
+  // Compute the on-screen rect under the avatar where the menu lands.
+  iplug::igraphics::IRECT accountMenuRect() const;
+  // Toast surfacing — store + auto-expire a 4-second status line
+  // under the header. Thread-safe.
+  void setSignInStatus(const std::string& msg, int durationMs = 4000);
 };
 
 }  // namespace t3k::ui
