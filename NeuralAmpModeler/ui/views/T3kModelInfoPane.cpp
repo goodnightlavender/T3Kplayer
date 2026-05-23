@@ -225,7 +225,10 @@ void T3kModelInfoPane::Draw(IGraphics& g)
       const float w = m.W() + kChipPadH * 2.f;
       const IRECT chip(cx, chipRowRect.T, cx + w, chipRowRect.T + kChipH);
       if (chip.R > col.R) break;  // out of horizontal space
-      g.DrawRoundRect(th::kBorder, chip, th::kRadiusPill, nullptr, 1.f);
+      // kRadiusPill (999) on an 18px-tall chip produces visible NanoVG
+      // stroke artifacts where the corner-arcs collide. Use half the
+      // chip height for a clean semicircle.
+      g.DrawRoundRect(th::kBorder, chip, kChipH * 0.5f, nullptr, 1.f);
       g.DrawText(chipText, tag.c_str(), chip);
       cx += w + kChipGap;
     }

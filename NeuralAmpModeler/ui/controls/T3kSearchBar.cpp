@@ -71,11 +71,15 @@ void T3kSearchBar::OnMouseDown(float /*x*/, float /*y*/, const IMouseMod& /*mod*
 
   // Open iPlug2's platform text-entry overlay positioned over the editable area.
   const IRECT entryRect(mRECT.L + 32.f, mRECT.T, mRECT.R - th::kS3, mRECT.B);
-  const IText entryText(th::kTypeBody,
-                        th::kText,
-                        th::kFontBody,
-                        EAlign::Near,
-                        EVAlign::Middle);
+  // IText defaults to white text-entry background — that flashes the
+  // search bar white the moment the user clicks it. Override with the
+  // surface tokens so the entry stays dark and blends into the pill.
+  const IText entryText = IText(th::kTypeBody,
+                                th::kText,
+                                th::kFontBody,
+                                EAlign::Near,
+                                EVAlign::Middle)
+                              .WithTEColors(th::kBgSurface, th::kText);
 
   // FIXME(t3k): iPlug2's CreateTextEntry commits on Enter / focus-loss only —
   // per-keystroke onChanged is not supported through this path. The current

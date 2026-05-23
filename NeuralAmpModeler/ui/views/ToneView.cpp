@@ -151,6 +151,22 @@ void ToneView::Draw(IGraphics& g)
              IRECT(mRECT.L, mKnobRect.T - 1.f, mRECT.R, mKnobRect.T));
 }
 
+void ToneView::Hide(bool hide)
+{
+  IControl::Hide(hide);
+  // iPlug2 attaches all controls flat — hiding this view does NOT
+  // auto-propagate. Cascade to every child so the slot strip / info
+  // pane / knob row don't leak onto Library or Cloud tabs.
+  for (T3kSlot* s : mSlots) if (s) s->Hide(hide);
+  if (mAddTile)    mAddTile   ->Hide(hide);
+  if (mInfoPane)   mInfoPane  ->Hide(hide);
+  if (mKnobIn)     mKnobIn    ->Hide(hide);
+  if (mKnobBass)   mKnobBass  ->Hide(hide);
+  if (mKnobMid)    mKnobMid   ->Hide(hide);
+  if (mKnobTreble) mKnobTreble->Hide(hide);
+  if (mKnobOut)    mKnobOut   ->Hide(hide);
+}
+
 void ToneView::clearStripChildren()
 {
   IGraphics* g = GetUI();

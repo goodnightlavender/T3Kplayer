@@ -356,8 +356,10 @@ void ToneRoot::attachPresetOverlay(bool startVisible, int64_t activeId)
     // OnTextEntryCompletion, which routes to a fresh saveAs.
     if (auto* ui = GetUI()) {
       namespace th = ::t3k::theme;
-      const IText t(th::kTypeBody, th::kText, th::kFontBody,
-                    EAlign::Near, EVAlign::Middle);
+      // Dark text-entry bg/fg so the system field doesn't flash white.
+      const IText t = IText(th::kTypeBody, th::kText, th::kFontBody,
+                            EAlign::Near, EVAlign::Middle)
+                          .WithTEColors(th::kBgSurface, th::kText);
       // Anchor the prompt over the overlay center so it has a known
       // location regardless of overlay size.
       const IRECT prompt(mPresetPillRect.L,

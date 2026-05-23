@@ -94,12 +94,20 @@ void T3kPresetPill::Draw(IGraphics& g)
   const std::string clamped = ClampName(g, nameText, mActiveName, textRect.W());
   g.DrawText(nameText, clamped.c_str(), textRect);
 
-  const IText chev(th::kTypeLabel,
-                   th::kTextMuted,
-                   th::kFontBody,
-                   EAlign::Center,
-                   EVAlign::Middle);
-  g.DrawText(chev, "\xE2\x96\xBE", chevRect);  // U+25BE "▾"
+  // Inter doesn't ship the U+25BE "▾" glyph in the subset we bundle, so
+  // text-rendering it produces a tofu box. Draw the chevron as a small
+  // downward-pointing FillTriangle instead — same visual, no font dep.
+  {
+    const float cx = chevRect.MW();
+    const float cy = chevRect.MH();
+    const float halfW = 4.f;  // 8px wide
+    const float halfH = 2.5f; // 5px tall
+    g.FillTriangle(th::kTextMuted,
+                   cx - halfW, cy - halfH,
+                   cx + halfW, cy - halfH,
+                   cx,         cy + halfH,
+                   nullptr);
+  }
 }
 
 void T3kPresetPill::OnMouseDown(float /*x*/, float /*y*/, const IMouseMod& /*mod*/)

@@ -45,6 +45,11 @@ public:
   void OnResize() override;
   void OnAttached() override;
 
+  // iPlug2 attaches all controls flat — a hidden view does NOT propagate
+  // to its children. Override Hide to manually propagate so tab-switches
+  // don't leak the slot strip / info pane / knobs onto Library or Cloud.
+  void Hide(bool hide) override;
+
   // Fired immediately after rebuildStrip() reattaches the strip tiles to
   // IGraphics. Lets the parent (ToneRoot) re-promote any control that
   // needs to stay above the strip in z-order (the preset overlay, in

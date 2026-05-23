@@ -54,8 +54,11 @@ void T3kRenameOverlay::openTextEntry()
                         mRECT.T + kEntryPad + kLabelH + 4.f,
                         mRECT.R - kEntryPad,
                         mRECT.B - kEntryPad);
-  const IText entryText(th::kTypeBody, th::kText, th::kFontBody,
-                        EAlign::Near, EVAlign::Middle);
+  // Override the text-entry bg/fg so the system field doesn't flash
+  // white over our dark surface (same treatment as T3kSearchBar).
+  const IText entryText = IText(th::kTypeBody, th::kText, th::kFontBody,
+                                EAlign::Near, EVAlign::Middle)
+                              .WithTEColors(th::kBgSurface, th::kText);
   g->CreateTextEntry(*this, entryText, entryRect, mValue.c_str());
 }
 

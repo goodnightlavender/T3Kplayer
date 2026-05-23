@@ -94,16 +94,23 @@ void T3kFirstRunModal::Draw(IGraphics& g)
              "Welcome to TONE3000 Player",
              titleR);
 
-  // Body copy.
-  const IRECT bodyR(mCardRect.L + th::kS5,
-                    titleR.B + th::kS3,
-                    mCardRect.R - th::kS5,
-                    titleR.B + th::kS3 + 60.f);
-  g.DrawText(IText(th::kTypeBody, th::kTextMuted, th::kFontBody,
-                   EAlign::Center, EVAlign::Top),
-             "Pick the folder where you keep your TONE3000 models.\n"
+  // Body copy. iPlug2's NanoVG DrawText doesn't interpret '\n' as a line
+  // break (renders it as a tofu glyph), so we draw the two lines into
+  // separate stacked rects.
+  const float kLineH = th::kTypeBody + 8.f;
+  const IRECT line1R(mCardRect.L + th::kS5,
+                     titleR.B + th::kS3,
+                     mCardRect.R - th::kS5,
+                     titleR.B + th::kS3 + kLineH);
+  const IRECT line2R(line1R.L, line1R.B, line1R.R, line1R.B + kLineH);
+  const IText body(th::kTypeBody, th::kTextMuted, th::kFontBody,
+                   EAlign::Center, EVAlign::Middle);
+  g.DrawText(body,
+             "Pick the folder where you keep your TONE3000 models.",
+             line1R);
+  g.DrawText(body,
              "We'll scan it now and watch it for new downloads.",
-             bodyR);
+             line2R);
 
   // Suggested-path line.
   const IRECT pathR(mCardRect.L + th::kS5,

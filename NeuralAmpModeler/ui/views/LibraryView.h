@@ -49,6 +49,11 @@ class LibraryView : public iplug::igraphics::IControl {
   void OnPopupMenuSelection(iplug::igraphics::IPopupMenu* pSelectedMenu,
                             int valIdx) override;
 
+  // iPlug2 attaches all controls flat — a hidden view does NOT propagate
+  // to its children. Override Hide to manually propagate so tab-switches
+  // don't leak this view's child controls onto the active tab.
+  void Hide(bool hide) override;
+
   ~LibraryView() override;
 
  private:

@@ -239,11 +239,14 @@ void T3kPresetOverlay::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
   // Search field → open text entry.
   if (searchRect().Contains(x, y)) {
     if (auto* ui = GetUI()) {
-      const IText entryText(th::kTypeSmall,
-                            th::kText,
-                            th::kFontBody,
-                            EAlign::Near,
-                            EVAlign::Middle);
+      // Override the text-entry bg/fg so the system field doesn't flash
+      // white over our dark overlay surface.
+      const IText entryText = IText(th::kTypeSmall,
+                                    th::kText,
+                                    th::kFontBody,
+                                    EAlign::Near,
+                                    EVAlign::Middle)
+                                  .WithTEColors(th::kBgSurface, th::kText);
       const IRECT sr = searchRect();
       ui->CreateTextEntry(*this, entryText,
                           IRECT(sr.L + kSearchPadL, sr.T, sr.R - 8.f, sr.B),

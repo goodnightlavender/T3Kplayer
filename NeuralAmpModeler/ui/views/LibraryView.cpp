@@ -93,6 +93,18 @@ LibraryView::~LibraryView()
   }
 }
 
+void LibraryView::Hide(bool hide)
+{
+  IControl::Hide(hide);
+  // iPlug2 attaches all controls flat — hiding this view does NOT
+  // auto-propagate. Cascade to each child so the Library chrome doesn't
+  // leak onto the Tone tab when the user switches away.
+  if (mSearchBar)     mSearchBar->Hide(hide);
+  if (mRescanBtn)     mRescanBtn->Hide(hide);
+  if (mScrollList)    mScrollList->Hide(hide);
+  if (mRenameOverlay) mRenameOverlay->Hide(hide);
+}
+
 void LibraryView::OnResize()
 {
   // Header row at the top, list fills the rest.

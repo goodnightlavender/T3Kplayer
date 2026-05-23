@@ -111,8 +111,12 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
   };
 
   mLayoutFunc = [&](IGraphics* pGraphics) {
-    // Global IGraphics config — preserved from upstream.
-    pGraphics->AttachCornerResizer(EUIResizerMode::Scale, false);
+    // Global IGraphics config.
+    // Note: AttachCornerResizer was removed in Phase 3 polish — its
+    // EUIResizerMode::Scale handle drew faint diagonal stripes across
+    // the entire window (the "lines all over the UI" the user reported).
+    // Window resize via the corner isn't a 0.1 priority; users can resize
+    // via the host DAW's plug-in window chrome.
     pGraphics->AttachTextEntryControl();   // needed by T3kSearchBar
     pGraphics->EnableMouseOver(true);
     pGraphics->EnableTooltips(true);
