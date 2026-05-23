@@ -279,6 +279,9 @@
     <ClCompile Include="..\net\HttpClient.cpp">
       <Filter>net</Filter>
     </ClCompile>
+    <ClCompile Include="..\net\RateLimiter.cpp">
+      <Filter>net</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="../config.h" />
@@ -698,6 +701,9 @@
       <Filter>net</Filter>
     </ClInclude>
     <ClInclude Include="..\net\HttpClient.h">
+      <Filter>net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\net\RateLimiter.h">
       <Filter>net</Filter>
     </ClInclude>
   </ItemGroup>

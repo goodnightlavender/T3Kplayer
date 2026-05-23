@@ -37,6 +37,7 @@
 #include <vector>
 
 #include "Logging.h"
+#include "RateLimiter.h"
 #include "WorkerPool.h"
 
 namespace t3k::net {
@@ -394,6 +395,8 @@ HttpClient& HttpClient::instance()
 
 HttpClient::HttpClient()
 : mPool(std::make_unique<WorkerPool>())
+, mLimiter(std::make_unique<RateLimiter>(/*capacity*/ 100,
+                                         /*refillsPerMinute*/ 100))
 {
   // Touch the WinHTTP session early so the first send() doesn't pay
   // the open-session latency on the worker thread.
@@ -415,12 +418,19 @@ CancellationToken HttpClient::send(HttpRequest req, Completion onDone)
   T3K_NET_LOG("debug", "send: %s",
               reqCopy.url.empty() ? "(empty url)" : reqCopy.url.c_str());
 
+  RateLimiter* limiter = mLimiter.get();
   const bool queued = mPool->submit(
-      [reqCopy = std::move(reqCopy), workerToken, done = std::move(done)]() {
+      [reqCopy = std::move(reqCopy), workerToken,
+       done = std::move(done), limiter]() {
         HttpResponse res;
         if (workerToken.isCanceled()) {
           res.canceled = true;
           res.error_message = "canceled before dispatch";
+        } else if (limiter && !limiter->acquire(workerToken)) {
+          // acquire() returned false → cancellation fired while we
+          // were blocked waiting for a token.
+          res.canceled = true;
+          res.error_message = "canceled while waiting on rate limiter";
         } else {
           IssueRequest(reqCopy, res, workerToken);
         }

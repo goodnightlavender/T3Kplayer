@@ -30,6 +30,7 @@
 namespace t3k::net {
 
 class WorkerPool;
+class RateLimiter;
 
 class HttpClient {
  public:
@@ -54,7 +55,8 @@ class HttpClient {
   HttpClient(const HttpClient&) = delete;
   HttpClient& operator=(const HttpClient&) = delete;
 
-  std::unique_ptr<WorkerPool> mPool;
+  std::unique_ptr<WorkerPool>  mPool;
+  std::unique_ptr<RateLimiter> mLimiter;
 };
 
 }  // namespace t3k::net
