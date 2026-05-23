@@ -33,6 +33,7 @@ class T3kTabBar;
 class T3kLooseGlyph;
 class T3kPresetPill;
 class T3kPresetOverlay;
+class T3kFirstRunModal;
 class ToneView;
 class CloudView;
 class LibraryView;
@@ -95,6 +96,12 @@ private:
   T3kPresetOverlay* mPresetOverlay = nullptr;
   DownloadsView*    mDownloadsView = nullptr;
   SettingsView*     mSettingsView  = nullptr;
+  // First-run modal — attached only when settings.tone3000_root is
+  // empty; hidden + ignored otherwise. Attached BEFORE everything else
+  // so it lives at the top of the z-order and intercepts clicks
+  // (Decision: keep the dim layer above the tab body until the user
+  // picks a folder).
+  T3kFirstRunModal* mFirstRunModal = nullptr;
 
   Tab mActiveTab = Tab::Tone;
 

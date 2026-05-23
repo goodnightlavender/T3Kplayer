@@ -19,10 +19,13 @@
 #include "views/DownloadsView.h"
 #include "views/LibraryView.h"
 #include "views/SettingsView.h"
+#include "views/T3kFirstRunModal.h"
 #include "views/ToneView.h"
 
+#include "../library/LibraryScanner.h"
 #include "../library/PresetStore.h"
 #include "../library/PresetState.h"
+#include "../settings/Settings.h"
 
 namespace t3k::ui {
 
@@ -114,6 +117,9 @@ void ToneRoot::OnResize()
   // Legacy overlays — hidden; bounded to avoid 0-sized rects.
   if (mDownloadsView) mDownloadsView->SetTargetAndDrawRECTs(IRECT(0.f, 0.f, 1.f, 1.f));
   if (mSettingsView)  mSettingsView->SetTargetAndDrawRECTs(IRECT(0.f, 0.f, 1.f, 1.f));
+
+  // First-run modal covers the entire window.
+  if (mFirstRunModal) mFirstRunModal->SetTargetAndDrawRECTs(mRECT);
 }
 
 void ToneRoot::OnAttached()
@@ -173,7 +179,19 @@ void ToneRoot::OnAttached()
 
   // ── Tab body views ──────────────────────────────────────────────
   mToneView    = new ToneView(mBodyRect, mPlugin);
-  mLibraryView = new LibraryView(mBodyRect);
+  // Library click → load into ToneView's current slot (or first free
+  // pedal slot if no selection — ToneView decides). Switch to the Tone
+  // tab so the load is visible immediately.
+  mLibraryView = new LibraryView(mBodyRect,
+      [this](const std::string& toneId, const std::string& modelId) {
+        if (!mToneView) return;
+        // -1 → ToneView::loadModelIntoSlot picks the first free pedal
+        // slot. The user can still drop the model into a specific
+        // slot by selecting that slot first (Phase 3.5 wiring).
+        mToneView->loadModelIntoSlot(-1, toneId, modelId);
+        switchTab(Tab::Tone);
+        if (mPresetPill) mPresetPill->setDirty(true);
+      });
   mCloudView   = new CloudView(mBodyRect);
   g->AttachControl(mToneView);
   g->AttachControl(mLibraryView);
@@ -205,6 +223,43 @@ void ToneRoot::OnAttached()
   // ── Preset overlay — created hidden, must be attached last ────
   attachPresetOverlay(/*startVisible*/ false,
                       /*activeId*/ ::t3k::library::PresetStore::instance().activeId());
+
+  // ── First-run modal ───────────────────────────────────────────
+  // Attached LAST so it sits at the top of the z-order and intercepts
+  // every mouse event until the user picks a folder. When the user
+  // chooses, we persist the path, kick off an initial scan, and hide
+  // the modal so the rest of the UI becomes interactive.
+  const bool firstRun = ::t3k::settings::instance().tone3000_root.empty();
+  if (firstRun) {
+    mFirstRunModal = new T3kFirstRunModal(mRECT,
+        [this](const std::string& chosenRoot) {
+          ::t3k::settings::instance().tone3000_root = chosenRoot;
+          ::t3k::settings::save();
+          ::t3k::library::LibraryScanner::instance().rescan();
+          if (mFirstRunModal) {
+            mFirstRunModal->Hide(true);
+            // Disable the modal's buttons too. The modal owns them via
+            // OnAttached → they live in the IGraphics control list; we
+            // simply hide them by hiding the parent modal.
+          }
+        });
+    g->AttachControl(mFirstRunModal);
+  } else {
+    // Settings already point at a real folder — kick off a background
+    // refresh so the library reflects any files added since last run.
+    ::t3k::library::LibraryScanner::instance().rescan();
+  }
+
+  // Load the active preset's state into the chain so the UI restores
+  // across DAW restarts. Falls back to the demo seed inside ToneView
+  // if the preset is empty.
+  const int64_t activeId = ::t3k::library::PresetStore::instance().activeId();
+  if (activeId > 0 && mToneView) {
+    auto st = ::t3k::library::PresetStore::instance().load(activeId);
+    if (st.has_value() && !st->slots.empty()) {
+      mToneView->applyPresetState(*st);
+    }
+  }
 
   // Resize all children to their proper bounds now that they exist.
   // (ToneView::OnResize now updates strip tile positions in place — it
