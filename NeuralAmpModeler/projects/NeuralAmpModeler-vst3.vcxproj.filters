@@ -300,6 +300,9 @@
     <ClCompile Include="..\cloud\OAuthFlow.cpp">
       <Filter>cloud</Filter>
     </ClCompile>
+    <ClCompile Include="..\cloud\Session.cpp">
+      <Filter>cloud</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="../config.h" />
@@ -743,6 +746,15 @@
       <Filter>cloud</Filter>
     </ClInclude>
     <ClInclude Include="..\cloud\OAuthFlow.h">
+      <Filter>cloud</Filter>
+    </ClInclude>
+    <ClInclude Include="..\cloud\User.h">
+      <Filter>cloud</Filter>
+    </ClInclude>
+    <ClInclude Include="..\cloud\SessionEvent.h">
+      <Filter>cloud</Filter>
+    </ClInclude>
+    <ClInclude Include="..\cloud\Session.h">
       <Filter>cloud</Filter>
     </ClInclude>
   </ItemGroup>
