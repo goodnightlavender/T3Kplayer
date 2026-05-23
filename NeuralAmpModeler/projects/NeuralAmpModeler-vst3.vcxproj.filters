@@ -222,6 +222,12 @@
     <ClCompile Include="..\..\Dependencies\sqlite\sqlite3.c">
       <Filter>Dependencies\sqlite</Filter>
     </ClCompile>
+    <ClCompile Include="..\library\Paths.cpp">
+      <Filter>library</Filter>
+    </ClCompile>
+    <ClCompile Include="..\settings\Settings.cpp">
+      <Filter>settings</Filter>
+    </ClCompile>
     <ClCompile Include="..\ui\views\T3kModelInfoPane.cpp">
       <Filter>ui\views</Filter>
     </ClCompile>
@@ -585,6 +591,12 @@
     </ClInclude>
     <ClInclude Include="..\..\Dependencies\sqlite\sqlite3.h">
       <Filter>Dependencies\sqlite</Filter>
+    </ClInclude>
+    <ClInclude Include="..\library\Paths.h">
+      <Filter>library</Filter>
+    </ClInclude>
+    <ClInclude Include="..\settings\Settings.h">
+      <Filter>settings</Filter>
     </ClInclude>
     <ClInclude Include="..\ui\views\T3kModelInfoPane.h">
       <Filter>ui\views</Filter>
