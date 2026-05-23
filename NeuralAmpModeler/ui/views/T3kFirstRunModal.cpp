@@ -118,6 +118,13 @@ void T3kFirstRunModal::Draw(IGraphics& g)
              pathR);
 }
 
+void T3kFirstRunModal::Hide(bool hide)
+{
+  IControl::Hide(hide);
+  if (mUseSuggestedBtn) mUseSuggestedBtn->Hide(hide);
+  if (mPickCustomBtn)   mPickCustomBtn  ->Hide(hide);
+}
+
 void T3kFirstRunModal::onUseSuggested()
 {
   if (mSuggestedPath.empty() || !mOnPicked) return;

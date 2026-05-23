@@ -33,6 +33,11 @@ class T3kFirstRunModal : public iplug::igraphics::IControl {
   // OnMouseDown intentionally not overridden — the buttons are real
   // T3kButton children attached during OnAttached.
 
+  // Override Hide so it propagates to the child buttons (which were
+  // attached to IGraphics directly, not parented through this control,
+  // so Hide on the modal alone wouldn't take them out of the picture).
+  void Hide(bool hide) override;
+
  private:
   // Layout sub-rects, recomputed in OnResize.
   iplug::igraphics::IRECT mCardRect;
