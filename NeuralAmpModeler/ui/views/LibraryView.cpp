@@ -33,6 +33,7 @@
 #include "../controls/T3kVScrollList.h"
 #include "../../library/EventBus.h"
 #include "../../library/LibraryScanner.h"
+#include "../../net/HttpClient.h"
 
 namespace t3k::ui {
 
@@ -40,12 +41,16 @@ using namespace ::iplug::igraphics;
 
 namespace {
 
-// Header row dimensions (search bar + Rescan button).
+// Header row dimensions (search bar + Rescan + Test-net buttons).
 constexpr float kHeaderH       = 56.f;
 constexpr float kHeaderPad     = 16.f;
 constexpr float kRescanBtnW    = 96.f;
 constexpr float kRescanBtnH    = 28.f;
+constexpr float kTestNetBtnW   = 100.f;     // "TEST NET" label slightly wider
 constexpr float kSearchH       = 32.f;
+
+// Auto-clear delay for the Phase 4 "Test net" status line.
+constexpr std::chrono::seconds kNetStatusVisibility{5};
 
 // Row metrics. We omit the image until Phase 7 lands real thumbnail
 // downloads — the design has an 88px tile but with no downloaded
@@ -101,6 +106,7 @@ void LibraryView::Hide(bool hide)
   // leak onto the Tone tab when the user switches away.
   if (mSearchBar)     mSearchBar->Hide(hide);
   if (mRescanBtn)     mRescanBtn->Hide(hide);
+  if (mTestNetBtn)    mTestNetBtn->Hide(hide);
   if (mScrollList)    mScrollList->Hide(hide);
   if (mRenameOverlay) mRenameOverlay->Hide(hide);
 }
@@ -112,21 +118,25 @@ void LibraryView::OnResize()
   mHeaderRect = split.first;
   mListRect   = split.second;
 
-  // Lay out the search bar (flex) + Rescan button (fixed width).
+  // Lay out the search bar (flex) + Rescan + Test-net buttons (fixed).
+  // Order from right to left: TestNet, Rescan, Search (flex fills).
   const float left  = mHeaderRect.L + kHeaderPad;
   const float right = mHeaderRect.R - kHeaderPad;
   const float midY  = mHeaderRect.MH();
   const float searchTop = midY - kSearchH * 0.5f;
   const float btnTop    = midY - kRescanBtnH * 0.5f;
 
-  mRescanRect = IRECT(right - kRescanBtnW, btnTop,
-                      right,               btnTop + kRescanBtnH);
-  mSearchRect = IRECT(left,                 searchTop,
-                      mRescanRect.L - t3k::theme::kS3,
-                      searchTop + kSearchH);
+  mTestNetRect = IRECT(right - kTestNetBtnW, btnTop,
+                       right,                btnTop + kRescanBtnH);
+  mRescanRect  = IRECT(mTestNetRect.L - t3k::theme::kS2 - kRescanBtnW, btnTop,
+                       mTestNetRect.L - t3k::theme::kS2,                btnTop + kRescanBtnH);
+  mSearchRect  = IRECT(left,                 searchTop,
+                       mRescanRect.L - t3k::theme::kS3,
+                       searchTop + kSearchH);
 
   if (mSearchBar)  mSearchBar ->SetTargetAndDrawRECTs(mSearchRect);
   if (mRescanBtn)  mRescanBtn ->SetTargetAndDrawRECTs(mRescanRect);
+  if (mTestNetBtn) mTestNetBtn->SetTargetAndDrawRECTs(mTestNetRect);
   if (mScrollList) mScrollList->SetTargetAndDrawRECTs(mListRect);
 }
 
@@ -147,6 +157,14 @@ void LibraryView::OnAttached()
       [this]() { ::t3k::library::LibraryScanner::instance().rescan(); },
       T3kButton::Variant::Secondary);
   g->AttachControl(mRescanBtn);
+
+  // Phase 4 smoke-test button — fires a GET to a public 204-status
+  // endpoint via the new net::HttpClient. Likely removed before 0.1
+  // ships; kept here so the user can poke the worker pool end-to-end.
+  mTestNetBtn = new T3kButton(mTestNetRect, "TEST NET",
+      [this]() { this->runNetTest(); },
+      T3kButton::Variant::Secondary);
+  g->AttachControl(mTestNetBtn);
 
   mScrollList = new T3kVScrollList(mListRect,
       /*itemCount*/ [this]() { return static_cast<int>(mRows.size()); },
@@ -226,6 +244,29 @@ void LibraryView::Draw(IGraphics& g)
   g.FillRect(th::kBgBase, mRECT);
   g.FillRect(th::kBorder,
              IRECT(mRECT.L, mHeaderRect.B - 1.f, mRECT.R, mHeaderRect.B));
+
+  // Phase 4 "Test net" status line — small muted text just below the
+  // header. Auto-clears when expiry passes. State is written by the
+  // HttpClient completion lambda from a worker thread; Draw runs on
+  // the GUI thread. Under the mutex we snapshot + check expiry.
+  std::string netStatus;
+  {
+    std::lock_guard<std::mutex> lk(mNetStatusMtx);
+    if (!mNetStatus.empty()) {
+      if (std::chrono::steady_clock::now() < mNetStatusExpiry) {
+        netStatus = mNetStatus;
+      } else {
+        mNetStatus.clear();
+      }
+    }
+  }
+  if (!netStatus.empty()) {
+    const IRECT statusR(mListRect.L + kHeaderPad, mListRect.T + 4.f,
+                        mListRect.R - kHeaderPad, mListRect.T + 22.f);
+    g.DrawText(IText(th::kTypeSmall, th::kTextMuted,
+                     th::kFontBody, EAlign::Near, EVAlign::Top),
+               netStatus.c_str(), statusR);
+  }
 
   // Empty state hint when the list is empty.
   if (mRows.empty()) {
@@ -343,6 +384,49 @@ int LibraryView::findRowIndexById(int64_t modelId) const
     if (mRows[i].id == modelId) return static_cast<int>(i);
   }
   return -1;
+}
+
+void LibraryView::runNetTest()
+{
+  // Mark the in-flight state for the user. SetDirty(false) is fine
+  // from here — we're on the GUI thread (T3kButton click handler).
+  {
+    std::lock_guard<std::mutex> lk(mNetStatusMtx);
+    mNetStatus       = "net: testing\xE2\x80\xA6";  // ellipsis (UTF-8)
+    mNetStatusExpiry = std::chrono::steady_clock::now() +
+                       std::chrono::seconds(30);   // very long; completion narrows
+  }
+  SetDirty(false);
+
+  ::t3k::net::HttpRequest req;
+  req.method     = ::t3k::net::HttpMethod::Get;
+  req.url        = "https://www.gstatic.com/generate_204";
+  req.timeout_ms = 10'000;
+
+  ::t3k::net::HttpClient::instance().send(
+      std::move(req),
+      [this](const ::t3k::net::HttpResponse& res) {
+        // WORKER THREAD — do NOT touch IGraphics. Stash state; Draw
+        // picks it up on the next frame (~16ms at 60Hz).
+        char buf[160];
+        if (res.canceled) {
+          std::snprintf(buf, sizeof(buf), "net: canceled (%s)",
+                        res.error_message.c_str());
+        } else if (res.status_code > 0) {
+          std::snprintf(buf, sizeof(buf), "net: %d (%lld ms)",
+                        res.status_code,
+                        static_cast<long long>(res.elapsed_ms));
+        } else {
+          std::snprintf(buf, sizeof(buf), "net: error: %s",
+                        res.error_message.empty()
+                            ? "unknown"
+                            : res.error_message.c_str());
+        }
+        std::lock_guard<std::mutex> lk(this->mNetStatusMtx);
+        this->mNetStatus       = buf;
+        this->mNetStatusExpiry = std::chrono::steady_clock::now() +
+                                 kNetStatusVisibility;
+      });
 }
 
 }  // namespace t3k::ui

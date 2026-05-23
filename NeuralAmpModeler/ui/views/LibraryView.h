@@ -18,6 +18,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -70,15 +71,23 @@ class LibraryView : public iplug::igraphics::IControl {
   // Find a row by row-id. Returns -1 if not visible.
   int findRowIndexById(int64_t modelId) const;
 
+  // Phase 4 smoke-test: GET https://www.gstatic.com/generate_204,
+  // store the result string for Draw to render. Completion runs on a
+  // WORKER thread — do NOT call any IGraphics method from it; just
+  // stash state under mNetStatusMtx and let the next paint pick it up.
+  void runNetTest();
+
   // Header chrome rects, recomputed in OnResize.
   iplug::igraphics::IRECT mHeaderRect;
   iplug::igraphics::IRECT mSearchRect;
   iplug::igraphics::IRECT mRescanRect;
+  iplug::igraphics::IRECT mTestNetRect;
   iplug::igraphics::IRECT mListRect;
 
   // Children. Owned by IGraphics after AttachControl.
   T3kSearchBar*     mSearchBar       = nullptr;
   T3kButton*        mRescanBtn       = nullptr;
+  T3kButton*        mTestNetBtn      = nullptr;
   T3kVScrollList*   mScrollList      = nullptr;
   T3kRenameOverlay* mRenameOverlay   = nullptr;
 
@@ -100,6 +109,14 @@ class LibraryView : public iplug::igraphics::IControl {
   // The row currently being renamed (so we can apply the new name when
   // T3kRenameOverlay fires its callback).
   int64_t mRenameTargetId = 0;
+
+  // Phase 4 smoke-test state. mNetStatus is set by the HttpClient
+  // completion lambda (worker thread) and read by Draw (GUI thread);
+  // the mutex protects both string + expiry. The expiry is checked in
+  // Draw so the status auto-clears ~5s after the request completes.
+  std::mutex                              mNetStatusMtx;
+  std::string                             mNetStatus;
+  std::chrono::steady_clock::time_point   mNetStatusExpiry{};
 
   OnModelClicked mOnModelClicked;
 };
