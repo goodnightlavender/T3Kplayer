@@ -282,6 +282,9 @@
     <ClCompile Include="..\net\RateLimiter.cpp">
       <Filter>net</Filter>
     </ClCompile>
+    <ClCompile Include="..\net\ResponseCache.cpp">
+      <Filter>net</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="../config.h" />
@@ -704,6 +707,9 @@
       <Filter>net</Filter>
     </ClInclude>
     <ClInclude Include="..\net\RateLimiter.h">
+      <Filter>net</Filter>
+    </ClInclude>
+    <ClInclude Include="..\net\ResponseCache.h">
       <Filter>net</Filter>
     </ClInclude>
   </ItemGroup>

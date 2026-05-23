@@ -38,6 +38,7 @@
 
 #include "Logging.h"
 #include "RateLimiter.h"
+#include "ResponseCache.h"
 #include "WorkerPool.h"
 
 namespace t3k::net {
@@ -418,6 +419,18 @@ CancellationToken HttpClient::send(HttpRequest req, Completion onDone)
   T3K_NET_LOG("debug", "send: %s",
               reqCopy.url.empty() ? "(empty url)" : reqCopy.url.c_str());
 
+  // GET cache-hit short-circuit. Fire completion synchronously since
+  // the caller is already expecting an async dispatch — calling them
+  // here on the GUI thread is fine and avoids burning a worker on a
+  // cache-warm path.
+  if (reqCopy.method == HttpMethod::Get) {
+    if (auto cached = ResponseCache::instance().get(reqCopy)) {
+      T3K_NET_LOG("debug", "send: cache hit (%s)", reqCopy.url.c_str());
+      if (done) done(*cached);
+      return token;
+    }
+  }
+
   RateLimiter* limiter = mLimiter.get();
   const bool queued = mPool->submit(
       [reqCopy = std::move(reqCopy), workerToken,
@@ -427,7 +440,7 @@ CancellationToken HttpClient::send(HttpRequest req, Completion onDone)
           res.canceled = true;
           res.error_message = "canceled before dispatch";
         } else if (limiter && !limiter->acquire(workerToken)) {
-          // acquire() returned false → cancellation fired while we
+          // acquire() returned false -> cancellation fired while we
           // were blocked waiting for a token.
           res.canceled = true;
           res.error_message = "canceled while waiting on rate limiter";
@@ -436,6 +449,12 @@ CancellationToken HttpClient::send(HttpRequest req, Completion onDone)
         }
         if (workerToken.isCanceled() && !res.canceled) {
           res.canceled = true;
+        }
+        // Populate cache on successful GET 2xx.
+        if (!res.canceled &&
+            reqCopy.method == HttpMethod::Get &&
+            res.status_code >= 200 && res.status_code < 300) {
+          ResponseCache::instance().put(reqCopy, res);
         }
         T3K_NET_LOG("debug", "done: status=%d body=%zu canceled=%d msg=%s",
                     res.status_code, res.body.size(), int(res.canceled),

@@ -404,6 +404,7 @@
     <ClInclude Include="..\net\WorkerPool.h" />
     <ClInclude Include="..\net\HttpClient.h" />
     <ClInclude Include="..\net\RateLimiter.h" />
+    <ClInclude Include="..\net\ResponseCache.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\iPlug2\Dependencies\IPlug\VST3_SDK\base\source\baseiids.cpp" />
@@ -535,6 +536,7 @@
     <ClCompile Include="..\net\WorkerPool.cpp" />
     <ClCompile Include="..\net\HttpClient.cpp" />
     <ClCompile Include="..\net\RateLimiter.cpp" />
+    <ClCompile Include="..\net\ResponseCache.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\resources\main.rc" />
