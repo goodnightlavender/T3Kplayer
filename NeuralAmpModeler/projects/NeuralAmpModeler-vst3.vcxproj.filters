@@ -225,6 +225,12 @@
     <ClCompile Include="..\ui\controls\T3kRenameOverlay.cpp">
       <Filter>ui\controls</Filter>
     </ClCompile>
+    <ClCompile Include="..\ui\controls\T3kSignInPill.cpp">
+      <Filter>ui\controls</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ui\controls\T3kAccountMenu.cpp">
+      <Filter>ui\controls</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\Dependencies\sqlite\sqlite3.c">
       <Filter>Dependencies\sqlite</Filter>
     </ClCompile>
@@ -647,6 +653,12 @@
       <Filter>ui\controls</Filter>
     </ClInclude>
     <ClInclude Include="..\ui\controls\T3kRenameOverlay.h">
+      <Filter>ui\controls</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ui\controls\T3kSignInPill.h">
+      <Filter>ui\controls</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ui\controls\T3kAccountMenu.h">
       <Filter>ui\controls</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Dependencies\sqlite\sqlite3.h">
