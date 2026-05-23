@@ -378,6 +378,9 @@
     <ClInclude Include="..\ui\controls\T3kPresetOverlay.h" />
     <ClInclude Include="..\..\Dependencies\sqlite\sqlite3.h" />
     <ClInclude Include="..\library\Paths.h" />
+    <ClInclude Include="..\library\Schema.h" />
+    <ClInclude Include="..\library\ModelMeta.h" />
+    <ClInclude Include="..\library\LibraryDb.h" />
     <ClInclude Include="..\settings\Settings.h" />
     <ClInclude Include="..\ui\views\T3kModelInfoPane.h" />
     <ClInclude Include="..\ui\views\ToneView.h" />
@@ -498,6 +501,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\library\Paths.cpp" />
+    <ClCompile Include="..\library\LibraryDb.cpp" />
     <ClCompile Include="..\settings\Settings.cpp" />
     <ClCompile Include="..\ui\views\T3kModelInfoPane.cpp" />
     <ClCompile Include="..\ui\views\ToneView.cpp" />
