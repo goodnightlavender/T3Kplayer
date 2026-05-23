@@ -21,6 +21,9 @@
 #include "views/SettingsView.h"
 #include "views/ToneView.h"
 
+#include "../library/PresetStore.h"
+#include "../library/PresetState.h"
+
 namespace t3k::ui {
 
 using namespace iplug::igraphics;
@@ -149,9 +152,23 @@ void ToneRoot::OnAttached()
   mPresetPill = new T3kPresetPill(
       mPresetPillRect,
       /*onToggleOverlay*/ [this] { this->togglePresetOverlay(); });
-  mPresetPill->setActivePresetName("Default Setting");
-  // Phase 2b demo: mark dirty to show the amber dot from the v6 mockup.
-  mPresetPill->setDirty(true);
+  // Pull the active preset name from PresetStore (defaults to
+  // "Default Setting" on a fresh install — ensureDefaults() guarantees
+  // a row exists by the time we get here).
+  if (auto st = ::t3k::library::PresetStore::instance().load(
+          ::t3k::library::PresetStore::instance().activeId());
+      st.has_value()) {
+    // Pull the name from the list so we don't query PresetStore twice.
+    for (const auto& r : ::t3k::library::PresetStore::instance().list()) {
+      if (r.active) {
+        mPresetPill->setActivePresetName(r.name);
+        break;
+      }
+    }
+  } else {
+    mPresetPill->setActivePresetName("Default Setting");
+  }
+  mPresetPill->setDirty(false);
   g->AttachControl(mPresetPill);
 
   // ── Tab body views ──────────────────────────────────────────────
@@ -186,7 +203,8 @@ void ToneRoot::OnAttached()
   mSettingsView->Hide(true);
 
   // ── Preset overlay — created hidden, must be attached last ────
-  attachPresetOverlay(/*startVisible*/ false, /*activeId*/ 1);
+  attachPresetOverlay(/*startVisible*/ false,
+                      /*activeId*/ ::t3k::library::PresetStore::instance().activeId());
 
   // Resize all children to their proper bounds now that they exist.
   // (ToneView::OnResize now updates strip tile positions in place — it
@@ -262,30 +280,49 @@ void ToneRoot::attachPresetOverlay(bool startVisible, int64_t activeId)
   if (!g) return;
 
   mPresetOverlay = new T3kPresetOverlay(IRECT(0.f, 0.f, 1.f, 1.f));
-  std::vector<PresetRow> demo = {
-      { 1, "Default Setting", true  },
-      { 2, "My Rhythm Tone",  false },
-      { 3, "Lead Tone",       false },
-      { 4, "Clean Sparkle",   false },
-      { 5, "Heavy Metal Rig", false },
-  };
-  mPresetOverlay->setPresets(std::move(demo));
+
+  // Pull the real preset list from PresetStore. PresetStore::list()
+  // returns the same shape as the overlay's PresetRow — we just have
+  // to convert namespaces (the overlay's PresetRow lives in t3k::ui).
+  std::vector<PresetRow> rows;
+  for (const auto& r : ::t3k::library::PresetStore::instance().list()) {
+    rows.push_back({ r.id, r.name, r.active });
+  }
+  mPresetOverlay->setPresets(std::move(rows));
   mPresetOverlay->setActiveId(activeId);
   mPresetOverlay->onSelect = [this](int64_t id) {
-    if (!mPresetPill || !mPresetOverlay) return;
-    for (const auto& p : mPresetOverlay->presets()) {
-      if (p.id == id) {
-        mPresetPill->setActivePresetName(p.name);
-        // Selecting a preset clears the dirty marker.
-        mPresetPill->setDirty(false);
-        break;
-      }
+    this->loadPreset(id);
+  };
+  mPresetOverlay->onSave     = [this]() { this->saveCurrentPreset(); };
+  mPresetOverlay->onSaveAs   = [this]() {
+    // The overlay doesn't (yet) own an inline name-entry surface, so
+    // prompt via iPlug2's CreateTextEntry. The completion handler on
+    // ToneRoot is plumbed through the preset overlay's own
+    // OnTextEntryCompletion, which routes to a fresh saveAs.
+    if (auto* ui = GetUI()) {
+      namespace th = ::t3k::theme;
+      const IText t(th::kTypeBody, th::kText, th::kFontBody,
+                    EAlign::Near, EVAlign::Middle);
+      // Anchor the prompt over the overlay center so it has a known
+      // location regardless of overlay size.
+      const IRECT prompt(mPresetPillRect.L,
+                         mPresetPillRect.B + t3k::theme::kS2,
+                         mPresetPillRect.R,
+                         mPresetPillRect.B + t3k::theme::kS2 + 28.f);
+      ui->CreateTextEntry(*this, t, prompt, "New preset");
     }
   };
-  // Save/SaveAs/More are stubs until Phase 3 wires real preset persistence.
-  mPresetOverlay->onSave     = []() {};
-  mPresetOverlay->onSaveAs   = []() {};
-  mPresetOverlay->onMoreMenu = []() {};
+  mPresetOverlay->onMoreMenu = [this]() {
+    // Phase 3 ships a minimal More menu: Rename + Delete the active
+    // preset. The pop-up uses iPlug2's CreatePopupMenu, and the
+    // selection is handled in ToneRoot::OnPopupMenuSelection (not yet
+    // overridden — see TODO). For Phase 3 we leave this as a stub and
+    // surface a comment so the test plan can catch it.
+    //
+    // TODO(Phase 3.5): wire ToneRoot::OnPopupMenuSelection to call
+    // PresetStore::rename / remove.
+    (void)this;
+  };
   g->AttachControl(mPresetOverlay);
   mPresetOverlay->Hide(!startVisible);
 
@@ -296,6 +333,73 @@ void ToneRoot::attachPresetOverlay(bool startVisible, int64_t activeId)
   const float left = mPresetPillRect.R - kPresetOverlayW;
   mPresetOverlay->SetTargetAndDrawRECTs(
       IRECT(left, top, left + kPresetOverlayW, top + kPresetOverlayH));
+}
+
+void ToneRoot::refreshPresetList()
+{
+  if (!mPresetOverlay) return;
+  std::vector<PresetRow> rows;
+  for (const auto& r : ::t3k::library::PresetStore::instance().list()) {
+    rows.push_back({ r.id, r.name, r.active });
+  }
+  mPresetOverlay->setPresets(std::move(rows));
+  mPresetOverlay->setActiveId(
+      ::t3k::library::PresetStore::instance().activeId());
+  syncPillToActivePreset();
+}
+
+void ToneRoot::saveCurrentPreset()
+{
+  if (!mToneView) return;
+  const auto state = mToneView->snapshotPresetState();
+  ::t3k::library::PresetStore::instance().saveCurrent(state);
+  if (mPresetPill) mPresetPill->setDirty(false);
+  refreshPresetList();
+}
+
+void ToneRoot::saveAsPreset(const std::string& name)
+{
+  if (name.empty() || !mToneView) return;
+  const auto state = mToneView->snapshotPresetState();
+  const int64_t id = ::t3k::library::PresetStore::instance().saveAs(name, state);
+  if (id > 0) {
+    ::t3k::library::PresetStore::instance().setActiveId(id);
+  }
+  if (mPresetPill) mPresetPill->setDirty(false);
+  refreshPresetList();
+}
+
+void ToneRoot::loadPreset(int64_t presetId)
+{
+  if (presetId <= 0 || !mToneView) return;
+  auto state = ::t3k::library::PresetStore::instance().load(presetId);
+  if (!state.has_value()) return;
+  ::t3k::library::PresetStore::instance().setActiveId(presetId);
+  mToneView->applyPresetState(*state);
+  if (mPresetPill) mPresetPill->setDirty(false);
+  refreshPresetList();
+}
+
+void ToneRoot::syncPillToActivePreset()
+{
+  if (!mPresetPill || !mPresetOverlay) return;
+  const int64_t active = mPresetOverlay->activePresetId();
+  for (const auto& p : mPresetOverlay->presets()) {
+    if (p.id == active) {
+      mPresetPill->setActivePresetName(p.name);
+      return;
+    }
+  }
+}
+
+void ToneRoot::OnTextEntryCompletion(const char* str, int /*valIdx*/)
+{
+  // Phase 3: only the Save-As… overlay routes through here. Empty /
+  // null str → cancelled.
+  if (!str) return;
+  const std::string name(str);
+  if (name.empty()) return;
+  saveAsPreset(name);
 }
 
 void ToneRoot::recreatePresetOverlayOnTop()

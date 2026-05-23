@@ -50,6 +50,11 @@ public:
   void Draw(iplug::igraphics::IGraphics& g) override;
   void OnResize() override;
   void OnAttached() override;  // Instantiate children once IGraphics is alive.
+  // Routes the Save-As… name from the preset overlay (we open the
+  // text entry on the overlay's behalf because iPlug2's
+  // OnTextEntryCompletion fires on the control that initiated the
+  // entry — here that's us).
+  void OnTextEntryCompletion(const char* str, int valIdx) override;
 
   // Tab + overlay control.
   void switchTab(Tab tab);
@@ -99,6 +104,18 @@ private:
   // Build + attach the preset overlay (called from OnAttached, and again
   // from recreatePresetOverlayOnTop). Sets mPresetOverlay.
   void attachPresetOverlay(bool startVisible, int64_t activeId);
+
+  // ── Phase 3: PresetStore-backed save / load ─────────────────────
+  // Re-query PresetStore and push the result into mPresetOverlay.
+  void refreshPresetList();
+  // Snapshot ToneView's chain + knobs + write through to PresetStore.
+  void saveCurrentPreset();
+  // Save under a new name (or update if it already exists).
+  void saveAsPreset(const std::string& name);
+  // Load PresetStore[id] into ToneView via applyPresetState.
+  void loadPreset(int64_t presetId);
+  // Helper: update the pill label to reflect the active preset.
+  void syncPillToActivePreset();
 
   // Destroy the existing overlay and re-attach a fresh one so it lands at
   // the end of IGraphics's control list (top of z-order). Preserves the

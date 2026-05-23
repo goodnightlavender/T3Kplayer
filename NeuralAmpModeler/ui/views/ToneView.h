@@ -28,6 +28,7 @@
 
 #include "../controls/T3kGearIcon.h"
 #include "T3kModelInfoPane.h"
+#include "../../library/PresetState.h"
 
 class NeuralAmpModeler;  // forward-declare upstream plug-in
 
@@ -49,6 +50,24 @@ public:
   // needs to stay above the strip in z-order (the preset overlay, in
   // particular — see ToneRoot::OnStripRebuilt). Optional.
   void setOnStripRebuilt(std::function<void()> cb) { mOnStripRebuilt = std::move(cb); }
+
+  // ── Preset snapshot / apply (Phase 3) ───────────────────────────────
+  // Snapshot the current chain + knob values into a PresetState ready
+  // for PresetStore::saveCurrent.
+  ::t3k::library::PresetState snapshotPresetState() const;
+
+  // Apply a saved PresetState — resolves each slot's (tone_id, model_id)
+  // through LibraryDb, rebuilds the chain, and writes the knob values
+  // back to the upstream params via SendParameterValueFromUI.
+  void applyPresetState(const ::t3k::library::PresetState& s);
+
+  // ── Library-driven load ────────────────────────────────────────────
+  // Insert / replace the model at `slotIndex` with the given TONE3000
+  // ids. If slotIndex == -1, picks the next free pedal slot. Looked up
+  // in LibraryDb; no-op for ids not found there.
+  void loadModelIntoSlot(int slotIndex,
+                         const std::string& toneId,
+                         const std::string& modelId);
 
 private:
   // ── Chain snapshot ────────────────────────────────────────────────

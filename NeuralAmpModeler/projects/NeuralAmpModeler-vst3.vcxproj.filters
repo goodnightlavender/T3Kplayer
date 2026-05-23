@@ -240,6 +240,9 @@
     <ClCompile Include="..\library\LibraryScanner.cpp">
       <Filter>library</Filter>
     </ClCompile>
+    <ClCompile Include="..\library\PresetStore.cpp">
+      <Filter>library</Filter>
+    </ClCompile>
     <ClCompile Include="..\settings\Settings.cpp">
       <Filter>settings</Filter>
     </ClCompile>
@@ -632,6 +635,12 @@
       <Filter>library</Filter>
     </ClInclude>
     <ClInclude Include="..\library\LibraryScanner.h">
+      <Filter>library</Filter>
+    </ClInclude>
+    <ClInclude Include="..\library\PresetState.h">
+      <Filter>library</Filter>
+    </ClInclude>
+    <ClInclude Include="..\library\PresetStore.h">
       <Filter>library</Filter>
     </ClInclude>
     <ClInclude Include="..\settings\Settings.h">

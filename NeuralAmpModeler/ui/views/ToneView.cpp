@@ -12,6 +12,9 @@
 // Plug-in header — gives us the EParams enum (kInputLevel, kToneBass, ...).
 #include "../../NeuralAmpModeler.h"
 
+#include "../../library/LibraryDb.h"
+#include "../../library/PresetState.h"
+
 namespace t3k::ui {
 
 using namespace iplug::igraphics;
@@ -450,6 +453,145 @@ void ToneView::seedDemoSnapshot()
 
   // Klon is the demo-selected slot in the v6 mockup.
   mChain.selectedIndex = 1;
+}
+
+::t3k::library::PresetState ToneView::snapshotPresetState() const
+{
+  ::t3k::library::PresetState s;
+  s.slots.reserve(mChain.loaded.size());
+  for (const auto& ls : mChain.loaded) {
+    ::t3k::library::PresetState::SlotEntry e;
+    e.slotIndex = ls.slotIndex;
+    e.toneId    = ls.toneId;
+    e.modelId   = ls.modelId;
+    s.slots.push_back(std::move(e));
+  }
+
+  // Knob values pulled straight from the upstream params (native units).
+  auto readParam = [this](int idx) -> float {
+    if (auto* p = mPlugin.GetParam(idx)) {
+      return static_cast<float>(p->Value());
+    }
+    return 0.f;
+  };
+  s.knobs.input_db  = readParam(::kInputLevel);
+  s.knobs.bass      = readParam(::kToneBass);
+  s.knobs.mid       = readParam(::kToneMid);
+  s.knobs.treble    = readParam(::kToneTreble);
+  s.knobs.output_db = readParam(::kOutputLevel);
+  return s;
+}
+
+void ToneView::applyPresetState(const ::t3k::library::PresetState& s)
+{
+  // ── Knobs: write through SendParameterValueFromUI so the audio
+  // thread + host (DAW automation lane) both see the change. ─────────
+  auto writeParam = [this](int idx, float v) {
+    if (auto* p = mPlugin.GetParam(idx)) {
+      p->Set(v);
+      mPlugin.SendParameterValueFromUI(idx, p->ToNormalized(v));
+    }
+  };
+  writeParam(::kInputLevel,  s.knobs.input_db);
+  writeParam(::kToneBass,    s.knobs.bass);
+  writeParam(::kToneMid,     s.knobs.mid);
+  writeParam(::kToneTreble,  s.knobs.treble);
+  writeParam(::kOutputLevel, s.knobs.output_db);
+
+  // ── Chain: rebuild mChain from the preset's slot list. Empty slot
+  // entries (toneId == "") are dropped; resolvable ids become real
+  // LoadedSlot rows hydrated from LibraryDb. Phase 3 doesn't yet
+  // wire the model into the audio chain — this only mirrors the v6
+  // UI snapshot. (Audio wiring lands with Phase 5's SignalChain.) ────
+  mChain.loaded.clear();
+  for (const auto& e : s.slots) {
+    if (e.toneId.empty() && e.modelId.empty()) continue;
+    auto row = ::t3k::library::LibraryDb::instance()
+                 .findByToneAndModelId(e.toneId, e.modelId);
+    if (!row.has_value()) continue;
+
+    ChainView::LoadedSlot ls;
+    ls.slotIndex            = e.slotIndex;
+    ls.toneId               = e.toneId;
+    ls.modelId              = e.modelId;
+    // Derive icon type from gear_type — fall back to Pedal.
+    if (row->gear_type == "amp")        ls.iconType = GearType::Amp;
+    else if (row->gear_type == "cab")   ls.iconType = GearType::Cab;
+    else if (row->gear_type == "outboard") ls.iconType = GearType::Outboard;
+    else if (row->gear_type == "full-rig") ls.iconType = GearType::FullRig;
+    else                                   ls.iconType = GearType::Pedal;
+    ls.info.displayName    = row->effectiveDisplayName();
+    ls.info.creator        = row->t3k_creator;
+    ls.info.format         = (row->kind == "ir") ? "IR" : "NAM";
+    ls.info.sizeBytes      = row->size_bytes;
+    ls.info.downloadedAtMs = row->added_at;
+    ls.info.description    = row->t3k_description;
+    mChain.loaded.push_back(std::move(ls));
+  }
+  // If the preset was empty (e.g. fresh "Default Setting"), fall back
+  // to the demo seed so the UI isn't blank during smoke tests.
+  if (mChain.loaded.empty()) {
+    seedDemoSnapshot();
+  }
+
+  rebuildStrip();
+  if (mChain.selectedIndex >= 0) onSlotSelected(mChain.selectedIndex);
+}
+
+void ToneView::loadModelIntoSlot(int slotIndex,
+                                  const std::string& toneId,
+                                  const std::string& modelId)
+{
+  if (toneId.empty() || modelId.empty()) return;
+  auto row = ::t3k::library::LibraryDb::instance()
+               .findByToneAndModelId(toneId, modelId);
+  if (!row.has_value()) return;
+
+  // Pick the destination slot index. -1 means "first empty pedal slot
+  // (0..4)" — wrapping to 0 if none free.
+  int dst = slotIndex;
+  if (dst < 0) {
+    for (int i = 0; i <= 4; ++i) {
+      bool occupied = false;
+      for (const auto& ls : mChain.loaded) {
+        if (ls.slotIndex == i) { occupied = true; break; }
+      }
+      if (!occupied) { dst = i; break; }
+    }
+    if (dst < 0) dst = 0;
+  }
+
+  // Build the new LoadedSlot from the LibraryDb row.
+  ChainView::LoadedSlot ls;
+  ls.slotIndex            = dst;
+  ls.toneId               = toneId;
+  ls.modelId              = modelId;
+  if (row->gear_type == "amp")        ls.iconType = GearType::Amp;
+  else if (row->gear_type == "cab")   ls.iconType = GearType::Cab;
+  else if (row->gear_type == "outboard") ls.iconType = GearType::Outboard;
+  else if (row->gear_type == "full-rig") ls.iconType = GearType::FullRig;
+  else                                   ls.iconType = GearType::Pedal;
+  ls.info.displayName    = row->effectiveDisplayName();
+  ls.info.creator        = row->t3k_creator;
+  ls.info.format         = (row->kind == "ir") ? "IR" : "NAM";
+  ls.info.sizeBytes      = row->size_bytes;
+  ls.info.downloadedAtMs = row->added_at;
+  ls.info.description    = row->t3k_description;
+
+  // Replace any existing entry at `dst`; otherwise append.
+  bool replaced = false;
+  for (auto& existing : mChain.loaded) {
+    if (existing.slotIndex == dst) {
+      existing = ls;
+      replaced = true;
+      break;
+    }
+  }
+  if (!replaced) mChain.loaded.push_back(std::move(ls));
+
+  mChain.selectedIndex = dst;
+  rebuildStrip();
+  onSlotSelected(dst);
 }
 
 }  // namespace t3k::ui

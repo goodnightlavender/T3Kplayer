@@ -385,6 +385,8 @@
     <ClInclude Include="..\library\ModelSidecar.h" />
     <ClInclude Include="..\library\EventBus.h" />
     <ClInclude Include="..\library\LibraryScanner.h" />
+    <ClInclude Include="..\library\PresetState.h" />
+    <ClInclude Include="..\library\PresetStore.h" />
     <ClInclude Include="..\settings\Settings.h" />
     <ClInclude Include="..\ui\views\T3kModelInfoPane.h" />
     <ClInclude Include="..\ui\views\ToneView.h" />
@@ -511,6 +513,7 @@
     <ClCompile Include="..\library\ModelSidecar.cpp" />
     <ClCompile Include="..\library\EventBus.cpp" />
     <ClCompile Include="..\library\LibraryScanner.cpp" />
+    <ClCompile Include="..\library\PresetStore.cpp" />
     <ClCompile Include="..\settings\Settings.cpp" />
     <ClCompile Include="..\ui\views\T3kModelInfoPane.cpp" />
     <ClCompile Include="..\ui\views\ToneView.cpp" />
