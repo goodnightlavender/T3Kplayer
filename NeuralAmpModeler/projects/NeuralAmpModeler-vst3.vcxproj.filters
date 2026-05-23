@@ -288,6 +288,9 @@
     <ClCompile Include="..\net\ResponseCache.cpp">
       <Filter>net</Filter>
     </ClCompile>
+    <ClCompile Include="..\cloud\Crypto.cpp">
+      <Filter>cloud</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="../config.h" />
@@ -718,6 +721,9 @@
     <ClInclude Include="..\net\ResponseCache.h">
       <Filter>net</Filter>
     </ClInclude>
+    <ClInclude Include="..\cloud\Crypto.h">
+      <Filter>cloud</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="resources">
@@ -818,6 +824,9 @@
     </Filter>
     <Filter Include="net">
       <UniqueIdentifier>{2e8c4d91-3f7a-4b56-9e2d-1c8f5b6a9d20}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="cloud">
+      <UniqueIdentifier>{7a3e9f01-4b8d-4ad2-9c5e-08e7b6c2f4a8}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

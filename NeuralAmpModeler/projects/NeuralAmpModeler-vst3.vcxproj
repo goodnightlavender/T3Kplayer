@@ -157,7 +157,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winhttp.lib;bcrypt.lib;ws2_32.lib;crypt32.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\..\VST3_SDK\base\win\$(Platform)\$(Configuration)\;$(WDL_PATH)\IPlug\$(SolutionDir)build-win\$(Platform)\$(Configuration)\;$(WDL_PATH)\lice\$(SolutionDir)build-win\$(Platform)\$(Configuration)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent />
@@ -172,7 +172,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winhttp.lib;bcrypt.lib;ws2_32.lib;crypt32.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent />
   </ItemDefinitionGroup>
@@ -191,7 +191,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winhttp.lib;bcrypt.lib;ws2_32.lib;crypt32.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\..\VST3_SDK\base\win\$(Platform)\$(Configuration)\;$(WDL_PATH)\IPlug\$(SolutionDir)build-win\$(Platform)\$(Configuration)\;$(WDL_PATH)\lice\$(SolutionDir)build-win\$(Platform)\$(Configuration)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent />
@@ -211,7 +211,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winhttp.lib;bcrypt.lib;ws2_32.lib;crypt32.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent />
   </ItemDefinitionGroup>
@@ -229,7 +229,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winhttp.lib;bcrypt.lib;ws2_32.lib;crypt32.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent />
   </ItemDefinitionGroup>
@@ -248,7 +248,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>$(x64_LIB_PATHS);$(WDL_PATH)\lice\$(SolutionDir)build-win\$(Platform)\Release\;..\..\VST3_SDK\base\win\$(Platform)\Release\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>winhttp.lib;bcrypt.lib;ws2_32.lib;crypt32.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent />
   </ItemDefinitionGroup>
@@ -406,6 +406,7 @@
     <ClInclude Include="..\net\HttpClient.h" />
     <ClInclude Include="..\net\RateLimiter.h" />
     <ClInclude Include="..\net\ResponseCache.h" />
+    <ClInclude Include="..\cloud\Crypto.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\iPlug2\Dependencies\IPlug\VST3_SDK\base\source\baseiids.cpp" />
@@ -539,6 +540,7 @@
     <ClCompile Include="..\net\HttpClient.cpp" />
     <ClCompile Include="..\net\RateLimiter.cpp" />
     <ClCompile Include="..\net\ResponseCache.cpp" />
+    <ClCompile Include="..\cloud\Crypto.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\resources\main.rc" />
