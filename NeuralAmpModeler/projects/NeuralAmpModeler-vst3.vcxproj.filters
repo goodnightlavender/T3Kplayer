@@ -294,6 +294,9 @@
     <ClCompile Include="..\cloud\TokenStore.cpp">
       <Filter>cloud</Filter>
     </ClCompile>
+    <ClCompile Include="..\cloud\LoopbackServer.cpp">
+      <Filter>cloud</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="../config.h" />
@@ -728,6 +731,9 @@
       <Filter>cloud</Filter>
     </ClInclude>
     <ClInclude Include="..\cloud\TokenStore.h">
+      <Filter>cloud</Filter>
+    </ClInclude>
+    <ClInclude Include="..\cloud\LoopbackServer.h">
       <Filter>cloud</Filter>
     </ClInclude>
   </ItemGroup>

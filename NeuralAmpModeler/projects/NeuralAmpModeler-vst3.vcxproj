@@ -408,6 +408,7 @@
     <ClInclude Include="..\net\ResponseCache.h" />
     <ClInclude Include="..\cloud\Crypto.h" />
     <ClInclude Include="..\cloud\TokenStore.h" />
+    <ClInclude Include="..\cloud\LoopbackServer.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\iPlug2\Dependencies\IPlug\VST3_SDK\base\source\baseiids.cpp" />
@@ -543,6 +544,7 @@
     <ClCompile Include="..\net\ResponseCache.cpp" />
     <ClCompile Include="..\cloud\Crypto.cpp" />
     <ClCompile Include="..\cloud\TokenStore.cpp" />
+    <ClCompile Include="..\cloud\LoopbackServer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\resources\main.rc" />
