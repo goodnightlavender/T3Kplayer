@@ -60,4 +60,28 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Image **downloading** lives in Phase 7. Phase 3 only renders images
   already on disk.
 
+### Added (Phase 4 — Networking foundation)
+
+- **`net::HttpClient`** — async GET/POST/PUT/DELETE over WinHTTP (Schannel
+  TLS via the Windows stack). Auto-sized worker pool (2–4 threads from
+  `hardware_concurrency`). Per-request cancellation tokens.
+- **`net::RateLimiter`** — token bucket, 100 req/min default. Every
+  request consults it before leaving the queue.
+- **`net::ResponseCache`** — in-memory LRU (200 entries, 5 min TTL
+  default; honors `Cache-Control: max-age`). On-disk single-file stub
+  for thumbnails (`cache/img/`) — used only when callers opt in.
+- **"Test net" button** in the Library tab — GET
+  `https://www.gstatic.com/generate_204`, prints status + elapsed time.
+  Phase-4-only diagnostic; will likely be removed before 0.1 ships.
+
+### Notes
+
+- Used WinHTTP instead of libcurl + Schannel (per spec §5 Phase 4).
+  Reasoning: libcurl + static-link config is a significant Windows-build
+  project; WinHTTP is built into the OS, supports TLS via Schannel
+  natively, and the `HttpClient` interface stays libcurl-swap-friendly
+  for future Mac/Linux ports.
+- No real TONE3000 endpoints are hit this phase. Phase 5 wires the
+  OAuth flow; Phase 6 consumes Cloud-tab endpoints.
+
 [Unreleased]: https://github.com/goodnightlavender/tone3000-player/compare/main...HEAD
