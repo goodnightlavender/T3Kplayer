@@ -16,6 +16,7 @@
 #include "architecture.hpp"
 
 #include "NeuralAmpModelerControls.h"
+#include "cloud/Session.h"
 #include "ui/ToneRoot.h"
 #include "ui/theme.h"
 
@@ -138,6 +139,14 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
     // knob row, overlays). See ui/ToneRoot.{h,cpp}.
     pGraphics->AttachControl(new t3k::ui::ToneRoot(pGraphics->GetBounds(), *this));
   };
+
+  // Force-init the cloud Session singleton so its constructor (which
+  // calls TokenStore::loadRefreshToken and kicks off the refresh
+  // thread) runs BEFORE ToneRoot::OnAttached queries Session::state().
+  // Without this, the avatar/sign-in pill would briefly render in the
+  // SignedOut state on the first paint, then flicker when the lazy
+  // ctor finally fires.
+  (void)::t3k::cloud::Session::instance();
 }
 
 NeuralAmpModeler::~NeuralAmpModeler()
