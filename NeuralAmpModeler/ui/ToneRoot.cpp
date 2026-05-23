@@ -10,6 +10,7 @@
 #include "../config.h"  // ICON_UNDO_FN, ICON_REDO_FN
 
 // Child controls + views.
+#include "controls/T3kClickBackdrop.h"
 #include "controls/T3kLogo.h"
 #include "controls/T3kLooseGlyph.h"
 #include "controls/T3kPresetOverlay.h"
@@ -113,6 +114,9 @@ void ToneRoot::OnResize()
     mPresetOverlay->SetTargetAndDrawRECTs(
         IRECT(left, top, left + kPresetOverlayW, top + kPresetOverlayH));
   }
+  // Backdrop is full-window so a click anywhere outside the overlay's
+  // own footprint reaches it.
+  if (mPresetBackdrop) mPresetBackdrop->SetTargetAndDrawRECTs(mRECT);
 
   // Legacy overlays — hidden; bounded to avoid 0-sized rects.
   if (mDownloadsView) mDownloadsView->SetTargetAndDrawRECTs(IRECT(0.f, 0.f, 1.f, 1.f));
@@ -320,12 +324,14 @@ void ToneRoot::togglePresetOverlay()
   if (!mPresetOverlay) return;
   const bool willShow = mPresetOverlay->IsHidden();
   if (willShow) {
-    // Ensure the overlay is the last (top-most) control before showing.
-    // Anything attached after the overlay (the strip tiles, in particular,
-    // if rebuildStrip() ran post-OnAttached) would otherwise draw on top.
+    // Ensure the overlay (and its backdrop) are the last controls in the
+    // z-order before showing. Anything attached after them (strip tiles
+    // re-attached by rebuildStrip(), in particular) would otherwise draw
+    // on top — including hiding the overlay behind a tile.
     recreatePresetOverlayOnTop();
   }
-  if (mPresetOverlay) mPresetOverlay->Hide(!willShow);
+  if (mPresetBackdrop) mPresetBackdrop->Hide(!willShow);
+  if (mPresetOverlay)  mPresetOverlay ->Hide(!willShow);
   SetDirty(false);
 }
 
@@ -333,6 +339,18 @@ void ToneRoot::attachPresetOverlay(bool startVisible, int64_t activeId)
 {
   IGraphics* g = GetUI();
   if (!g) return;
+
+  // Click-catcher backdrop FIRST so the overlay z-orders above it. The
+  // backdrop covers the whole window when visible; clicking anywhere
+  // outside the overlay's footprint hits the backdrop, which closes the
+  // overlay (and the backdrop) via togglePresetOverlay.
+  mPresetBackdrop = new T3kClickBackdrop(mRECT,
+      /*onClick*/ [this] {
+        if (mPresetOverlay && !mPresetOverlay->IsHidden())
+          togglePresetOverlay();
+      });
+  g->AttachControl(mPresetBackdrop);
+  mPresetBackdrop->Hide(!startVisible);
 
   mPresetOverlay = new T3kPresetOverlay(IRECT(0.f, 0.f, 1.f, 1.f));
 
@@ -470,8 +488,15 @@ void ToneRoot::recreatePresetOverlayOnTop()
   // surfaced through IGraphics's public API). So z-order promotion has to
   // go through destroy-and-recreate; we preserve user-visible state
   // (active preset id) and re-attach with a fresh control.
+  //
+  // Backdrop is recreated alongside the overlay so the pair stays at the
+  // top of the z-order in the right relative order (backdrop, then overlay).
   const int64_t activeId = mPresetOverlay->activePresetId();
   const bool wasVisible = !mPresetOverlay->IsHidden();
+  if (mPresetBackdrop) {
+    g->RemoveControl(mPresetBackdrop);
+    mPresetBackdrop = nullptr;
+  }
   g->RemoveControl(mPresetOverlay);
   mPresetOverlay = nullptr;
   attachPresetOverlay(/*startVisible*/ wasVisible, activeId);

@@ -2,6 +2,8 @@
 
 #include "T3kSlot.h"
 
+#include <cmath>
+
 #include "IGraphics.h"
 
 namespace t3k::ui {
@@ -18,6 +20,13 @@ constexpr float kHoverXInset    = 9.f;   // pulls the X half-out of the tile
 // Inner padding around the gear icon — keeps the silhouette off the tile
 // edges so the selection ring is legible.
 constexpr float kIconInset = 8.f;
+
+// Per-frame ease factor applied to the displayed drag offset. Higher = snappier;
+// 0.4 gives a perceptibly weighted feel without lagging the cursor noticeably.
+// When the residual is below this threshold the offset snaps to the target so
+// we don't burn frames on imperceptible sub-pixel deltas.
+constexpr float kDragSmoothFactor = 0.4f;
+constexpr float kDragSnapEpsilon  = 0.3f;
 
 }  // namespace
 
@@ -93,13 +102,23 @@ void T3kSlot::Draw(IGraphics& g)
     return;
   }
 
-  // Loaded variant. When dragging, render the entire tile shifted by the
-  // accumulated drag offset so it visually follows the cursor. mRECT
-  // itself stays fixed (the parent's layoutStripTiles relies on stable
-  // rects for hit-testing), so we paint into a translated rect here.
+  // Loaded variant. When dragging, render the tile shifted along X only —
+  // pedal/outboard reordering is one-dimensional, so locking Y keeps the
+  // tile aligned with its row and prevents accidental vertical drift.
+  // mDragOffsetX eases toward mDragTargetX each frame for smoothing.
+  if (mDragging) {
+    const float residual = mDragTargetX - mDragOffsetX;
+    if (std::fabs(residual) > kDragSnapEpsilon) {
+      mDragOffsetX += residual * kDragSmoothFactor;
+      // Keep redrawing while the ease still has visible travel left.
+      SetDirty(false);
+    } else {
+      mDragOffsetX = mDragTargetX;
+    }
+  }
   const IRECT drawRect = mDragging
-      ? IRECT(mRECT.L + mDragOffsetX, mRECT.T + mDragOffsetY,
-              mRECT.R + mDragOffsetX, mRECT.B + mDragOffsetY)
+      ? IRECT(mRECT.L + mDragOffsetX, mRECT.T,
+              mRECT.R + mDragOffsetX, mRECT.B)
       : mRECT;
 
   g.FillRoundRect(th::kBgSurface, drawRect, th::kRadiusLg);
@@ -158,12 +177,12 @@ void T3kSlot::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
 
   // Reset drag offset. mDragging stays false until OnMouseDrag actually
   // fires — keeps simple clicks click-y.
+  mDragTargetX = 0.f;
   mDragOffsetX = 0.f;
-  mDragOffsetY = 0.f;
   SetDirty(false);
 }
 
-void T3kSlot::OnMouseDrag(float x, float y, float dX, float dY,
+void T3kSlot::OnMouseDrag(float x, float y, float dX, float /*dY*/,
                           const IMouseMod& /*mod*/)
 {
   // Add tiles never drag. Loaded tiles drag only when the parent wired up
@@ -173,10 +192,10 @@ void T3kSlot::OnMouseDrag(float x, float y, float dX, float dY,
 
   // First drag tick: flip on mDragging. iPlug2 only delivers OnMouseDrag
   // after the cursor has actually moved past its mouse-down position, so
-  // we don't need an explicit motion threshold here.
+  // we don't need an explicit motion threshold here. Drag is locked to
+  // the horizontal axis — vertical motion is intentionally discarded.
   mDragging = true;
-  mDragOffsetX += dX;
-  mDragOffsetY += dY;
+  mDragTargetX += dX;
   mOnDragMove(mSlotIndex, x, y);
   SetDirty(false);
 }
@@ -191,9 +210,9 @@ void T3kSlot::OnMouseUp(float x, float y, const IMouseMod& /*mod*/)
     // Drag-release: fire onDragEnd, then snap the visual back to mRECT
     // (the parent decides whether to rebuild the strip — if it does, this
     // tile gets destroyed anyway; if it doesn't, the visual just snaps).
-    mDragging = false;
+    mDragging    = false;
+    mDragTargetX = 0.f;
     mDragOffsetX = 0.f;
-    mDragOffsetY = 0.f;
     if (mOnDragEnd) mOnDragEnd(mSlotIndex, x, y);
     SetDirty(false);
     return;

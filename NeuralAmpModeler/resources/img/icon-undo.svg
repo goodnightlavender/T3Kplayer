@@ -1,4 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
-  <path d="M3 8a5 5 0 1 0 5-5" stroke="#cfcfcf" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-  <polyline points="3,4 3,8 7,8" stroke="#cfcfcf" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <!-- 180° top arc from right (18,12) over the top to left (6,12). -->
+  <path d="M 18 12 A 6 6 0 0 0 6 12" stroke="#cfcfcf" stroke-width="2.2" stroke-linecap="round"/>
+  <!-- Short vertical tail from (6,12) down to (6,16). -->
+  <line x1="6" y1="12" x2="6" y2="16" stroke="#cfcfcf" stroke-width="2.2" stroke-linecap="round"/>
+  <!-- Filled triangle arrowhead at the tail, pointing left. -->
+  <polygon points="6,18 1,13 11,13" fill="#cfcfcf"/>
 </svg>

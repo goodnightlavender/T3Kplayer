@@ -99,14 +99,18 @@ private:
   std::function<void(int)> mOnRemove;
   std::function<void(int)> mOnAdd;
 
-  // Drag state. mDragging flips on after OnMouseDown moves a few pixels;
-  // it stays true through OnMouseDrag and resets on OnMouseUp. The offset
-  // tracks the cumulative drag delta so Draw can shift the visual to
-  // follow the cursor without moving the actual mRECT (which keeps mouse
-  // hit-testing predictable from the parent's perspective).
-  bool  mDragging = false;
+  // Drag state. mDragging flips on the first OnMouseDrag tick and resets
+  // on OnMouseUp. Drag is constrained to the horizontal axis (pedals /
+  // outboards reorder within their category in 1D), and the displayed
+  // offset eases toward the target each frame for smoothing.
+  //   mDragTargetX — raw accumulated horizontal drag delta (1:1 with the
+  //                  mouse).
+  //   mDragOffsetX — what's actually rendered; lerped toward mDragTargetX
+  //                  in Draw. Decoupling target from displayed value gives
+  //                  the drag a smooth, weighted feel.
+  bool  mDragging    = false;
+  float mDragTargetX = 0.f;
   float mDragOffsetX = 0.f;
-  float mDragOffsetY = 0.f;
 
   std::function<void(int, float, float)> mOnDragMove;
   std::function<void(int, float, float)> mOnDragEnd;

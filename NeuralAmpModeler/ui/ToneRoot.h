@@ -33,6 +33,7 @@ class T3kTabBar;
 class T3kLooseGlyph;
 class T3kPresetPill;
 class T3kPresetOverlay;
+class T3kClickBackdrop;
 class T3kFirstRunModal;
 class ToneView;
 class CloudView;
@@ -94,6 +95,9 @@ private:
   // attached for later phases but are no longer reachable from the v6
   // header.
   T3kPresetOverlay* mPresetOverlay = nullptr;
+  // Invisible full-window click-catcher attached just below mPresetOverlay
+  // in z-order while the overlay is visible. Click → closes the overlay.
+  T3kClickBackdrop* mPresetBackdrop = nullptr;
   DownloadsView*    mDownloadsView = nullptr;
   SettingsView*     mSettingsView  = nullptr;
   // First-run modal — attached only when settings.tone3000_root is
