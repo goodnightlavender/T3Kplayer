@@ -228,6 +228,9 @@
     <ClCompile Include="..\library\LibraryDb.cpp">
       <Filter>library</Filter>
     </ClCompile>
+    <ClCompile Include="..\library\ModelSidecar.cpp">
+      <Filter>library</Filter>
+    </ClCompile>
     <ClCompile Include="..\settings\Settings.cpp">
       <Filter>settings</Filter>
     </ClCompile>
@@ -605,6 +608,9 @@
       <Filter>library</Filter>
     </ClInclude>
     <ClInclude Include="..\library\LibraryDb.h">
+      <Filter>library</Filter>
+    </ClInclude>
+    <ClInclude Include="..\library\ModelSidecar.h">
       <Filter>library</Filter>
     </ClInclude>
     <ClInclude Include="..\settings\Settings.h">
