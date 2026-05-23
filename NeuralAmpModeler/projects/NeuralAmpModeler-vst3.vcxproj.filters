@@ -297,6 +297,9 @@
     <ClCompile Include="..\cloud\LoopbackServer.cpp">
       <Filter>cloud</Filter>
     </ClCompile>
+    <ClCompile Include="..\cloud\OAuthFlow.cpp">
+      <Filter>cloud</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="../config.h" />
@@ -734,6 +737,12 @@
       <Filter>cloud</Filter>
     </ClInclude>
     <ClInclude Include="..\cloud\LoopbackServer.h">
+      <Filter>cloud</Filter>
+    </ClInclude>
+    <ClInclude Include="..\cloud\OAuthConfig.h">
+      <Filter>cloud</Filter>
+    </ClInclude>
+    <ClInclude Include="..\cloud\OAuthFlow.h">
       <Filter>cloud</Filter>
     </ClInclude>
   </ItemGroup>
