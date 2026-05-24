@@ -1,24 +1,37 @@
-// LibraryView.h — Phase 10 reimagining of the Library tab body.
+// LibraryView.h — Library tab body in its post-Phase-10-polish form,
+// modelled on the Cloud tab.
 //
-// Layout: header (search + Rescan) on top; below that the body is split
-// into a virtual list (~70% of width) on the left and a fixed-width
-// detail pane (~300px) on the right. Selecting a row in the list fills
-// the detail pane and reveals action buttons (Load, Rename, Remove,
-// Show in Explorer). The legacy "TEST NET" button has been retired —
-// Phase 4 brought the network online, the smoke-test surface no longer
-// earns its slot in the header chrome.
+// Layout (1280x800 default window):
+//   +- Header (search + sort) -----------------------------------+
+//   |                                                            |
+//   +- Sidebar -+- Card grid (6 cols x 4 visible rows) -----------+
+//   | Gear      |                                                 |
+//   | Tags      |   [card] [card] [card] [card] [card] [card]     |   v scroll
+//   | Makes     |   [card] [card] [card] [card] [card] [card]     |
+//   | Creators  |   [card] [card] [card] [card] [card] [card]     |
+//   | Technical |   [card] [card] [card] [card] [card] [card]     |
+//   +-----------+- Detail strip (selected card) ------------------+
+//   |           | [icon] Name . Creator . NAM 12.3 MB             |
+//   |           | [LOAD INTO CHAIN] [RENAME] [SHOW] [REMOVE]      |
+//   +-----------+--------------------------------------------------+
 //
-// LibraryView still OWNS the scroll list (T3kVScrollList) and renders
-// each row inline via T3kVScrollList's draw-callback; the rows are
-// taller now (~88px) and carry a thumbnail tile on the left, so the
-// virtualization budget stays the same regardless of library size.
+// Sidebar: five filter accordions mirroring CloudView's set (Gear, Tags,
+// Makes, Creators, Technical). Gear/Make/Creator/Format filters drive
+// live re-querying against LibraryDb; Tags is still a placeholder until
+// the local library carries tag metadata.
+//
+// Grid: each cell is a T3kLibraryCard (compact vertical tile). Cards
+// are attached lazily by ensureCardCount() — we only allocate as many
+// cards as are visible on screen plus one row of slack, and reuse them
+// when the user scrolls (mScrollOffset is in pixels).
 
 #pragma once
 
-#include <chrono>
 #include <cstdint>
 #include <functional>
+#include <set>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "IControl.h"
@@ -29,7 +42,8 @@ namespace t3k::ui {
 
 class T3kSearchBar;
 class T3kButton;
-class T3kVScrollList;
+class T3kAccordion;
+class T3kLibraryCard;
 class T3kRenameOverlay;
 
 class LibraryView : public iplug::igraphics::IControl {
@@ -46,6 +60,8 @@ class LibraryView : public iplug::igraphics::IControl {
   void OnResize() override;
   void OnAttached() override;
   void OnMouseDown(float x, float y, const iplug::igraphics::IMouseMod& mod) override;
+  void OnMouseWheel(float x, float y,
+                    const iplug::igraphics::IMouseMod& mod, float d) override;
   void OnPopupMenuSelection(iplug::igraphics::IPopupMenu* pSelectedMenu,
                             int valIdx) override;
 
@@ -57,86 +73,123 @@ class LibraryView : public iplug::igraphics::IControl {
   ~LibraryView() override;
 
  private:
-  // Re-run LibraryDb::queryByName(mSearch) and stash the result. Called
-  // from OnAttached, EventBus listeners, and the debounce timer.
+  // ── Data refresh ──────────────────────────────────────────────
+  // Re-query LibraryDb and apply current filters. Repopulates mRows
+  // and rebuilds the distinct-makes/creators filter sets.
   void refresh();
+  // Apply the in-memory filter sets (mSelectedGears / Makes / Creators
+  // / Formats) to the latest LibraryDb result. Sets mRows to the
+  // visible subset. Called from refresh() and whenever a filter
+  // toggles.
+  void applyFilters();
+  // Recompute mAllMakes / mAllCreators from mAllRows so the sidebar
+  // accordions show the right options.
+  void recomputeFilterOptions();
 
-  // Drop the rename overlay back to invisible.
-  void hideRenameOverlay();
+  // ── Grid management ───────────────────────────────────────────
+  // Ensure exactly `n` T3kLibraryCard children exist (lazy attach,
+  // never detaches — we Hide(true) extras instead). Returns the
+  // running count.
+  void ensureCardCount(int n);
+  // Walk visible cards and (re)position / Hide them based on the
+  // current mScrollOffset and the row data.
+  void layoutCards();
 
-  // Show the rename overlay anchored under the row whose model is `id`.
-  void showRenameOverlay(int64_t modelId);
-
-  // Find a row by row-id. Returns -1 if not visible.
-  int findRowIndexById(int64_t modelId) const;
-
-  // Remove `mSelectedId` from LibraryDb + nuke the on-disk files. Called
-  // from the detail-pane Remove button and the popup-menu Remove item
-  // after the user confirms via a two-step "Remove → Confirm" popup.
+  // ── Selection / action handlers ───────────────────────────────
+  void onCardClicked(int64_t id);
+  void onCardRightClicked(int64_t id, float x, float y);
   void removeSelected();
-
-  // Open the OS file explorer focused on `mSelectedId`'s on-disk path.
   void revealSelected();
-
-  // Stage `mSelectedId` into the chain (delegates to mOnModelClicked).
   void loadSelected();
-
-  // Refresh the detail-pane button visibility based on whether a row
-  // is selected. The detail pane stays visible always; the buttons
-  // disappear when nothing is selected.
+  void renameSelected();
   void updateDetailButtons();
 
-  // Header chrome rects, recomputed in OnResize.
+  // ── Sidebar drawing (T3kAccordion content callbacks) ──────────
+  void drawGearAccordion(const iplug::igraphics::IRECT& r);
+  void drawTagsAccordion(const iplug::igraphics::IRECT& r);
+  void drawMakesAccordion(const iplug::igraphics::IRECT& r);
+  void drawCreatorsAccordion(const iplug::igraphics::IRECT& r);
+  void drawTechnicalAccordion(const iplug::igraphics::IRECT& r);
+  bool handleSidebarClick(float x, float y);
+  void layoutSidebar();
+
+  // Rename overlay flow.
+  void showRenameOverlay(int64_t modelId);
+
+  // Scroll helpers.
+  void scrollBy(float d);
+  float gridContentHeight() const;
+  float gridViewportHeight() const;
+
+  // ── Layout sub-rects (recomputed in OnResize) ──────────────────
   iplug::igraphics::IRECT mHeaderRect;
   iplug::igraphics::IRECT mSearchRect;
-  iplug::igraphics::IRECT mRescanRect;
-  iplug::igraphics::IRECT mBodyRect;        // header.B → mRECT.B
-  iplug::igraphics::IRECT mListRect;        // left side of body
-  iplug::igraphics::IRECT mDetailRect;      // right side of body
+  iplug::igraphics::IRECT mSortRect;
+  iplug::igraphics::IRECT mSidebarRect;
+  iplug::igraphics::IRECT mGridRect;
+  iplug::igraphics::IRECT mDetailRect;
 
-  // Detail-pane child button rects.
+  // Detail-strip button rects.
   iplug::igraphics::IRECT mLoadBtnRect;
   iplug::igraphics::IRECT mRenameBtnRect;
   iplug::igraphics::IRECT mRevealBtnRect;
   iplug::igraphics::IRECT mRemoveBtnRect;
 
-  // Children. Owned by IGraphics after AttachControl.
-  T3kSearchBar*     mSearchBar       = nullptr;
-  T3kButton*        mRescanBtn       = nullptr;
-  T3kVScrollList*   mScrollList      = nullptr;
-  T3kRenameOverlay* mRenameOverlay   = nullptr;
-  // Detail-pane action buttons.
-  T3kButton*        mLoadBtn         = nullptr;
-  T3kButton*        mRenameBtn       = nullptr;
-  T3kButton*        mRevealBtn       = nullptr;
-  T3kButton*        mRemoveBtn       = nullptr;
+  // Cached row rects for sidebar checkbox hit-testing. Filled inside
+  // the accordion drawContent callbacks; consumed by handleSidebarClick.
+  std::vector<std::pair<std::string, iplug::igraphics::IRECT>> mGearRowRects;
+  std::vector<std::pair<std::string, iplug::igraphics::IRECT>> mMakeRowRects;
+  std::vector<std::pair<std::string, iplug::igraphics::IRECT>> mCreatorRowRects;
+  std::vector<std::pair<std::string, iplug::igraphics::IRECT>> mFormatRowRects;
 
-  // Data backing the list.
-  std::vector<::t3k::library::ModelRow> mRows;
+  // ── Children ──────────────────────────────────────────────────
+  T3kSearchBar*    mSearchBar    = nullptr;
+  T3kButton*       mRescanBtn    = nullptr;
+  T3kAccordion*    mGearAcc      = nullptr;
+  T3kAccordion*    mTagsAcc      = nullptr;
+  T3kAccordion*    mMakesAcc     = nullptr;
+  T3kAccordion*    mCreatorsAcc  = nullptr;
+  T3kAccordion*    mTechAcc      = nullptr;
+  T3kRenameOverlay* mRenameOverlay = nullptr;
+  // Grid cards. Owned by IGraphics; we only hold raw pointers.
+  std::vector<T3kLibraryCard*> mCards;
+  // Detail-strip action buttons.
+  T3kButton*       mLoadBtn      = nullptr;
+  T3kButton*       mRenameBtn    = nullptr;
+  T3kButton*       mRevealBtn    = nullptr;
+  T3kButton*       mRemoveBtn    = nullptr;
 
-  // Search query (debounce handled by T3kSearchBar itself).
+  // ── Data ──────────────────────────────────────────────────────
+  std::vector<::t3k::library::ModelRow> mAllRows;  // raw LibraryDb result
+  std::vector<::t3k::library::ModelRow> mRows;     // post-filter
+
+  // Distinct values discovered in mAllRows. Populated by
+  // recomputeFilterOptions().
+  std::vector<std::string> mAllMakes;
+  std::vector<std::string> mAllCreators;
+
+  // Filter state.
+  std::unordered_set<std::string> mSelectedGears;     // pedal/amp/cab/...
+  std::unordered_set<std::string> mSelectedMakes;
+  std::unordered_set<std::string> mSelectedCreators;
+  std::unordered_set<std::string> mSelectedFormats;   // "nam" / "ir"
+
+  // Search query (debounce handled by T3kSearchBar).
   std::string mSearch;
 
   // EventBus subscription token (so we can unsubscribe in dtor).
   int mBusToken = 0;
 
-  // Selection state — the currently-focused row in the list. Drives the
-  // detail pane and the action buttons. 0 = nothing selected.
+  // Selection state — the currently-focused card. 0 = nothing selected.
   int64_t mSelectedId = 0;
 
-  // Right-click context state — set in OnMouseDown when a right-click
-  // hits a row, consumed by OnPopupMenuSelection.
-  int64_t mCtxModelId = 0;
-
-  // The row currently being renamed (so we can apply the new name when
-  // T3kRenameOverlay fires its callback).
-  int64_t mRenameTargetId = 0;
-
-  // Two-step popup-menu remove confirmation. When the user picks
-  // "Remove from library…" we open a second popup menu that asks
-  // "Confirm: delete <name>?" — we remember which model id we're
-  // about to wipe between the two popup roundtrips here.
+  // Right-click context state.
+  int64_t mCtxModelId      = 0;
+  int64_t mRenameTargetId  = 0;
   int64_t mRemoveConfirmId = 0;
+
+  // Grid scroll offset, in pixels (always >= 0).
+  float mScrollOffset = 0.f;
 
   OnModelClicked mOnModelClicked;
 };

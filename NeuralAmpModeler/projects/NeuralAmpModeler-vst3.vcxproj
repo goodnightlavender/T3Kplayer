@@ -370,6 +370,7 @@
     <ClInclude Include="..\ui\controls\T3kAccordion.h" />
     <ClInclude Include="..\ui\controls\T3kVScrollList.h" />
     <ClInclude Include="..\ui\controls\T3kCard.h" />
+    <ClInclude Include="..\ui\controls\T3kLibraryCard.h" />
     <ClInclude Include="..\ui\controls\T3kLogo.h" />
     <ClInclude Include="..\ui\controls\T3kGearIcon.h" />
     <ClInclude Include="..\ui\controls\T3kSlot.h" />
@@ -522,6 +523,7 @@
     <ClCompile Include="..\ui\controls\T3kAccordion.cpp" />
     <ClCompile Include="..\ui\controls\T3kVScrollList.cpp" />
     <ClCompile Include="..\ui\controls\T3kCard.cpp" />
+    <ClCompile Include="..\ui\controls\T3kLibraryCard.cpp" />
     <ClCompile Include="..\ui\controls\T3kLogo.cpp" />
     <ClCompile Include="..\ui\controls\T3kGearIcon.cpp" />
     <ClCompile Include="..\ui\controls\T3kSlot.cpp" />

@@ -1,39 +1,31 @@
-// LibraryView.cpp — Phase 10 Library tab body. Replaces the Phase 3
-// flat-row implementation.
+// LibraryView.cpp — see LibraryView.h.
 //
-// See LibraryView.h for architecture notes. Key implementation choices:
-//   - We virtualize row drawing via T3kVScrollList's draw callback so
-//     a 1000-row library doesn't construct 1000 IControl children.
-//   - The scroll list's draw callback paints into a pre-computed
-//     itemRect; rows are 88px tall and carry a thumbnail tile +
-//     name/meta stack.
-//   - Selection is row-id based (mSelectedId). Clicking a row sets
-//     mSelectedId, repaints the strip with a 2px left-edge accent on
-//     the selected row, and reveals the detail pane's action buttons.
-//   - The Phase 4 TEST NET button has been retired — Phase 4 is well
-//     past smoke-test stage and the button no longer earns its slot.
-//   - Removal asks the user for confirmation via a second popup menu;
-//     no separate modal control is introduced (keeps Block C scope
-//     tight). The flow is:
-//        1) Right-click row → popup with "Remove from library…"
-//        2) Choose Remove → second popup "Confirm delete? Yes / No"
-//        3) Yes → LibraryDb::removeRow + Paths::deleteModelFiles
-//   - The detail-pane Remove button uses the same two-step flow.
+// Implementation notes:
+//   - The five sidebar accordions mirror CloudView's set so the two tabs
+//     feel like the same product. Tags is still a placeholder until
+//     LibraryDb carries tag rows; the other four (Gear, Makes, Creators,
+//     Technical/Format) drive live re-querying.
+//   - The grid uses kCols columns. The card pool grows lazily — we hold
+//     onto T3kLibraryCard children even when the user scrolls or
+//     filters, and Hide(true) extras so iPlug2 skips their paint.
+//   - Removal still uses the two-step popup-menu confirm.
 
 #include "LibraryView.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <unordered_set>
 
 #include "IGraphics.h"
 
 #include "../theme.h"
 #include "../layout.h"
+#include "../controls/T3kAccordion.h"
 #include "../controls/T3kButton.h"
+#include "../controls/T3kLibraryCard.h"
 #include "../controls/T3kRenameOverlay.h"
 #include "../controls/T3kSearchBar.h"
-#include "../controls/T3kVScrollList.h"
 #include "../../library/EventBus.h"
 #include "../../library/LibraryScanner.h"
 #include "../../library/Paths.h"
@@ -45,38 +37,37 @@ using namespace ::iplug::igraphics;
 
 namespace {
 
-// Header row dimensions.
-constexpr float kHeaderH       = 56.f;
-constexpr float kHeaderPad     = 16.f;
-constexpr float kRescanBtnW    = 96.f;
-constexpr float kRescanBtnH    = 28.f;
-constexpr float kSearchH       = 32.f;
+// Layout constants tuned for the 1280x800 default window.
+constexpr float kHeaderH        = 56.f;
+constexpr float kHeaderPad      = 16.f;
+constexpr float kSearchH        = 32.f;
+constexpr float kRescanBtnW     = 96.f;
+constexpr float kRescanBtnH     = 28.f;
 
-// Body split.
-constexpr float kDetailW       = 300.f;     // right-side detail pane width
-constexpr float kBodyGutter    = 12.f;      // gap between list and detail
+constexpr float kSidebarW       = 220.f;
+constexpr float kSidebarPad     = 12.f;
+constexpr float kCheckboxRowH   = 26.f;
+constexpr float kCheckboxBoxSz  = 14.f;
 
-// Row metrics.
-constexpr float kRowH          = 88.f;
-constexpr float kRowPadL       = 12.f;
-constexpr float kRowPadR       = 16.f;
-constexpr float kThumbSize     = 64.f;      // square gear-icon tile
+constexpr float kDetailH        = 88.f;
+constexpr float kDetailPad      = 14.f;
+constexpr float kDetailBtnW     = 140.f;
+constexpr float kDetailBtnH     = 30.f;
+constexpr float kDetailBtnGap   = 8.f;
 
-// Detail-pane metrics.
-constexpr float kDetailPad     = 16.f;
-constexpr float kHeroSize      = 128.f;     // large gear-icon tile
-constexpr float kDetailBtnH    = 32.f;
-constexpr float kDetailBtnGap  = 8.f;
+constexpr float kGridPad        = 16.f;
+constexpr float kCardW          = 144.f;
+constexpr float kCardH          = 168.f;
+constexpr float kCardGap        = 12.f;
+constexpr int   kCols           = 6;
 
-// Popup menu commands. Reserve a range so the two-step confirm flow
-// doesn't collide with the first-stage menu.
 enum PopupCmd {
   kCmdNone           = 0,
   kCmdRename         = 1,
   kCmdReveal         = 2,
   kCmdRemove         = 3,
   kCmdConfirmRemove  = 100,
-  kCmdCancelRemove   = 101
+  kCmdCancelRemove   = 101,
 };
 
 // Format size_bytes as a human-readable string.
@@ -86,25 +77,34 @@ std::string FormatSize(int64_t bytes)
   constexpr int64_t kKb = 1024;
   char buf[64];
   if (bytes >= kMb) {
-    const double mb = double(bytes) / double(kMb);
-    std::snprintf(buf, sizeof(buf), "%.1f MB", mb);
+    std::snprintf(buf, sizeof(buf), "%.1f MB",
+                  static_cast<double>(bytes) / static_cast<double>(kMb));
   } else if (bytes >= kKb) {
     std::snprintf(buf, sizeof(buf), "%lld KB",
                   static_cast<long long>(bytes / kKb));
   } else {
-    std::snprintf(buf, sizeof(buf), "%lld B", static_cast<long long>(bytes));
+    std::snprintf(buf, sizeof(buf), "%lld B",
+                  static_cast<long long>(bytes));
   }
   return buf;
 }
 
-// Map gear_type → resource filename. Falls back to the pedal icon for
-// unknown types (mirrors T3kSlot's mapping).
-const char* GearIconFor(const std::string& gearType)
+const char* GearLabelFor(const std::string& g)
 {
-  if (gearType == "amp")       return ICON_AMP_FN;
-  if (gearType == "cab")       return ICON_CAB_FN;
-  if (gearType == "outboard")  return ICON_OUTBOARD_FN;
-  if (gearType == "full-rig")  return ICON_FULLRIG_FN;
+  if (g == "amp")       return "Amp";
+  if (g == "cab")       return "Cab";
+  if (g == "outboard")  return "Outboard";
+  if (g == "full-rig")  return "Full rig";
+  if (g == "pedal")     return "Pedal";
+  return g.c_str();
+}
+
+const char* GearIconResource(const std::string& g)
+{
+  if (g == "amp")       return ICON_AMP_FN;
+  if (g == "cab")       return ICON_CAB_FN;
+  if (g == "outboard")  return ICON_OUTBOARD_FN;
+  if (g == "full-rig")  return ICON_FULLRIG_FN;
   return ICON_PEDAL_FN;
 }
 
@@ -128,73 +128,102 @@ LibraryView::~LibraryView()
 void LibraryView::Hide(bool hide)
 {
   IControl::Hide(hide);
-  // iPlug2 attaches all controls flat — hiding this view does NOT
-  // auto-propagate. Cascade to each child so the Library chrome doesn't
-  // leak onto the Tone tab when the user switches away.
   if (mSearchBar)     mSearchBar    ->Hide(hide);
   if (mRescanBtn)     mRescanBtn    ->Hide(hide);
-  if (mScrollList)    mScrollList   ->Hide(hide);
-  if (mRenameOverlay) mRenameOverlay->Hide(hide);
-  // Detail-pane buttons follow updateDetailButtons() rules — when
-  // unhiding the view we honor selection state instead of unhiding
-  // them unconditionally.
+  if (mGearAcc)       mGearAcc      ->Hide(hide);
+  if (mTagsAcc)       mTagsAcc      ->Hide(hide);
+  if (mMakesAcc)      mMakesAcc     ->Hide(hide);
+  if (mCreatorsAcc)   mCreatorsAcc  ->Hide(hide);
+  if (mTechAcc)       mTechAcc      ->Hide(hide);
+  if (mRenameOverlay) mRenameOverlay->Hide(true);  // always hidden between sessions
   if (hide) {
     if (mLoadBtn)   mLoadBtn  ->Hide(true);
     if (mRenameBtn) mRenameBtn->Hide(true);
     if (mRevealBtn) mRevealBtn->Hide(true);
     if (mRemoveBtn) mRemoveBtn->Hide(true);
+    for (auto* c : mCards) if (c) c->Hide(true);
   } else {
     updateDetailButtons();
+    layoutCards();
   }
 }
 
 void LibraryView::OnResize()
 {
-  // Header row at the top, body fills the rest.
-  auto split  = t3k::layout::rowFixedTop(mRECT, kHeaderH);
-  mHeaderRect = split.first;
-  mBodyRect   = split.second;
+  namespace th = ::t3k::theme;
 
-  // Header lays out left → right: search (flex) + Rescan.
+  // Header (search + rescan) at the top.
+  auto hsplit = t3k::layout::rowFixedTop(mRECT, kHeaderH);
+  mHeaderRect = hsplit.first;
+  IRECT below = hsplit.second;
+
   const float left  = mHeaderRect.L + kHeaderPad;
   const float right = mHeaderRect.R - kHeaderPad;
   const float midY  = mHeaderRect.MH();
   const float searchTop = midY - kSearchH * 0.5f;
   const float btnTop    = midY - kRescanBtnH * 0.5f;
 
-  mRescanRect  = IRECT(right - kRescanBtnW, btnTop,
-                       right,               btnTop + kRescanBtnH);
-  mSearchRect  = IRECT(left,                searchTop,
-                       mRescanRect.L - t3k::theme::kS3,
-                       searchTop + kSearchH);
+  mSortRect   = IRECT(right - kRescanBtnW, btnTop,
+                      right,               btnTop + kRescanBtnH);
+  mSearchRect = IRECT(left, searchTop,
+                      mSortRect.L - th::kS3,
+                      searchTop + kSearchH);
 
-  // Body split: list on the left, detail on the right.
-  mDetailRect = IRECT(mBodyRect.R - kDetailW, mBodyRect.T,
-                      mBodyRect.R,            mBodyRect.B);
-  mListRect   = IRECT(mBodyRect.L,            mBodyRect.T,
-                      mDetailRect.L - kBodyGutter, mBodyRect.B);
+  // Body: sidebar (left) + detail strip (bottom) + grid (remaining).
+  mSidebarRect = IRECT(below.L, below.T, below.L + kSidebarW, below.B);
+  const IRECT body(mSidebarRect.R, below.T, below.R, below.B);
+  mDetailRect = IRECT(body.L, body.B - kDetailH, body.R, body.B);
+  mGridRect   = IRECT(body.L, body.T,            body.R, mDetailRect.T);
 
-  // Detail-pane child button rects (vertical stack at the bottom).
-  const float btnL = mDetailRect.L + kDetailPad;
-  const float btnR = mDetailRect.R - kDetailPad;
-  const float bottomPad = kDetailPad;
-  float by = mDetailRect.B - bottomPad - kDetailBtnH;
+  if (mSearchBar) mSearchBar->SetTargetAndDrawRECTs(mSearchRect);
+  if (mRescanBtn) mRescanBtn->SetTargetAndDrawRECTs(mSortRect);
 
-  mRemoveBtnRect = IRECT(btnL, by, btnR, by + kDetailBtnH);
-  by -= kDetailBtnH + kDetailBtnGap;
-  mRevealBtnRect = IRECT(btnL, by, btnR, by + kDetailBtnH);
-  by -= kDetailBtnH + kDetailBtnGap;
-  mRenameBtnRect = IRECT(btnL, by, btnR, by + kDetailBtnH);
-  by -= kDetailBtnH + kDetailBtnGap;
-  mLoadBtnRect   = IRECT(btnL, by, btnR, by + kDetailBtnH);
+  layoutSidebar();
 
-  if (mSearchBar)  mSearchBar ->SetTargetAndDrawRECTs(mSearchRect);
-  if (mRescanBtn)  mRescanBtn ->SetTargetAndDrawRECTs(mRescanRect);
-  if (mScrollList) mScrollList->SetTargetAndDrawRECTs(mListRect);
-  if (mLoadBtn)    mLoadBtn   ->SetTargetAndDrawRECTs(mLoadBtnRect);
-  if (mRenameBtn)  mRenameBtn ->SetTargetAndDrawRECTs(mRenameBtnRect);
-  if (mRevealBtn)  mRevealBtn ->SetTargetAndDrawRECTs(mRevealBtnRect);
-  if (mRemoveBtn)  mRemoveBtn ->SetTargetAndDrawRECTs(mRemoveBtnRect);
+  // Detail-strip buttons — right-aligned row.
+  const float by = mDetailRect.MH() - kDetailBtnH * 0.5f;
+  float bx = mDetailRect.R - kDetailPad - kDetailBtnW;
+  mRemoveBtnRect = IRECT(bx, by, bx + kDetailBtnW, by + kDetailBtnH);
+  bx -= kDetailBtnW + kDetailBtnGap;
+  mRevealBtnRect = IRECT(bx, by, bx + kDetailBtnW, by + kDetailBtnH);
+  bx -= kDetailBtnW + kDetailBtnGap;
+  mRenameBtnRect = IRECT(bx, by, bx + kDetailBtnW, by + kDetailBtnH);
+  bx -= kDetailBtnW + kDetailBtnGap;
+  mLoadBtnRect   = IRECT(bx, by, bx + kDetailBtnW, by + kDetailBtnH);
+
+  if (mLoadBtn)   mLoadBtn  ->SetTargetAndDrawRECTs(mLoadBtnRect);
+  if (mRenameBtn) mRenameBtn->SetTargetAndDrawRECTs(mRenameBtnRect);
+  if (mRevealBtn) mRevealBtn->SetTargetAndDrawRECTs(mRevealBtnRect);
+  if (mRemoveBtn) mRemoveBtn->SetTargetAndDrawRECTs(mRemoveBtnRect);
+
+  layoutCards();
+}
+
+void LibraryView::layoutSidebar()
+{
+  namespace th = ::t3k::theme;
+  T3kAccordion* accs[] = {
+      mGearAcc, mTagsAcc, mMakesAcc, mCreatorsAcc, mTechAcc,
+  };
+  // Per-accordion expanded content height.
+  const float contentH[] = {
+      5 * kCheckboxRowH + 8.f,                                    // Gear
+      kCheckboxRowH    + 8.f,                                     // Tags
+      std::max<float>(kCheckboxRowH, mAllMakes.size()    * kCheckboxRowH) + 8.f,
+      std::max<float>(kCheckboxRowH, mAllCreators.size() * kCheckboxRowH) + 8.f,
+      2 * kCheckboxRowH + 8.f,                                    // Technical (Format)
+  };
+  float y = mSidebarRect.T + kSidebarPad;
+  const float left  = mSidebarRect.L + kSidebarPad;
+  const float right = mSidebarRect.R - kSidebarPad;
+  for (size_t i = 0; i < 5; ++i) {
+    T3kAccordion* a = accs[i];
+    if (!a) continue;
+    const float h = T3kAccordion::headerHeight()
+                  + (a->isOpen() ? contentH[i] : 0.f);
+    a->SetTargetAndDrawRECTs(IRECT(left, y, right, y + h));
+    y += h + th::kS2;
+  }
 }
 
 void LibraryView::OnAttached()
@@ -210,87 +239,67 @@ void LibraryView::OnAttached()
       "Search by name or creator\xE2\x80\xA6");
   g->AttachControl(mSearchBar);
 
-  mRescanBtn = new T3kButton(mRescanRect, "RESCAN",
+  mRescanBtn = new T3kButton(mSortRect, "RESCAN",
       [this]() { ::t3k::library::LibraryScanner::instance().rescan(); },
       T3kButton::Variant::Secondary);
   g->AttachControl(mRescanBtn);
 
-  mScrollList = new T3kVScrollList(mListRect,
-      /*itemCount*/ [this]() { return static_cast<int>(mRows.size()); },
-      /*itemHeight*/ [](int) { return kRowH; },
-      /*drawItem*/ [this](int i, const IRECT& r) {
-        IGraphics* gg = this->GetUI();
-        if (!gg || i < 0 || i >= static_cast<int>(mRows.size())) return;
-        namespace th = ::t3k::theme;
-        const auto& row = mRows[i];
-        const bool isSelected = (row.id == mSelectedId);
+  auto wireToggle = [this](T3kAccordion* acc) {
+    acc->setOnToggle([this](bool /*isOpen*/) {
+      this->layoutSidebar();
+      this->SetDirty(false);
+    });
+  };
 
-        // Row background — alternating tint, with an accent fill +
-        // 2px left-edge bar when the row is selected.
-        if (isSelected) {
-          gg->FillRect(th::kBgElevated, r);
-          gg->FillRect(th::kAccent,
-                       IRECT(r.L, r.T, r.L + 2.f, r.B));
-        } else if (i % 2 == 1) {
-          gg->FillRect(th::kBgSurface, r);
-        }
+  const IRECT placeholder(0.f, 0.f, 1.f, 1.f);
 
-        // Thumbnail tile (square, gear-icon SVG centered).
-        const float thumbTop = r.T + (kRowH - kThumbSize) * 0.5f;
-        const IRECT thumbR(r.L + kRowPadL, thumbTop,
-                           r.L + kRowPadL + kThumbSize,
-                           thumbTop + kThumbSize);
-        gg->FillRoundRect(th::kBgBase, thumbR, th::kRadiusMd);
-        gg->DrawRoundRect(th::kBorder, thumbR, th::kRadiusMd, nullptr, 1.f);
-        if (ISVG svg = gg->LoadSVG(GearIconFor(row.gear_type)); svg.IsValid()) {
-          const float inset = 12.f;
-          const IRECT iconR = thumbR.GetPadded(-inset);
-          gg->DrawSVG(svg, iconR);
-        }
+  mGearAcc = new T3kAccordion(placeholder,
+      "Gear",
+      []() { return 5 * kCheckboxRowH + 8.f; },
+      [this](const IRECT& r) { this->drawGearAccordion(r); },
+      /*initiallyOpen*/ true);
+  wireToggle(mGearAcc);
+  g->AttachControl(mGearAcc);
 
-        // Text column (right of the thumbnail).
-        const float textL = thumbR.R + 14.f;
-        const float textR = r.R - kRowPadR;
+  mTagsAcc = new T3kAccordion(placeholder,
+      "Tags",
+      []() { return kCheckboxRowH + 8.f; },
+      [this](const IRECT& r) { this->drawTagsAccordion(r); },
+      /*initiallyOpen*/ false);
+  wireToggle(mTagsAcc);
+  g->AttachControl(mTagsAcc);
 
-        // Display name (16px Inter Medium).
-        const IRECT nameR(textL, r.T + 14.f,
-                          textR, r.T + 14.f + 20.f);
-        gg->DrawText(IText(th::kTypeH2, th::kText,
-                           th::kFontBodyMed, EAlign::Near, EVAlign::Top),
-                     row.effectiveDisplayName().c_str(), nameR);
+  mMakesAcc = new T3kAccordion(placeholder,
+      "Makes and Models",
+      [this]() {
+        return std::max<float>(kCheckboxRowH,
+                               mAllMakes.size() * kCheckboxRowH) + 8.f;
+      },
+      [this](const IRECT& r) { this->drawMakesAccordion(r); },
+      /*initiallyOpen*/ false);
+  wireToggle(mMakesAcc);
+  g->AttachControl(mMakesAcc);
 
-        // Creator + gear_type, on the second line.
-        const IRECT metaR(textL, nameR.B + 4.f,
-                          textR, nameR.B + 4.f + 16.f);
-        std::string meta;
-        if (!row.t3k_creator.empty()) meta = row.t3k_creator;
-        if (!row.gear_type.empty()) {
-          if (!meta.empty()) meta += " \xC2\xB7 ";
-          meta += row.gear_type;
-        }
-        if (meta.empty()) meta = "(unknown source)";
-        gg->DrawText(IText(th::kTypeBody, th::kTextMuted,
-                           th::kFontBody, EAlign::Near, EVAlign::Top),
-                     meta.c_str(), metaR);
+  mCreatorsAcc = new T3kAccordion(placeholder,
+      "Creators",
+      [this]() {
+        return std::max<float>(kCheckboxRowH,
+                               mAllCreators.size() * kCheckboxRowH) + 8.f;
+      },
+      [this](const IRECT& r) { this->drawCreatorsAccordion(r); },
+      /*initiallyOpen*/ false);
+  wireToggle(mCreatorsAcc);
+  g->AttachControl(mCreatorsAcc);
 
-        // Size + variant name on the third line.
-        const IRECT sizeR(textL, metaR.B + 2.f,
-                          textR, metaR.B + 2.f + 14.f);
-        std::string size = FormatSize(row.size_bytes);
-        if (!row.model_name.empty() && row.model_name != row.display_name) {
-          size += "  \xC2\xB7  " + row.model_name;
-        }
-        gg->DrawText(IText(th::kTypeSmall, th::kTextDim,
-                           th::kFontBody, EAlign::Near, EVAlign::Top),
-                     size.c_str(), sizeR);
+  mTechAcc = new T3kAccordion(placeholder,
+      "Technical",
+      []() { return 2 * kCheckboxRowH + 8.f; },
+      [this](const IRECT& r) { this->drawTechnicalAccordion(r); },
+      /*initiallyOpen*/ false);
+  wireToggle(mTechAcc);
+  g->AttachControl(mTechAcc);
 
-        // Row separator.
-        gg->FillRect(th::kBorder, IRECT(r.L, r.B - 1.f, r.R, r.B));
-      });
-  g->AttachControl(mScrollList);
-
-  // Shared rename overlay — hidden until showRenameOverlay positions it
-  // and Hide(false)s it.
+  // Rename overlay — full-window placeholder, repositioned by show().
   mRenameOverlay = new T3kRenameOverlay(IRECT(0.f, 0.f, 1.f, 1.f));
   mRenameOverlay->setOnSave([this](const std::string& newName) {
     if (mRenameTargetId <= 0) return;
@@ -303,20 +312,19 @@ void LibraryView::OnAttached()
   });
   g->AttachControl(mRenameOverlay);
 
-  // Detail-pane action buttons. Attached hidden; updateDetailButtons()
-  // reveals them when a row is selected.
+  // Detail-strip buttons — created hidden; updateDetailButtons() reveals
+  // them when a card is selected.
   mLoadBtn = new T3kButton(mLoadBtnRect, "LOAD INTO CHAIN",
       [this]() { this->loadSelected(); },
       T3kButton::Variant::Primary);
   mRenameBtn = new T3kButton(mRenameBtnRect, "RENAME",
-      [this]() { if (mSelectedId > 0) this->showRenameOverlay(mSelectedId); },
+      [this]() { this->renameSelected(); },
       T3kButton::Variant::Secondary);
   mRevealBtn = new T3kButton(mRevealBtnRect, "SHOW IN EXPLORER",
       [this]() { this->revealSelected(); },
       T3kButton::Variant::Secondary);
-  mRemoveBtn = new T3kButton(mRemoveBtnRect, "REMOVE FROM LIBRARY",
+  mRemoveBtn = new T3kButton(mRemoveBtnRect, "REMOVE",
       [this]() {
-        // Two-step confirm via popup-menu (avoids a dedicated modal).
         if (mSelectedId <= 0) return;
         mRemoveConfirmId = mSelectedId;
         IGraphics* gg = this->GetUI();
@@ -324,9 +332,8 @@ void LibraryView::OnAttached()
         IPopupMenu menu;
         menu.AddItem("Yes, permanently delete files", kCmdConfirmRemove);
         menu.AddItem("Cancel", kCmdCancelRemove);
-        const float anchorX = mRemoveBtnRect.MW();
-        const float anchorY = mRemoveBtnRect.T;
-        gg->CreatePopupMenu(*this, menu, anchorX, anchorY);
+        gg->CreatePopupMenu(*this, menu,
+                            mRemoveBtnRect.MW(), mRemoveBtnRect.T);
       },
       T3kButton::Variant::Secondary);
   g->AttachControl(mLoadBtn);
@@ -335,8 +342,7 @@ void LibraryView::OnAttached()
   g->AttachControl(mRemoveBtn);
   updateDetailButtons();
 
-  // Subscribe to scanner events — refresh the list when the scan
-  // adds/removes models.
+  // Subscribe to scanner events.
   mBusToken = ::t3k::library::EventBus::instance().subscribe(
       [this](::t3k::library::LibraryEvent ev, int64_t /*payload*/) {
         switch (ev) {
@@ -353,171 +359,204 @@ void LibraryView::OnAttached()
   refresh();
 }
 
-void LibraryView::Draw(IGraphics& g)
+void LibraryView::refresh()
 {
-  namespace th = ::t3k::theme;
+  mAllRows = ::t3k::library::LibraryDb::instance().queryByName(mSearch);
+  recomputeFilterOptions();
+  applyFilters();
+}
 
-  // Body background + 1px header divider.
-  g.FillRect(th::kBgBase, mRECT);
-  g.FillRect(th::kBorder,
-             IRECT(mRECT.L, mHeaderRect.B - 1.f, mRECT.R, mHeaderRect.B));
-
-  // 1px vertical divider between the list and the detail pane.
-  g.FillRect(th::kBorder,
-             IRECT(mDetailRect.L - 1.f, mBodyRect.T,
-                   mDetailRect.L,       mBodyRect.B));
-
-  // Empty state hint when the list is empty.
-  if (mRows.empty()) {
-    const char* msg = mSearch.empty()
-        ? "No models yet. Drop .nam files (with their .tone3000.json sidecars) "
-          "into your TONE3000 folder and hit Rescan."
-        : "No models match the current search.";
-    g.DrawText(IText(th::kTypeBody, th::kTextMuted,
-                     th::kFontBody, EAlign::Center, EVAlign::Middle),
-               msg, mListRect);
+void LibraryView::recomputeFilterOptions()
+{
+  std::unordered_set<std::string> makes, creators;
+  for (const auto& r : mAllRows) {
+    if (!r.make.empty())        makes.insert(r.make);
+    if (!r.t3k_creator.empty()) creators.insert(r.t3k_creator);
   }
-
-  // ── Detail pane ────────────────────────────────────────────
-  // Always draws; the right side of the body is dedicated to it.
-  // When nothing is selected we draw a muted placeholder hint.
-  if (mSelectedId <= 0) {
-    g.DrawText(IText(th::kTypeBody, th::kTextDim,
-                     th::kFontBody, EAlign::Center, EVAlign::Middle),
-               "Select a model to see details.",
-               mDetailRect);
-    return;
+  mAllMakes.assign(makes.begin(), makes.end());
+  mAllCreators.assign(creators.begin(), creators.end());
+  std::sort(mAllMakes.begin(),    mAllMakes.end());
+  std::sort(mAllCreators.begin(), mAllCreators.end());
+  // Prune dead selections so toggling them off still works.
+  for (auto it = mSelectedMakes.begin(); it != mSelectedMakes.end();) {
+    if (makes.find(*it) == makes.end()) it = mSelectedMakes.erase(it);
+    else ++it;
   }
-
-  // Find the selected row in the current results. If it was filtered
-  // out by a search change, just bail.
-  const ::t3k::library::ModelRow* row = nullptr;
-  for (const auto& r : mRows) {
-    if (r.id == mSelectedId) { row = &r; break; }
+  for (auto it = mSelectedCreators.begin(); it != mSelectedCreators.end();) {
+    if (creators.find(*it) == creators.end()) it = mSelectedCreators.erase(it);
+    else ++it;
   }
-  if (!row) return;
+  layoutSidebar();
+}
 
-  // Hero gear-icon tile centered horizontally near the top of the
-  // detail pane.
-  const float heroL = mDetailRect.MW() - kHeroSize * 0.5f;
-  const float heroT = mDetailRect.T + kDetailPad;
-  const IRECT heroR(heroL, heroT, heroL + kHeroSize, heroT + kHeroSize);
-  g.FillRoundRect(th::kBgSurface, heroR, th::kRadiusLg);
-  g.DrawRoundRect(th::kBorder,    heroR, th::kRadiusLg, nullptr, 1.f);
-  if (ISVG svg = g.LoadSVG(GearIconFor(row->gear_type)); svg.IsValid()) {
-    g.DrawSVG(svg, heroR.GetPadded(-28.f));
-  }
-
-  // Stacked text below the hero. We carry a running y-cursor.
-  float y = heroR.B + kDetailPad;
-  const float lineL = mDetailRect.L + kDetailPad;
-  const float lineR = mDetailRect.R - kDetailPad;
-
-  // Name (Anton 20px — slightly smaller than h1 so longer names fit).
-  const IRECT nameR(lineL, y, lineR, y + 26.f);
-  g.DrawText(IText(20.f, th::kText, th::kFontDisplay,
-                   EAlign::Center, EVAlign::Top),
-             row->effectiveDisplayName().c_str(), nameR);
-  y = nameR.B + 4.f;
-
-  // Creator.
-  if (!row->t3k_creator.empty()) {
-    const IRECT creatorR(lineL, y, lineR, y + 16.f);
-    g.DrawText(IText(th::kTypeBody, th::kTextMuted, th::kFontBody,
-                     EAlign::Center, EVAlign::Top),
-               row->t3k_creator.c_str(), creatorR);
-    y = creatorR.B + 6.f;
-  }
-
-  // Meta line: gear_type · make · variant.
-  std::string meta;
-  if (!row->gear_type.empty()) meta = row->gear_type;
-  if (!row->make.empty()) {
-    if (!meta.empty()) meta += " \xC2\xB7 ";
-    meta += row->make;
-  }
-  if (!row->model_name.empty() && row->model_name != row->display_name) {
-    if (!meta.empty()) meta += " \xC2\xB7 ";
-    meta += row->model_name;
-  }
-  if (!meta.empty()) {
-    const IRECT metaR(lineL, y, lineR, y + 14.f);
-    g.DrawText(IText(th::kTypeSmall, th::kTextDim, th::kFontBody,
-                     EAlign::Center, EVAlign::Top),
-               meta.c_str(), metaR);
-    y = metaR.B + 8.f;
-  }
-
-  // Size + format (kind).
-  {
-    std::string sizeLine = FormatSize(row->size_bytes);
-    if (!row->kind.empty()) {
-      sizeLine += " \xC2\xB7 ";
-      std::string k = row->kind;
-      for (char& c : k) c = static_cast<char>(std::toupper((unsigned char)c));
-      sizeLine += k;
+void LibraryView::applyFilters()
+{
+  mRows.clear();
+  for (const auto& r : mAllRows) {
+    if (!mSelectedGears.empty() &&
+        mSelectedGears.find(r.gear_type) == mSelectedGears.end()) {
+      continue;
     }
-    const IRECT sizeR(lineL, y, lineR, y + 14.f);
-    g.DrawText(IText(th::kTypeSmall, th::kTextDim, th::kFontBody,
-                     EAlign::Center, EVAlign::Top),
-               sizeLine.c_str(), sizeR);
-    y = sizeR.B + 10.f;
-  }
-
-  // Description — wraps. NanoVG's DrawText doesn't auto-wrap multiline;
-  // the description usually fits in 3 lines so we let it clip if it's
-  // too long. Future polish: a proper word-wrap helper.
-  if (!row->t3k_description.empty()) {
-    const float descBottom = mLoadBtnRect.T - kDetailPad;
-    if (descBottom > y + 12.f) {
-      const IRECT descR(lineL, y, lineR, descBottom);
-      g.DrawText(IText(th::kTypeSmall, th::kTextMuted, th::kFontBody,
-                       EAlign::Center, EVAlign::Top),
-                 row->t3k_description.c_str(), descR);
+    if (!mSelectedMakes.empty() &&
+        mSelectedMakes.find(r.make) == mSelectedMakes.end()) {
+      continue;
     }
+    if (!mSelectedCreators.empty() &&
+        mSelectedCreators.find(r.t3k_creator) == mSelectedCreators.end()) {
+      continue;
+    }
+    if (!mSelectedFormats.empty() &&
+        mSelectedFormats.find(r.kind) == mSelectedFormats.end()) {
+      continue;
+    }
+    mRows.push_back(r);
+  }
+  // Drop selection if it filtered out.
+  if (mSelectedId > 0) {
+    bool stillVisible = false;
+    for (const auto& r : mRows) {
+      if (r.id == mSelectedId) { stillVisible = true; break; }
+    }
+    if (!stillVisible) {
+      mSelectedId = 0;
+      updateDetailButtons();
+    }
+  }
+  mScrollOffset = 0.f;
+  ensureCardCount(static_cast<int>(mRows.size()));
+  layoutCards();
+  SetDirty(false);
+}
+
+void LibraryView::ensureCardCount(int n)
+{
+  IGraphics* g = GetUI();
+  if (!g) return;
+  while (static_cast<int>(mCards.size()) < n) {
+    auto* card = new T3kLibraryCard(
+        IRECT(0.f, 0.f, 1.f, 1.f),
+        T3kLibraryCard::CardData{},
+        [this](int64_t id) { this->onCardClicked(id); },
+        [this](int64_t id, float x, float y) { this->onCardRightClicked(id, x, y); });
+    card->setOnWheel([this](float d) { this->scrollBy(d); });
+    g->AttachControl(card);
+    mCards.push_back(card);
   }
 }
 
-void LibraryView::OnMouseDown(float x, float y, const IMouseMod& mod)
+float LibraryView::gridContentHeight() const
 {
-  if (!mListRect.Contains(x, y)) {
-    // Clicks on the detail pane fall through to its child IControls.
-    return;
-  }
-  if (!mScrollList) return;
+  const int n = static_cast<int>(mRows.size());
+  if (n == 0) return 0.f;
+  const int rows = (n + kCols - 1) / kCols;
+  return rows * kCardH + (rows - 1) * kCardGap + 2.f * kGridPad;
+}
 
-  const int first = mScrollList->firstVisibleIndex();
-  const int last  = mScrollList->lastVisibleIndex();
-  if (first < 0 || last < 0) return;
+float LibraryView::gridViewportHeight() const
+{
+  return std::max(0.f, mGridRect.H());
+}
 
-  for (int i = first; i <= last && i < static_cast<int>(mRows.size()); ++i) {
-    const float top = mListRect.T + (i - first) * kRowH;
-    const IRECT rr(mListRect.L, top, mListRect.R, top + kRowH);
-    if (rr.Contains(x, y)) {
-      const auto& row = mRows[i];
-      mSelectedId = row.id;
-      updateDetailButtons();
-      SetDirty(false);
+void LibraryView::layoutCards()
+{
+  const int n = static_cast<int>(mRows.size());
+  const float gridL = mGridRect.L + kGridPad;
+  const float gridT = mGridRect.T + kGridPad - mScrollOffset;
 
-      if (mod.R) {
-        IGraphics* g = GetUI();
-        if (g) {
-          mCtxModelId = row.id;
-          IPopupMenu menu;
-          menu.AddItem("Rename\xE2\x80\xA6",            kCmdRename);
-          menu.AddItem("Show in Explorer",              kCmdReveal);
-          menu.AddSeparator();
-          menu.AddItem("Remove from library\xE2\x80\xA6", kCmdRemove);
-          g->CreatePopupMenu(*this, menu, x, y);
-        }
-        return;
-      }
-      // Left-click → just select. Loading into the chain is a
-      // deliberate action via the LOAD INTO CHAIN button to avoid
-      // accidentally swapping the active model on a random click.
-      return;
+  // Compute step sizes so the grid fills the available width even if
+  // the body is wider than kCols * kCardW + gaps. We pin card width
+  // and grow the gap until the row fits.
+  const float availW = std::max<float>(0.f, mGridRect.W() - 2.f * kGridPad);
+  const float totalCardsW = kCols * kCardW;
+  const float gapX = (kCols > 1)
+                       ? std::max(kCardGap, (availW - totalCardsW) / (kCols - 1))
+                       : 0.f;
+
+  for (int i = 0; i < static_cast<int>(mCards.size()); ++i) {
+    T3kLibraryCard* card = mCards[i];
+    if (!card) continue;
+    if (i >= n) {
+      card->Hide(true);
+      continue;
     }
+    const int row = i / kCols;
+    const int col = i % kCols;
+    const float x = gridL + col * (kCardW + gapX);
+    const float y = gridT + row * (kCardH + kCardGap);
+    const IRECT cardR(x, y, x + kCardW, y + kCardH);
+
+    // Push the new data into the card.
+    T3kLibraryCard::CardData d;
+    d.id          = mRows[i].id;
+    d.displayName = mRows[i].effectiveDisplayName();
+    d.creator     = mRows[i].t3k_creator;
+    d.gearType    = mRows[i].gear_type;
+    std::string fmt = mRows[i].kind;
+    for (char& c : fmt) c = static_cast<char>(std::toupper((unsigned char)c));
+    d.format = std::move(fmt);
+    card->setData(std::move(d));
+    card->setSelected(mRows[i].id == mSelectedId);
+
+    // Hide cards whose Y rect lies entirely outside the body — iPlug2
+    // doesn't auto-skip; without this, off-screen cards still paint
+    // their fills/borders and break visual layering on tab switches.
+    const bool visible = !IsHidden() &&
+                         cardR.B > mGridRect.T &&
+                         cardR.T < mGridRect.B;
+    card->Hide(!visible);
+    card->SetTargetAndDrawRECTs(cardR);
   }
+  SetDirty(false);
+}
+
+void LibraryView::onCardClicked(int64_t id)
+{
+  mSelectedId = id;
+  updateDetailButtons();
+  for (auto* c : mCards) {
+    if (c) c->setSelected(c->id() == id);
+  }
+  SetDirty(false);
+}
+
+void LibraryView::onCardRightClicked(int64_t id, float x, float y)
+{
+  // Select on right-click too so the popup operates on a clearly
+  // highlighted card.
+  onCardClicked(id);
+  IGraphics* g = GetUI();
+  if (!g) return;
+  mCtxModelId = id;
+  IPopupMenu menu;
+  menu.AddItem("Rename\xE2\x80\xA6",              kCmdRename);
+  menu.AddItem("Show in Explorer",                kCmdReveal);
+  menu.AddSeparator();
+  menu.AddItem("Remove from library\xE2\x80\xA6", kCmdRemove);
+  g->CreatePopupMenu(*this, menu, x, y);
+}
+
+void LibraryView::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
+{
+  // Sidebar checkbox hit-test first; otherwise the click is a no-op at
+  // this level (cards handle their own mouse events; detail-strip
+  // buttons are children).
+  handleSidebarClick(x, y);
+}
+
+void LibraryView::OnMouseWheel(float x, float y,
+                               const IMouseMod& /*mod*/, float d)
+{
+  if (mGridRect.Contains(x, y)) scrollBy(d);
+}
+
+void LibraryView::scrollBy(float d)
+{
+  // 40px per wheel notch — matches T3kVScrollList's feel.
+  const float step = 40.f * d;
+  const float maxOffset =
+      std::max(0.f, gridContentHeight() - gridViewportHeight());
+  mScrollOffset = std::clamp(mScrollOffset - step, 0.f, maxOffset);
+  layoutCards();
 }
 
 void LibraryView::OnPopupMenuSelection(IPopupMenu* pSelectedMenu, int /*valIdx*/)
@@ -529,14 +568,12 @@ void LibraryView::OnPopupMenuSelection(IPopupMenu* pSelectedMenu, int /*valIdx*/
     mRemoveConfirmId = 0;
     return;
   }
-
   const auto* item = pSelectedMenu->GetItem(idx);
   if (!item) {
     mCtxModelId      = 0;
     mRemoveConfirmId = 0;
     return;
   }
-
   switch (item->GetTag()) {
     case kCmdRename:
       if (mCtxModelId > 0) showRenameOverlay(mCtxModelId);
@@ -556,19 +593,7 @@ void LibraryView::OnPopupMenuSelection(IPopupMenu* pSelectedMenu, int /*valIdx*/
           IPopupMenu confirm;
           confirm.AddItem("Yes, permanently delete files", kCmdConfirmRemove);
           confirm.AddItem("Cancel", kCmdCancelRemove);
-          // Drop the confirm popup at the row's center (iPlug doesn't
-          // surface the original click coords once we're inside this
-          // handler).
-          const int rowIdx = findRowIndexById(mCtxModelId);
-          float ax = mListRect.MW();
-          float ay = mListRect.MH();
-          if (rowIdx >= 0 && mScrollList) {
-            const int first = mScrollList->firstVisibleIndex();
-            if (rowIdx >= first) {
-              ay = mListRect.T + (rowIdx - first) * kRowH + kRowH * 0.5f;
-            }
-          }
-          g->CreatePopupMenu(*this, confirm, ax, ay);
+          g->CreatePopupMenu(*this, confirm, mGridRect.MW(), mGridRect.MH());
         }
       }
       break;
@@ -587,56 +612,6 @@ void LibraryView::OnPopupMenuSelection(IPopupMenu* pSelectedMenu, int /*valIdx*/
   mCtxModelId = 0;
 }
 
-void LibraryView::refresh()
-{
-  mRows = ::t3k::library::LibraryDb::instance().queryByName(mSearch);
-  if (mSelectedId > 0) {
-    bool stillVisible = false;
-    for (const auto& r : mRows) {
-      if (r.id == mSelectedId) { stillVisible = true; break; }
-    }
-    if (!stillVisible) {
-      mSelectedId = 0;
-      updateDetailButtons();
-    }
-  }
-  if (mScrollList) mScrollList->invalidateHeights();
-  SetDirty(false);
-}
-
-void LibraryView::hideRenameOverlay()
-{
-  if (mRenameOverlay) {
-    mRenameOverlay->Hide(true);
-  }
-  mRenameTargetId = 0;
-}
-
-void LibraryView::showRenameOverlay(int64_t modelId)
-{
-  mRenameTargetId = modelId;
-  if (!mRenameOverlay || !mScrollList) return;
-
-  const int rowIdx = findRowIndexById(modelId);
-  if (rowIdx < 0) return;
-
-  const int first = mScrollList->firstVisibleIndex();
-  if (first < 0 || rowIdx < first) return;
-  const float top = mListRect.T + (rowIdx - first) * kRowH;
-  const IRECT rowRect(mListRect.L, top, mListRect.R, top + kRowH);
-
-  const auto& row = mRows[rowIdx];
-  mRenameOverlay->show(rowRect, row.effectiveDisplayName());
-}
-
-int LibraryView::findRowIndexById(int64_t modelId) const
-{
-  for (size_t i = 0; i < mRows.size(); ++i) {
-    if (mRows[i].id == modelId) return static_cast<int>(i);
-  }
-  return -1;
-}
-
 void LibraryView::removeSelected()
 {
   if (mSelectedId <= 0) return;
@@ -647,8 +622,6 @@ void LibraryView::removeSelected()
     SetDirty(false);
     return;
   }
-  // Compute the sidecar path: ModelSidecar writes "<stem>.tone3000.json"
-  // next to the .nam file, so strip the .nam extension and append.
   std::string sidecar;
   if (!row->uri.empty()) {
     const auto dot = row->uri.find_last_of('.');
@@ -682,6 +655,11 @@ void LibraryView::loadSelected()
   mOnModelClicked(row->t3k_tone_id, row->t3k_model_id);
 }
 
+void LibraryView::renameSelected()
+{
+  if (mSelectedId > 0) showRenameOverlay(mSelectedId);
+}
+
 void LibraryView::updateDetailButtons()
 {
   const bool visible = !IsHidden() && mSelectedId > 0;
@@ -689,6 +667,263 @@ void LibraryView::updateDetailButtons()
   if (mRenameBtn) mRenameBtn->Hide(!visible);
   if (mRevealBtn) mRevealBtn->Hide(!visible);
   if (mRemoveBtn) mRemoveBtn->Hide(!visible);
+}
+
+void LibraryView::showRenameOverlay(int64_t modelId)
+{
+  mRenameTargetId = modelId;
+  if (!mRenameOverlay) return;
+  auto row = ::t3k::library::LibraryDb::instance().findById(modelId);
+  if (!row.has_value()) return;
+  // Anchor under the detail-strip name area for predictability — any
+  // row could be off-screen at the time the user picks Rename from
+  // the popup, so we don't try to chase the card's position.
+  const IRECT anchor(mDetailRect.L + kDetailPad,
+                     mDetailRect.T + 8.f,
+                     mDetailRect.L + kDetailPad + 320.f,
+                     mDetailRect.T + 8.f + 36.f);
+  mRenameOverlay->show(anchor, row->effectiveDisplayName());
+}
+
+bool LibraryView::handleSidebarClick(float x, float y)
+{
+  auto handle = [&](std::vector<std::pair<std::string, IRECT>>& rows,
+                    std::unordered_set<std::string>& sel) -> bool {
+    for (const auto& [v, rr] : rows) {
+      if (rr.Contains(x, y)) {
+        if (sel.count(v)) sel.erase(v);
+        else              sel.insert(v);
+        applyFilters();
+        return true;
+      }
+    }
+    return false;
+  };
+  if (handle(mGearRowRects,    mSelectedGears))    return true;
+  if (handle(mMakeRowRects,    mSelectedMakes))    return true;
+  if (handle(mCreatorRowRects, mSelectedCreators)) return true;
+  if (handle(mFormatRowRects,  mSelectedFormats))  return true;
+  return false;
+}
+
+void LibraryView::Draw(IGraphics& g)
+{
+  namespace th = ::t3k::theme;
+
+  // Body background + 1px dividers.
+  g.FillRect(th::kBgBase, mRECT);
+  g.FillRect(th::kBorder,
+             IRECT(mRECT.L, mHeaderRect.B - 1.f, mRECT.R, mHeaderRect.B));
+  g.FillRect(th::kBorder,
+             IRECT(mSidebarRect.R - 1.f, mSidebarRect.T,
+                   mSidebarRect.R,       mSidebarRect.B));
+  g.FillRect(th::kBorder,
+             IRECT(mDetailRect.L, mDetailRect.T - 1.f,
+                   mDetailRect.R, mDetailRect.T));
+
+  // Empty state hint.
+  if (mRows.empty()) {
+    const char* msg;
+    if (mAllRows.empty()) {
+      msg = mSearch.empty()
+          ? "No models yet. Drop .nam files (with their .tone3000.json sidecars) "
+            "into your TONE3000 folder and hit Rescan."
+          : "No models match the current search.";
+    } else {
+      msg = "No models match the active filters.";
+    }
+    g.DrawText(IText(th::kTypeBody, th::kTextMuted,
+                     th::kFontBody, EAlign::Center, EVAlign::Middle),
+               msg, mGridRect);
+  }
+
+  // Detail strip — left side: icon + name + creator + meta.
+  if (mSelectedId > 0) {
+    const ::t3k::library::ModelRow* row = nullptr;
+    for (const auto& r : mRows) {
+      if (r.id == mSelectedId) { row = &r; break; }
+    }
+    if (row) {
+      const float iconSz = kDetailH - 2.f * kDetailPad;
+      const IRECT iconR(mDetailRect.L + kDetailPad,
+                        mDetailRect.T + kDetailPad,
+                        mDetailRect.L + kDetailPad + iconSz,
+                        mDetailRect.T + kDetailPad + iconSz);
+      g.FillRoundRect(th::kBgSurface, iconR, th::kRadiusSm);
+      g.DrawRoundRect(th::kBorder,    iconR, th::kRadiusSm, nullptr, 1.f);
+      if (ISVG svg = g.LoadSVG(GearIconResource(row->gear_type)); svg.IsValid()) {
+        g.DrawSVG(svg, iconR.GetPadded(-10.f));
+      }
+
+      const float textL = iconR.R + 12.f;
+      const float textR = mLoadBtnRect.L - kDetailPad;
+      const IRECT nameR(textL, mDetailRect.T + kDetailPad,
+                        textR, mDetailRect.T + kDetailPad + 22.f);
+      g.DrawText(IText(16.f, th::kText, th::kFontBodyMed,
+                       EAlign::Near, EVAlign::Middle),
+                 row->effectiveDisplayName().c_str(), nameR);
+
+      std::string meta;
+      if (!row->t3k_creator.empty()) meta = row->t3k_creator;
+      if (!row->gear_type.empty()) {
+        if (!meta.empty()) meta += " \xC2\xB7 ";
+        meta += GearLabelFor(row->gear_type);
+      }
+      meta += "  ";
+      meta += FormatSize(row->size_bytes);
+      if (!row->kind.empty()) {
+        std::string k = row->kind;
+        for (char& c : k) c = static_cast<char>(std::toupper((unsigned char)c));
+        meta += " \xC2\xB7 " + k;
+      }
+      const IRECT metaR(textL, nameR.B + 2.f, textR, nameR.B + 2.f + 16.f);
+      g.DrawText(IText(th::kTypeSmall, th::kTextMuted, th::kFontBody,
+                       EAlign::Near, EVAlign::Top),
+                 meta.c_str(), metaR);
+
+      if (!row->t3k_description.empty()) {
+        const IRECT descR(textL, metaR.B + 2.f, textR, metaR.B + 2.f + 16.f);
+        g.DrawText(IText(th::kTypeSmall, th::kTextDim, th::kFontBody,
+                         EAlign::Near, EVAlign::Top),
+                   row->t3k_description.c_str(), descR);
+      }
+    }
+  } else {
+    g.DrawText(IText(th::kTypeBody, th::kTextDim,
+                     th::kFontBody, EAlign::Center, EVAlign::Middle),
+               "Click a card to load it into the chain or open its actions.",
+               mDetailRect);
+  }
+}
+
+// ── Sidebar drawContent callbacks ─────────────────────────────────────
+
+void LibraryView::drawGearAccordion(const IRECT& r)
+{
+  namespace th = ::t3k::theme;
+  mGearRowRects.clear();
+  auto* gfx = GetUI();
+  if (!gfx) return;
+  const char* values[] = { "amp", "cab", "outboard", "full-rig", "pedal" };
+  float y = r.T + 4.f;
+  for (const char* v : values) {
+    const IRECT row(r.L + 8.f, y, r.R - 8.f, y + kCheckboxRowH);
+    mGearRowRects.emplace_back(v, row);
+    const IRECT box(row.L, row.MH() - kCheckboxBoxSz * 0.5f,
+                    row.L + kCheckboxBoxSz, row.MH() + kCheckboxBoxSz * 0.5f);
+    const bool on = mSelectedGears.count(v) > 0;
+    gfx->DrawRect(on ? th::kAccent : th::kBorder, box);
+    if (on) gfx->FillRect(th::kAccent, box.GetPadded(-3.f));
+
+    const IRECT lbl(box.R + 8.f, row.T, row.R, row.B);
+    gfx->DrawText(IText(th::kTypeBody, th::kText,
+                        th::kFontBody, EAlign::Near, EVAlign::Middle),
+                  GearLabelFor(v), lbl);
+    y += kCheckboxRowH;
+  }
+}
+
+void LibraryView::drawTagsAccordion(const IRECT& r)
+{
+  namespace th = ::t3k::theme;
+  auto* gfx = GetUI();
+  if (!gfx) return;
+  const IRECT row(r.L + 8.f, r.T + 4.f, r.R - 8.f, r.T + 4.f + kCheckboxRowH);
+  gfx->DrawText(IText(th::kTypeSmall, th::kTextMuted,
+                      th::kFontBody, EAlign::Near, EVAlign::Middle),
+                "Local tags coming soon", row);
+}
+
+void LibraryView::drawMakesAccordion(const IRECT& r)
+{
+  namespace th = ::t3k::theme;
+  mMakeRowRects.clear();
+  auto* gfx = GetUI();
+  if (!gfx) return;
+  if (mAllMakes.empty()) {
+    const IRECT row(r.L + 8.f, r.T + 4.f, r.R - 8.f, r.T + 4.f + kCheckboxRowH);
+    gfx->DrawText(IText(th::kTypeSmall, th::kTextDim,
+                        th::kFontBody, EAlign::Near, EVAlign::Middle),
+                  "(no makes in library)", row);
+    return;
+  }
+  float y = r.T + 4.f;
+  for (const auto& v : mAllMakes) {
+    const IRECT row(r.L + 8.f, y, r.R - 8.f, y + kCheckboxRowH);
+    mMakeRowRects.emplace_back(v, row);
+    const IRECT box(row.L, row.MH() - kCheckboxBoxSz * 0.5f,
+                    row.L + kCheckboxBoxSz, row.MH() + kCheckboxBoxSz * 0.5f);
+    const bool on = mSelectedMakes.count(v) > 0;
+    gfx->DrawRect(on ? th::kAccent : th::kBorder, box);
+    if (on) gfx->FillRect(th::kAccent, box.GetPadded(-3.f));
+
+    const IRECT lbl(box.R + 8.f, row.T, row.R, row.B);
+    gfx->DrawText(IText(th::kTypeBody, th::kText,
+                        th::kFontBody, EAlign::Near, EVAlign::Middle),
+                  v.c_str(), lbl);
+    y += kCheckboxRowH;
+  }
+}
+
+void LibraryView::drawCreatorsAccordion(const IRECT& r)
+{
+  namespace th = ::t3k::theme;
+  mCreatorRowRects.clear();
+  auto* gfx = GetUI();
+  if (!gfx) return;
+  if (mAllCreators.empty()) {
+    const IRECT row(r.L + 8.f, r.T + 4.f, r.R - 8.f, r.T + 4.f + kCheckboxRowH);
+    gfx->DrawText(IText(th::kTypeSmall, th::kTextDim,
+                        th::kFontBody, EAlign::Near, EVAlign::Middle),
+                  "(no creators in library)", row);
+    return;
+  }
+  float y = r.T + 4.f;
+  for (const auto& v : mAllCreators) {
+    const IRECT row(r.L + 8.f, y, r.R - 8.f, y + kCheckboxRowH);
+    mCreatorRowRects.emplace_back(v, row);
+    const IRECT box(row.L, row.MH() - kCheckboxBoxSz * 0.5f,
+                    row.L + kCheckboxBoxSz, row.MH() + kCheckboxBoxSz * 0.5f);
+    const bool on = mSelectedCreators.count(v) > 0;
+    gfx->DrawRect(on ? th::kAccent : th::kBorder, box);
+    if (on) gfx->FillRect(th::kAccent, box.GetPadded(-3.f));
+
+    const IRECT lbl(box.R + 8.f, row.T, row.R, row.B);
+    gfx->DrawText(IText(th::kTypeBody, th::kText,
+                        th::kFontBody, EAlign::Near, EVAlign::Middle),
+                  v.c_str(), lbl);
+    y += kCheckboxRowH;
+  }
+}
+
+void LibraryView::drawTechnicalAccordion(const IRECT& r)
+{
+  namespace th = ::t3k::theme;
+  mFormatRowRects.clear();
+  auto* gfx = GetUI();
+  if (!gfx) return;
+  // The local library carries NAM models + IR .wav files — surface
+  // those as a format filter under "Technical". Mirrors Cloud's Size
+  // filter slot.
+  const char* values[] = { "nam", "ir" };
+  const char* labels[] = { "NAM model", "Impulse response (IR)" };
+  float y = r.T + 4.f;
+  for (size_t i = 0; i < 2; ++i) {
+    const std::string v = values[i];
+    const IRECT row(r.L + 8.f, y, r.R - 8.f, y + kCheckboxRowH);
+    mFormatRowRects.emplace_back(v, row);
+    const IRECT box(row.L, row.MH() - kCheckboxBoxSz * 0.5f,
+                    row.L + kCheckboxBoxSz, row.MH() + kCheckboxBoxSz * 0.5f);
+    const bool on = mSelectedFormats.count(v) > 0;
+    gfx->DrawRect(on ? th::kAccent : th::kBorder, box);
+    if (on) gfx->FillRect(th::kAccent, box.GetPadded(-3.f));
+
+    const IRECT lbl(box.R + 8.f, row.T, row.R, row.B);
+    gfx->DrawText(IText(th::kTypeBody, th::kText,
+                        th::kFontBody, EAlign::Near, EVAlign::Middle),
+                  labels[i], lbl);
+    y += kCheckboxRowH;
+  }
 }
 
 }  // namespace t3k::ui
