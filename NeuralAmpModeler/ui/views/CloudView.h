@@ -43,6 +43,7 @@ class T3kSearchBar;
 class T3kButton;
 class T3kAccordion;
 class T3kSignInPill;
+class T3kDetailModal;
 
 class CloudView : public iplug::igraphics::IControl {
 public:
@@ -75,6 +76,7 @@ private:
   void onSortClicked();
   void onCardSelected(int toneIndex);
   void onCardDownload(int toneIndex);
+  void onCardDetail(int toneIndex);
   void onSignInClicked();
   void toggleGear(::t3k::cloud::Gear g);
   void toggleSize(::t3k::cloud::Size s);
@@ -157,6 +159,7 @@ private:
   T3kAccordion*  mCreatorsAcc = nullptr;
   T3kAccordion*  mTechAcc     = nullptr;  // Size lives inside this one
   T3kSignInPill* mSignInPill  = nullptr;
+  T3kDetailModal* mDetailModal = nullptr;
   std::vector<T3kCard*> mCards;
 
   // ── Data ───────────────────────────────────────────────────────

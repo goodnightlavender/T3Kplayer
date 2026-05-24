@@ -26,6 +26,7 @@
 #include "../controls/T3kLibraryCard.h"
 #include "../controls/T3kRenameOverlay.h"
 #include "../controls/T3kSearchBar.h"
+#include "T3kDetailModal.h"
 #include "../../library/EventBus.h"
 #include "../../library/LibraryScanner.h"
 #include "../../library/Paths.h"
@@ -136,6 +137,7 @@ void LibraryView::Hide(bool hide)
   if (mCreatorsAcc)   mCreatorsAcc  ->Hide(hide);
   if (mTechAcc)       mTechAcc      ->Hide(hide);
   if (mRenameOverlay) mRenameOverlay->Hide(true);  // always hidden between sessions
+  if (mDetailModal)   mDetailModal  ->Hide(true);  // ditto
   if (hide) {
     if (mLoadBtn)   mLoadBtn  ->Hide(true);
     if (mRenameBtn) mRenameBtn->Hide(true);
@@ -261,35 +263,42 @@ void LibraryView::OnAttached()
   wireToggle(mGearAcc);
   g->AttachControl(mGearAcc);
 
-  mTagsAcc = new T3kAccordion(placeholder,
-      "Tags",
-      []() { return kCheckboxRowH + 8.f; },
-      [this](const IRECT& r) { this->drawTagsAccordion(r); },
-      /*initiallyOpen*/ false);
-  wireToggle(mTagsAcc);
-  g->AttachControl(mTagsAcc);
+  // Tags / Makes and Models / Creators accordions — hidden per the
+  // 2026-05-25 polish round. Local library doesn't carry tag data yet
+  // and the make/creator surfaces were noisy with sparse libraries.
+  // Flip the toggle to re-enable.
+  constexpr bool kShowExtraFilters = false;
+  if constexpr (kShowExtraFilters) {
+    mTagsAcc = new T3kAccordion(placeholder,
+        "Tags",
+        []() { return kCheckboxRowH + 8.f; },
+        [this](const IRECT& r) { this->drawTagsAccordion(r); },
+        /*initiallyOpen*/ false);
+    wireToggle(mTagsAcc);
+    g->AttachControl(mTagsAcc);
 
-  mMakesAcc = new T3kAccordion(placeholder,
-      "Makes and Models",
-      [this]() {
-        return std::max<float>(kCheckboxRowH,
-                               mAllMakes.size() * kCheckboxRowH) + 8.f;
-      },
-      [this](const IRECT& r) { this->drawMakesAccordion(r); },
-      /*initiallyOpen*/ false);
-  wireToggle(mMakesAcc);
-  g->AttachControl(mMakesAcc);
+    mMakesAcc = new T3kAccordion(placeholder,
+        "Makes and Models",
+        [this]() {
+          return std::max<float>(kCheckboxRowH,
+                                 mAllMakes.size() * kCheckboxRowH) + 8.f;
+        },
+        [this](const IRECT& r) { this->drawMakesAccordion(r); },
+        /*initiallyOpen*/ false);
+    wireToggle(mMakesAcc);
+    g->AttachControl(mMakesAcc);
 
-  mCreatorsAcc = new T3kAccordion(placeholder,
-      "Creators",
-      [this]() {
-        return std::max<float>(kCheckboxRowH,
-                               mAllCreators.size() * kCheckboxRowH) + 8.f;
-      },
-      [this](const IRECT& r) { this->drawCreatorsAccordion(r); },
-      /*initiallyOpen*/ false);
-  wireToggle(mCreatorsAcc);
-  g->AttachControl(mCreatorsAcc);
+    mCreatorsAcc = new T3kAccordion(placeholder,
+        "Creators",
+        [this]() {
+          return std::max<float>(kCheckboxRowH,
+                                 mAllCreators.size() * kCheckboxRowH) + 8.f;
+        },
+        [this](const IRECT& r) { this->drawCreatorsAccordion(r); },
+        /*initiallyOpen*/ false);
+    wireToggle(mCreatorsAcc);
+    g->AttachControl(mCreatorsAcc);
+  }
 
   mTechAcc = new T3kAccordion(placeholder,
       "Technical",
@@ -342,6 +351,18 @@ void LibraryView::OnAttached()
   g->AttachControl(mRemoveBtn);
   updateDetailButtons();
 
+  // Detail modal — attached last so it stays at the top of the z-order.
+  // Sized to the full window via the view's parent rect (mRECT covers
+  // the tab body, not the full window — but the modal is attached at
+  // tab-body bounds and ToneRoot's own modals draw above it; that's
+  // fine because we only show one of these at a time).
+  mDetailModal = new T3kDetailModal(mRECT,
+      [this]() {
+        if (mDetailModal) mDetailModal->Hide(true);
+      });
+  g->AttachControl(mDetailModal);
+  mDetailModal->Hide(true);
+
   // Subscribe to scanner events.
   mBusToken = ::t3k::library::EventBus::instance().subscribe(
       [this](::t3k::library::LibraryEvent ev, int64_t /*payload*/) {
@@ -392,6 +413,13 @@ void LibraryView::recomputeFilterOptions()
 void LibraryView::applyFilters()
 {
   mRows.clear();
+  mVariantsByToneId.clear();
+  // Walk mAllRows and group by t3k_tone_id. The first variant
+  // matching a tone_id becomes the displayed "primary" row; subsequent
+  // variants stack under it in mVariantsByToneId. Rows without a
+  // tone_id (rare — local-only .nam imports without sidecar metadata)
+  // are treated as standalone groups keyed by their numeric id.
+  std::unordered_map<std::string, size_t> primaryIndexByTone;
   for (const auto& r : mAllRows) {
     if (!mSelectedGears.empty() &&
         mSelectedGears.find(r.gear_type) == mSelectedGears.end()) {
@@ -409,7 +437,17 @@ void LibraryView::applyFilters()
         mSelectedFormats.find(r.kind) == mSelectedFormats.end()) {
       continue;
     }
-    mRows.push_back(r);
+    const std::string key = r.t3k_tone_id.empty()
+                              ? ("__local_" + std::to_string(r.id))
+                              : r.t3k_tone_id;
+    auto it = primaryIndexByTone.find(key);
+    if (it == primaryIndexByTone.end()) {
+      primaryIndexByTone.emplace(key, mRows.size());
+      mRows.push_back(r);
+      mVariantsByToneId[key].push_back(r);
+    } else {
+      mVariantsByToneId[key].push_back(r);
+    }
   }
   // Drop selection if it filtered out.
   if (mSelectedId > 0) {
@@ -439,6 +477,7 @@ void LibraryView::ensureCardCount(int n)
         [this](int64_t id) { this->onCardClicked(id); },
         [this](int64_t id, float x, float y) { this->onCardRightClicked(id, x, y); });
     card->setOnWheel([this](float d) { this->scrollBy(d); });
+    card->setOnDblClick([this](int64_t id) { this->onCardDblClicked(id); });
     g->AttachControl(card);
     mCards.push_back(card);
   }
@@ -494,6 +533,12 @@ void LibraryView::layoutCards()
     std::string fmt = mRows[i].kind;
     for (char& c : fmt) c = static_cast<char>(std::toupper((unsigned char)c));
     d.format = std::move(fmt);
+    // Image — prefer the sidecar's t3k_image_path (already cached to
+    // disk by Downloader / ModelSidecar). Empty path -> card falls
+    // back to the gear icon.
+    if (mRows[i].t3k_image_path.has_value()) {
+      d.imagePath = *mRows[i].t3k_image_path;
+    }
     card->setData(std::move(d));
     card->setSelected(mRows[i].id == mSelectedId);
 
@@ -517,6 +562,92 @@ void LibraryView::onCardClicked(int64_t id)
     if (c) c->setSelected(c->id() == id);
   }
   SetDirty(false);
+}
+
+void LibraryView::onCardDblClicked(int64_t id)
+{
+  showDetailFor(id);
+}
+
+void LibraryView::showDetailFor(int64_t id)
+{
+  if (!mDetailModal || id <= 0) return;
+  // Find the row in mRows + look up its variants.
+  const ::t3k::library::ModelRow* row = nullptr;
+  for (const auto& r : mRows) {
+    if (r.id == id) { row = &r; break; }
+  }
+  if (!row) return;
+  const std::string toneKey = row->t3k_tone_id.empty()
+                                ? ("__local_" + std::to_string(row->id))
+                                : row->t3k_tone_id;
+  T3kDetailModal::DetailData d;
+  d.title       = row->effectiveDisplayName();
+  d.creator     = row->t3k_creator;
+  d.description = row->t3k_description;
+  if (row->t3k_image_path.has_value()) d.imagePath = *row->t3k_image_path;
+  // Subtitle: gear-type . variant count (single variant -> just gear).
+  auto vit = mVariantsByToneId.find(toneKey);
+  std::string sub;
+  if (!row->gear_type.empty()) {
+    sub = row->gear_type;
+    // Title-case the first letter.
+    if (!sub.empty()) sub[0] = static_cast<char>(std::toupper((unsigned char)sub[0]));
+  }
+  if (vit != mVariantsByToneId.end() && vit->second.size() > 1) {
+    if (!sub.empty()) sub += " \xC2\xB7 ";
+    sub += std::to_string(vit->second.size()) + " variants";
+  }
+  d.subtitle = std::move(sub);
+  // Variants list (Makes-and-Models section in the reference).
+  if (vit != mVariantsByToneId.end()) {
+    for (const auto& v : vit->second) {
+      std::string entry = v.model_name.empty()
+                            ? v.effectiveDisplayName()
+                            : v.model_name;
+      if (!v.kind.empty()) {
+        std::string k = v.kind;
+        for (char& c : k) c = static_cast<char>(std::toupper((unsigned char)c));
+        entry += "  \xC2\xB7  " + k;
+      }
+      d.makesModels.push_back(std::move(entry));
+    }
+  }
+  // Tags placeholder — local sidecars don't carry tags yet. When the
+  // sidecar schema gains them we'll plumb them through here.
+
+  // Library actions: Load / Rename / Show in Explorer / Remove. We
+  // capture the id rather than `this->mSelectedId` because the modal
+  // can outlive the current selection.
+  std::vector<T3kDetailModal::Action> actions = {
+    { "LOAD INTO CHAIN", /*primary*/ true, [this, id]() {
+        mSelectedId = id;
+        if (mDetailModal) mDetailModal->Hide(true);
+        loadSelected();
+      } },
+    { "RENAME",          false, [this, id]() {
+        if (mDetailModal) mDetailModal->Hide(true);
+        showRenameOverlay(id);
+      } },
+    { "SHOW IN EXPLORER", false, [this, id]() {
+        mSelectedId = id;
+        if (mDetailModal) mDetailModal->Hide(true);
+        revealSelected();
+      } },
+    { "REMOVE",           false, [this, id]() {
+        mSelectedId = id;
+        if (mDetailModal) mDetailModal->Hide(true);
+        // Two-step confirm — re-use the same popup-menu flow.
+        IGraphics* gg = GetUI();
+        if (!gg) return;
+        mRemoveConfirmId = id;
+        IPopupMenu menu;
+        menu.AddItem("Yes, permanently delete files", kCmdConfirmRemove);
+        menu.AddItem("Cancel", kCmdCancelRemove);
+        gg->CreatePopupMenu(*this, menu, mGridRect.MW(), mGridRect.MH());
+      } },
+  };
+  mDetailModal->show(std::move(d), std::move(actions));
 }
 
 void LibraryView::onCardRightClicked(int64_t id, float x, float y)
@@ -781,11 +912,25 @@ void LibraryView::Draw(IGraphics& g)
                        EAlign::Near, EVAlign::Top),
                  meta.c_str(), metaR);
 
-      if (!row->t3k_description.empty()) {
-        const IRECT descR(textL, metaR.B + 2.f, textR, metaR.B + 2.f + 16.f);
+      // Variant count — when this tone has multiple model variants
+      // grouped under the card, surface that on the second line so
+      // the user knows the detail page has more inside.
+      const std::string toneKey = row->t3k_tone_id.empty()
+                                    ? ("__local_" + std::to_string(row->id))
+                                    : row->t3k_tone_id;
+      auto vit = mVariantsByToneId.find(toneKey);
+      const size_t variants = (vit != mVariantsByToneId.end())
+                                 ? vit->second.size() : 0;
+      if (variants > 1) {
+        char hint[64];
+        std::snprintf(hint, sizeof(hint),
+                      "%zu variants \xC2\xB7 double-click to see all",
+                      variants);
+        const IRECT hintR(textL, metaR.B + 2.f,
+                          textR, metaR.B + 2.f + 14.f);
         g.DrawText(IText(th::kTypeSmall, th::kTextDim, th::kFontBody,
                          EAlign::Near, EVAlign::Top),
-                   row->t3k_description.c_str(), descR);
+                   hint, hintR);
       }
     }
   } else {

@@ -31,6 +31,7 @@
 #include <functional>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -45,6 +46,7 @@ class T3kButton;
 class T3kAccordion;
 class T3kLibraryCard;
 class T3kRenameOverlay;
+class T3kDetailModal;
 
 class LibraryView : public iplug::igraphics::IControl {
  public:
@@ -97,7 +99,9 @@ class LibraryView : public iplug::igraphics::IControl {
 
   // ── Selection / action handlers ───────────────────────────────
   void onCardClicked(int64_t id);
+  void onCardDblClicked(int64_t id);
   void onCardRightClicked(int64_t id, float x, float y);
+  void showDetailFor(int64_t id);
   void removeSelected();
   void revealSelected();
   void loadSelected();
@@ -151,6 +155,7 @@ class LibraryView : public iplug::igraphics::IControl {
   T3kAccordion*    mCreatorsAcc  = nullptr;
   T3kAccordion*    mTechAcc      = nullptr;
   T3kRenameOverlay* mRenameOverlay = nullptr;
+  T3kDetailModal*   mDetailModal   = nullptr;
   // Grid cards. Owned by IGraphics; we only hold raw pointers.
   std::vector<T3kLibraryCard*> mCards;
   // Detail-strip action buttons.
@@ -161,7 +166,12 @@ class LibraryView : public iplug::igraphics::IControl {
 
   // ── Data ──────────────────────────────────────────────────────
   std::vector<::t3k::library::ModelRow> mAllRows;  // raw LibraryDb result
-  std::vector<::t3k::library::ModelRow> mRows;     // post-filter
+  // Post-filter, post-grouping list — one entry per distinct
+  // t3k_tone_id. Each row's display fields come from a primary variant
+  // (the first ModelRow matching that tone_id); the full variant list
+  // lives in mVariantsByToneId so the detail modal can enumerate them.
+  std::vector<::t3k::library::ModelRow> mRows;
+  std::unordered_map<std::string, std::vector<::t3k::library::ModelRow>> mVariantsByToneId;
 
   // Distinct values discovered in mAllRows. Populated by
   // recomputeFilterOptions().

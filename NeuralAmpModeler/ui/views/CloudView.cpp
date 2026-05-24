@@ -16,6 +16,7 @@
 #include "../controls/T3kCard.h"
 #include "../controls/T3kSearchBar.h"
 #include "../controls/T3kSignInPill.h"
+#include "T3kDetailModal.h"
 
 #include "../../cloud/Downloader.h"
 #include "../../cloud/OAuthFlow.h"
@@ -159,6 +160,7 @@ void CloudView::Hide(bool hide)
   if (mCreatorsAcc) mCreatorsAcc->Hide(hide);
   if (mTechAcc)     mTechAcc    ->Hide(hide);
   if (mSignInPill)  mSignInPill ->Hide(hide || mState != State::SignedOut);
+  if (mDetailModal) mDetailModal->Hide(true);  // always closed on tab switch
   for (T3kCard* c : mCards) if (c) c->Hide(hide);
 }
 
@@ -270,29 +272,37 @@ void CloudView::OnAttached()
   wireToggle(mGearAcc);
   g->AttachControl(mGearAcc);
 
-  mTagsAcc = new T3kAccordion(placeholder,
-      "Tags",
-      []() { return kCheckboxRowH + 8.f; },
-      [this](const IRECT& r) { this->drawTagsAccordion(r); },
-      /*initiallyOpen*/ false);
-  wireToggle(mTagsAcc);
-  g->AttachControl(mTagsAcc);
+  // Tags / Makes and Models / Creators accordions — hidden from the UI
+  // per the 2026-05-25 polish round. The public Tone3000 SDK doesn't
+  // yet expose query params for these filter dimensions, so until the
+  // backend catches up they served only as placeholders. Flip the
+  // toggle to re-enable.
+  constexpr bool kShowExtraFilters = false;
+  if constexpr (kShowExtraFilters) {
+    mTagsAcc = new T3kAccordion(placeholder,
+        "Tags",
+        []() { return kCheckboxRowH + 8.f; },
+        [this](const IRECT& r) { this->drawTagsAccordion(r); },
+        /*initiallyOpen*/ false);
+    wireToggle(mTagsAcc);
+    g->AttachControl(mTagsAcc);
 
-  mMakesAcc = new T3kAccordion(placeholder,
-      "Makes and Models",
-      []() { return kCheckboxRowH + 8.f; },
-      [this](const IRECT& r) { this->drawMakesAccordion(r); },
-      /*initiallyOpen*/ false);
-  wireToggle(mMakesAcc);
-  g->AttachControl(mMakesAcc);
+    mMakesAcc = new T3kAccordion(placeholder,
+        "Makes and Models",
+        []() { return kCheckboxRowH + 8.f; },
+        [this](const IRECT& r) { this->drawMakesAccordion(r); },
+        /*initiallyOpen*/ false);
+    wireToggle(mMakesAcc);
+    g->AttachControl(mMakesAcc);
 
-  mCreatorsAcc = new T3kAccordion(placeholder,
-      "Creators",
-      []() { return kCheckboxRowH + 8.f; },
-      [this](const IRECT& r) { this->drawCreatorsAccordion(r); },
-      /*initiallyOpen*/ false);
-  wireToggle(mCreatorsAcc);
-  g->AttachControl(mCreatorsAcc);
+    mCreatorsAcc = new T3kAccordion(placeholder,
+        "Creators",
+        []() { return kCheckboxRowH + 8.f; },
+        [this](const IRECT& r) { this->drawCreatorsAccordion(r); },
+        /*initiallyOpen*/ false);
+    wireToggle(mCreatorsAcc);
+    g->AttachControl(mCreatorsAcc);
+  }
 
   mTechAcc = new T3kAccordion(placeholder,
       "Technical",
@@ -306,6 +316,16 @@ void CloudView::OnAttached()
       IRECT(0.f, 0.f, 1.f, 1.f),
       /*onClick*/ [this] { this->onSignInClicked(); });
   g->AttachControl(mSignInPill);
+
+  // Detail modal — full-window overlay attached last so the z-order
+  // keeps it on top of cards. Hidden by default; cards' setOnDetail
+  // dispatch flips it on.
+  mDetailModal = new T3kDetailModal(mRECT,
+      [this]() {
+        if (mDetailModal) mDetailModal->Hide(true);
+      });
+  g->AttachControl(mDetailModal);
+  mDetailModal->Hide(true);
 
   OnResize();
 
@@ -621,6 +641,42 @@ void CloudView::onCardDownload(int toneIndex)
   SetDirty(false);
 }
 
+void CloudView::onCardDetail(int toneIndex)
+{
+  if (toneIndex < 0 || toneIndex >= static_cast<int>(mTones.size())) return;
+  if (!mDetailModal) return;
+  const auto& tone = mTones[toneIndex];
+
+  T3kDetailModal::DetailData d;
+  d.title       = tone.title;
+  d.creator     = tone.user.username;
+  d.description = tone.description.value_or("");
+  // Subtitle: gear-label · platform / first size.
+  d.subtitle    = ::t3k::cloud::toLabel(tone.gear);
+  if (!tone.sizes.empty()) {
+    d.subtitle += "  \xC2\xB7  ";
+    d.subtitle += ::t3k::cloud::toLabel(tone.sizes.front());
+  }
+  if (tone.images.has_value() && !tone.images->empty()) {
+    // Cloud's hosted image URL — T3kDetailModal currently only renders
+    // local paths so the cloud detail page falls back to the "no image"
+    // placeholder until ThumbnailCache picks up the URL.
+    d.imageUrl = (*tone.images)[0];
+  }
+  for (const auto& t : tone.tags)  d.tags.push_back(t.name);
+  for (const auto& m : tone.makes) d.makesModels.push_back(m.name);
+
+  // Cloud actions — Download only. Selecting / dismissing the modal
+  // closes it.
+  std::vector<T3kDetailModal::Action> actions = {
+    { "DOWNLOAD", /*primary*/ true, [this, toneIndex]() {
+        if (mDetailModal) mDetailModal->Hide(true);
+        this->onCardDownload(toneIndex);
+      } },
+  };
+  mDetailModal->show(std::move(d), std::move(actions));
+}
+
 void CloudView::startSearch()
 {
   if (mState == State::SignedOut) return;
@@ -681,6 +737,7 @@ void CloudView::rebuildCards()
     // the card (topmost control under the cursor) and our scrollBy
     // never runs — the list reads as unscrollable.
     c->setOnWheel([this](float d) { this->scrollBy(d); });
+    c->setOnDetail([this, idx]() { this->onCardDetail(idx); });
     g->AttachControl(c);
     mCards.push_back(c);
   }

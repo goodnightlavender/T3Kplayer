@@ -44,7 +44,15 @@ T3kLibraryCard::T3kLibraryCard(const IRECT& bounds,
 
 void T3kLibraryCard::setData(CardData data)
 {
+  const bool imageChanged = (data.imagePath != mData.imagePath);
   mData = std::move(data);
+  if (imageChanged) {
+    // Drop any cached bitmap so the next paint re-resolves the image
+    // for the new card's path (or falls back to the gear icon).
+    mBitmapLoaded     = false;
+    mBitmapLoadFailed = false;
+    mBitmap = IBitmap();
+  }
   SetDirty(false);
 }
 
@@ -77,6 +85,12 @@ void T3kLibraryCard::OnMouseDown(float x, float y, const IMouseMod& mod)
     return;
   }
   if (mOnClick) mOnClick(mData.id);
+}
+
+void T3kLibraryCard::OnMouseDblClick(float /*x*/, float /*y*/,
+                                     const IMouseMod& /*mod*/)
+{
+  if (mOnDblClick) mOnDblClick(mData.id);
 }
 
 void T3kLibraryCard::OnMouseOver(float /*x*/, float /*y*/, const IMouseMod& /*mod*/)
@@ -113,12 +127,40 @@ void T3kLibraryCard::Draw(IGraphics& g)
   const IColor& outline = mSelected ? th::kBorderActive : th::kBorder;
   g.DrawRoundRect(outline, mRECT, th::kRadiusMd, nullptr, mSelected ? 2.f : 1.f);
 
-  // Hero gear-icon tile.
+  // Hero — try the cached image first, fall back to the gear icon SVG.
   g.FillRoundRect(th::kBgBase, mHeroRect, th::kRadiusSm);
   g.DrawRoundRect(th::kBorder, mHeroRect, th::kRadiusSm, nullptr, 1.f);
-  if (ISVG svg = g.LoadSVG(GearIconFor(mData.gearType)); svg.IsValid()) {
-    const float inset = 18.f;
-    g.DrawSVG(svg, mHeroRect.GetPadded(-inset));
+  if (!mBitmapLoaded && !mBitmapLoadFailed && !mData.imagePath.empty()) {
+    // IGraphics::LoadBitmap is synchronous and accepts a UTF-8 path.
+    // It throws on failure; wrap so a missing file doesn't kill the
+    // paint cycle.
+    try {
+      mBitmap = g.LoadBitmap(mData.imagePath.c_str(), 1, false);
+      mBitmapLoaded = mBitmap.W() > 0;
+    } catch (...) {
+      mBitmapLoadFailed = true;
+    }
+    if (!mBitmapLoaded) mBitmapLoadFailed = true;
+  }
+  if (mBitmapLoaded) {
+    // Fit-cover the hero rect (preserve aspect, crop overflow). We do
+    // a simple uniform-scale that fills the smaller dimension and
+    // centre-crops; iPlug2's IBlend with EBlend::Default + the
+    // implicit per-control scissor handles the clip.
+    const float bw = static_cast<float>(mBitmap.W());
+    const float bh = static_cast<float>(mBitmap.H());
+    const float scale = std::max(mHeroRect.W() / bw, mHeroRect.H() / bh);
+    const float dstW = bw * scale;
+    const float dstH = bh * scale;
+    const float dstL = mHeroRect.MW() - dstW * 0.5f;
+    const float dstT = mHeroRect.MH() - dstH * 0.5f;
+    g.DrawFittedBitmap(mBitmap,
+                       IRECT(dstL, dstT, dstL + dstW, dstT + dstH));
+  } else {
+    if (ISVG svg = g.LoadSVG(GearIconFor(mData.gearType)); svg.IsValid()) {
+      const float inset = 18.f;
+      g.DrawSVG(svg, mHeroRect.GetPadded(-inset));
+    }
   }
 
   // Display name — single line, clipped by the card padding rect.

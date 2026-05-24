@@ -69,8 +69,12 @@ public:
   // the result list reads as unscrollable.
   void setOnWheel(std::function<void(float delta)> cb) { mOnWheel = std::move(cb); }
 
+  // Double-click handler — opens the tone detail page.
+  void setOnDetail(std::function<void()> cb) { mOnDetail = std::move(cb); }
+
   void Draw(IGraphics& g) override;
   void OnMouseDown(float x, float y, const IMouseMod& mod) override;
+  void OnMouseDblClick(float x, float y, const IMouseMod& mod) override;
   void OnMouseOver(float x, float y, const IMouseMod& mod) override;
   void OnMouseOut() override;
   void OnMouseWheel(float x, float y, const IMouseMod& mod, float d) override;
@@ -115,7 +119,8 @@ private:
   CardData mData;
   std::function<void()> mOnSelect;
   std::function<void()> mOnDownload;
-  std::function<void(float)> mOnWheel;  // wheel forwarder; nullable
+  std::function<void()> mOnDetail;       // dbl-click → detail page; nullable
+  std::function<void(float)> mOnWheel;   // wheel forwarder; nullable
 
   bool mSelected = false;
   bool mHovered  = false;

@@ -288,6 +288,9 @@
     <ClCompile Include="..\ui\views\T3kSettingsModal.cpp">
       <Filter>ui\views</Filter>
     </ClCompile>
+    <ClCompile Include="..\ui\views\T3kDetailModal.cpp">
+      <Filter>ui\views</Filter>
+    </ClCompile>
     <ClCompile Include="..\ui\ToneRoot.cpp">
       <Filter>ui</Filter>
     </ClCompile>
@@ -752,6 +755,9 @@
       <Filter>ui\views</Filter>
     </ClInclude>
     <ClInclude Include="..\ui\views\T3kSettingsModal.h">
+      <Filter>ui\views</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ui\views\T3kDetailModal.h">
       <Filter>ui\views</Filter>
     </ClInclude>
     <ClInclude Include="..\ui\ToneRoot.h">

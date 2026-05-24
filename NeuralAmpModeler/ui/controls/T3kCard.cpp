@@ -523,6 +523,14 @@ void T3kCard::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
   SetDirty(false);
 }
 
+void T3kCard::OnMouseDblClick(float x, float y, const IMouseMod& /*mod*/)
+{
+  // Don't trigger detail when the dbl-click landed on the Download
+  // pill — that should remain a single-click action.
+  if (mDownloadRect.Contains(x, y)) return;
+  if (mOnDetail) mOnDetail();
+}
+
 void T3kCard::OnMouseOver(float x, float y, const IMouseMod& mod)
 {
   IControl::OnMouseOver(x, y, mod);

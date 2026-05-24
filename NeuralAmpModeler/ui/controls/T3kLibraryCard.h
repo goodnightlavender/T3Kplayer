@@ -26,12 +26,14 @@
 #include <string>
 
 #include "IControl.h"
+#include "IGraphicsStructs.h"  // IBitmap
 
 namespace t3k::ui {
 
 using ::iplug::igraphics::IControl;
 using ::iplug::igraphics::IGraphics;
 using ::iplug::igraphics::IRECT;
+using ::iplug::igraphics::IBitmap;
 using ::iplug::igraphics::IMouseMod;
 
 class T3kLibraryCard : public IControl
@@ -43,12 +45,17 @@ public:
     std::string  creator;
     std::string  gearType;        // pedal / amp / cab / outboard / full-rig
     std::string  format;          // "NAM" or "IR"
+    std::string  imagePath;       // local filesystem path; empty -> use gear icon
   };
 
   T3kLibraryCard(const IRECT& bounds,
                  CardData data,
                  std::function<void(int64_t id)> onClick,
                  std::function<void(int64_t id, float x, float y)> onRightClick);
+
+  // Optional double-click handler — fires when the user wants to open
+  // the detail page for this card.
+  void setOnDblClick(std::function<void(int64_t)> cb) { mOnDblClick = std::move(cb); }
 
   // Wheel forwarder — iPlug2 dispatches OnMouseWheel to the topmost
   // control under the cursor; without this hook a wheel gesture over
@@ -57,6 +64,7 @@ public:
 
   void Draw(IGraphics& g) override;
   void OnMouseDown(float x, float y, const IMouseMod& mod) override;
+  void OnMouseDblClick(float x, float y, const IMouseMod& mod) override;
   void OnMouseOver(float x, float y, const IMouseMod& mod) override;
   void OnMouseOut() override;
   void OnMouseWheel(float x, float y, const IMouseMod& mod, float d) override;
@@ -77,10 +85,19 @@ private:
   CardData mData;
   std::function<void(int64_t)> mOnClick;
   std::function<void(int64_t, float, float)> mOnRightClick;
+  std::function<void(int64_t)> mOnDblClick;
   std::function<void(float)> mOnWheel;
 
   bool  mSelected = false;
   bool  mHovered  = false;
+
+  // Lazy bitmap loading. When mData.imagePath is non-empty, the first
+  // Draw asks IGraphics::LoadBitmap and caches the result. A failed
+  // load disables further attempts so we don't thrash on a missing
+  // file.
+  bool mBitmapLoaded     = false;
+  bool mBitmapLoadFailed = false;
+  IBitmap mBitmap;
 
   // Cached layout rects.
   IRECT mHeroRect;
