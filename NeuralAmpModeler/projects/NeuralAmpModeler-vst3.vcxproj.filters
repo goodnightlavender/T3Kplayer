@@ -312,6 +312,9 @@
     <ClCompile Include="..\cloud\Session.cpp">
       <Filter>cloud</Filter>
     </ClCompile>
+    <ClCompile Include="..\cloud\Tone3000Client.cpp">
+      <Filter>cloud</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="../config.h" />
@@ -773,6 +776,12 @@
       <Filter>cloud</Filter>
     </ClInclude>
     <ClInclude Include="..\cloud\Session.h">
+      <Filter>cloud</Filter>
+    </ClInclude>
+    <ClInclude Include="..\cloud\Tone3000Types.h">
+      <Filter>cloud</Filter>
+    </ClInclude>
+    <ClInclude Include="..\cloud\Tone3000Client.h">
       <Filter>cloud</Filter>
     </ClInclude>
   </ItemGroup>

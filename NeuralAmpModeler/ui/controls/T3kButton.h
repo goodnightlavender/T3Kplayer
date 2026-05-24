@@ -7,6 +7,7 @@
 #pragma once
 
 #include <functional>
+#include <string>
 
 #include "IControl.h"
 #include "../theme.h"
@@ -28,13 +29,21 @@ public:
             std::function<void()> onClick,
             Variant variant = Variant::Primary);
 
+  // Swap the label after construction. Used by the Cloud-tab sort-cycle
+  // button which steps through "Best match" / "Newest" / "Trending" /
+  // etc. on each click. The stored std::string owns the buffer so the
+  // caller doesn't have to keep a const char* alive.
+  void setLabel(const char* label);
+
   void Draw(IGraphics& g) override;
   void OnMouseDown(float x, float y, const IMouseMod& mod) override;
   void OnMouseOver(float x, float y, const IMouseMod& mod) override;
   void OnMouseOut() override;
 
 private:
-  const char* mLabel;
+  // Owns the label buffer so callers can pass a temporary const char*
+  // or an std::string body without lifetime concerns.
+  std::string mLabel;
   std::function<void()> mOnClick;
   Variant mVariant;
 };

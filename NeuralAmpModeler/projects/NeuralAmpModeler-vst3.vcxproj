@@ -417,6 +417,8 @@
     <ClInclude Include="..\cloud\User.h" />
     <ClInclude Include="..\cloud\SessionEvent.h" />
     <ClInclude Include="..\cloud\Session.h" />
+    <ClInclude Include="..\cloud\Tone3000Types.h" />
+    <ClInclude Include="..\cloud\Tone3000Client.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\iPlug2\Dependencies\IPlug\VST3_SDK\base\source\baseiids.cpp" />
@@ -558,6 +560,7 @@
     <ClCompile Include="..\cloud\LoopbackServer.cpp" />
     <ClCompile Include="..\cloud\OAuthFlow.cpp" />
     <ClCompile Include="..\cloud\Session.cpp" />
+    <ClCompile Include="..\cloud\Tone3000Client.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\resources\main.rc" />

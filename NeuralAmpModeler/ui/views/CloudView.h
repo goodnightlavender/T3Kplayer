@@ -1,19 +1,169 @@
-// CloudView.h — Phase 2 placeholder for the cloud-browser tab.
+// CloudView.h — Phase 6 cloud-browser tab.
 //
-// Full-tab view that ToneRoot sizes to the body area. Renders a centered
-// "coming in Phase 6" hint. The real cloud browser (search, results,
-// download) lands in Phase 6.
+// Composite view sized to the tab body area. Owns:
+//   - A header row (T3kSearchBar + sort-cycle T3kButton).
+//   - A left sidebar with two T3kAccordion filter groups (Gear, Size)
+//     drawing their own checkbox rows inline via drawContent callbacks.
+//   - A right card list — T3kCard children stacked vertically with a
+//     scroll offset CloudView manages itself (mouse-wheel + mid-drag).
+//     Per-tone cards are instantiated lazily; cards whose rect is
+//     entirely outside the body get Hide(true)'d so iPlug2 skips
+//     their paint while keeping their state.
+//   - A re-used T3kSignInPill rendered centered in the body when the
+//     user is signed out — catalog endpoints require Bearer auth so
+//     there's nothing to browse until sign-in.
+//
+// Concurrency: all `cloud::Tone3000Client` completion lambdas fire on
+// a worker thread. We stash the parsed result under mResultMtx; the
+// next paint cycle reads it, allocates cards, and updates UI. State
+// outside Draw / OnAttached must therefore take mResultMtx.
 
 #pragma once
 
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <functional>
+#include <mutex>
+#include <set>
+#include <string>
+#include <vector>
+
 #include "IControl.h"
 
+#include "../../cloud/Tone3000Types.h"
+#include "../../cloud/Tone3000Client.h"
+#include "../../net/CancellationToken.h"
+
 namespace t3k::ui {
+
+class T3kSearchBar;
+class T3kButton;
+class T3kAccordion;
+class T3kCard;
+class T3kSignInPill;
 
 class CloudView : public iplug::igraphics::IControl {
 public:
   explicit CloudView(const iplug::igraphics::IRECT& bounds);
+  ~CloudView() override;
+
   void Draw(iplug::igraphics::IGraphics& g) override;
+  void OnResize() override;
+  void OnAttached() override;
+  void OnMouseDown(float x, float y, const iplug::igraphics::IMouseMod& mod) override;
+  void OnMouseWheel(float x, float y,
+                    const iplug::igraphics::IMouseMod& mod, float d) override;
+
+  // Cascade hide to child controls (iPlug2 attaches flat — see
+  // ToneView::Hide for the same pattern).
+  void Hide(bool hide) override;
+
+private:
+  // ── State machine ──────────────────────────────────────────────
+  enum class State {
+    SignedOut,  // no Bearer token; render sign-in CTA only
+    Idle,       // signed in, search bar empty (no fetch in flight)
+    Loading,    // request in flight (search or pagination)
+    Loaded,     // result rendered
+    Error,      // non-200 / parse failure — error + retry button
+  };
+
+  // ── Action handlers ────────────────────────────────────────────
+  void onSearchChanged(const std::string& q);
+  void onSortClicked();
+  void onCardSelected(int toneIndex);
+  void onCardDownload(int toneIndex);
+  void onSignInClicked();
+  void toggleGear(::t3k::cloud::Gear g);
+  void toggleSize(::t3k::cloud::Size s);
+
+  // Resync mState from cloud::Session and rebuild the view accordingly.
+  void refreshFromSession();
+
+  // Kick a fresh search at page 1 (resets mTones, attaches new cards).
+  // Cancels any in-flight request first.
+  void startSearch();
+
+  // Fetch the next page (mNextPage). Appends results to mTones / mCards.
+  void fetchNextPage();
+
+  // After mTones changes, instantiate any missing T3kCard children and
+  // update their positions. Idempotent.
+  void rebuildCards();
+
+  // Reposition cards based on mScrollOffset. Cards whose Y rect leaves
+  // the body area are Hide(true)'d so iPlug2 skips their paint.
+  void layoutCards();
+
+  // Pull any worker-thread completion result into UI state. Called
+  // from Draw at the start of each paint cycle so the GUI thread owns
+  // all card mutations.
+  void drainPendingResult();
+
+  // Hit-test against the per-accordion checkbox rows. Returns true iff
+  // the click was handled (toggled a filter).
+  bool handleSidebarClick(float x, float y);
+
+  // Draw the sidebar checkbox rows inside `r` for the given accordion.
+  // Side effect: records each row's rect into mGearRowRects /
+  // mSizeRowRects so the next OnMouseDown can hit-test them without
+  // recomputing layout.
+  void drawGearAccordion(const iplug::igraphics::IRECT& r);
+  void drawSizeAccordion(const iplug::igraphics::IRECT& r);
+
+  // Render the empty / loading / error overlays — only one is non-empty
+  // at any given moment.
+  void drawStateOverlay(iplug::igraphics::IGraphics& g);
+
+  // ── Layout sub-rects (recomputed in OnResize) ──────────────────
+  iplug::igraphics::IRECT mHeaderRect;
+  iplug::igraphics::IRECT mSearchRect;
+  iplug::igraphics::IRECT mSortRect;
+  iplug::igraphics::IRECT mSidebarRect;
+  iplug::igraphics::IRECT mBodyRect;
+  iplug::igraphics::IRECT mGearAccordionRect;
+  iplug::igraphics::IRECT mSizeAccordionRect;
+
+  // Cached rects for the per-checkbox rows in each accordion (filled
+  // when the accordion's drawContent fires; consumed by
+  // handleSidebarClick).
+  std::vector<std::pair<::t3k::cloud::Gear, iplug::igraphics::IRECT>> mGearRowRects;
+  std::vector<std::pair<::t3k::cloud::Size, iplug::igraphics::IRECT>> mSizeRowRects;
+
+  // ── Children (owned by IGraphics) ──────────────────────────────
+  T3kSearchBar*  mSearchBar   = nullptr;
+  T3kButton*     mSortBtn     = nullptr;
+  T3kAccordion*  mGearAcc     = nullptr;
+  T3kAccordion*  mSizeAcc     = nullptr;
+  T3kSignInPill* mSignInPill  = nullptr;
+  std::vector<T3kCard*> mCards;
+
+  // ── Data ───────────────────────────────────────────────────────
+  State mState = State::Idle;
+  ::t3k::cloud::SearchTonesParams mQuery;
+  std::set<::t3k::cloud::Gear> mSelectedGears;
+  std::set<::t3k::cloud::Size> mSelectedSizes;
+  std::vector<::t3k::cloud::Tone> mTones;
+  int  mNextPage  = 1;       // next page to fetch (1 = first page)
+  int  mTotalPages = 0;
+  bool mHasMore   = false;
+  std::string mErrorMessage;
+  float mScrollOffset = 0.f;
+
+  // ── Async plumbing ─────────────────────────────────────────────
+  // Worker-thread side: completion lambdas stash the parsed result
+  // here and toggle mResultReady. Draw() picks it up under the mutex
+  // and applies the change. mPendingToken cancels any in-flight
+  // request when a new search starts.
+  std::mutex mResultMtx;
+  std::atomic<bool> mResultReady{false};
+  ::t3k::cloud::ToneSearchResult mPendingResult;
+  bool mPendingResultIsAppend = false;  // false = first page, true = next page
+  ::t3k::net::CancellationToken mPendingToken;
+
+  // Session listener id — unsubscribed in dtor.
+  int mSessionListenerId = 0;
 };
 
 }  // namespace t3k::ui

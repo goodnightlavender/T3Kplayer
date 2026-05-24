@@ -30,10 +30,16 @@ T3kButton::T3kButton(const IRECT& bounds,
                      std::function<void()> onClick,
                      Variant variant)
 : IControl(bounds)
-, mLabel(label)
+, mLabel(label ? label : "")
 , mOnClick(std::move(onClick))
 , mVariant(variant)
 {
+}
+
+void T3kButton::setLabel(const char* label)
+{
+  mLabel = (label ? label : "");
+  SetDirty(false);
 }
 
 void T3kButton::Draw(IGraphics& g)
@@ -59,7 +65,7 @@ void T3kButton::Draw(IGraphics& g)
                     th::kFontBodyMed,
                     EAlign::Center,
                     EVAlign::Middle);
-  g.DrawText(label, mLabel, mRECT);
+  g.DrawText(label, mLabel.c_str(), mRECT);
 }
 
 void T3kButton::OnMouseDown(float /*x*/, float /*y*/, const IMouseMod& /*mod*/)
