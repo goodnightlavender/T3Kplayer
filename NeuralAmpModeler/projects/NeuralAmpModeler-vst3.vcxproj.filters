@@ -279,6 +279,9 @@
     <ClCompile Include="..\ui\views\T3kFirstRunModal.cpp">
       <Filter>ui\views</Filter>
     </ClCompile>
+    <ClCompile Include="..\ui\views\T3kRestoreModal.cpp">
+      <Filter>ui\views</Filter>
+    </ClCompile>
     <ClCompile Include="..\ui\ToneRoot.cpp">
       <Filter>ui</Filter>
     </ClCompile>
@@ -323,6 +326,9 @@
     </ClCompile>
     <ClCompile Include="..\cloud\LibrarySync.cpp">
       <Filter>cloud</Filter>
+    </ClCompile>
+    <ClCompile Include="..\crash\Minidump.cpp">
+      <Filter>crash</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -733,6 +739,9 @@
     <ClInclude Include="..\ui\views\T3kFirstRunModal.h">
       <Filter>ui\views</Filter>
     </ClInclude>
+    <ClInclude Include="..\ui\views\T3kRestoreModal.h">
+      <Filter>ui\views</Filter>
+    </ClInclude>
     <ClInclude Include="..\ui\ToneRoot.h">
       <Filter>ui</Filter>
     </ClInclude>
@@ -804,6 +813,9 @@
     </ClInclude>
     <ClInclude Include="..\cloud\LibrarySync.h">
       <Filter>cloud</Filter>
+    </ClInclude>
+    <ClInclude Include="..\crash\Minidump.h">
+      <Filter>crash</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -908,6 +920,9 @@
     </Filter>
     <Filter Include="cloud">
       <UniqueIdentifier>{7a3e9f01-4b8d-4ad2-9c5e-08e7b6c2f4a8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="crash">
+      <UniqueIdentifier>{3f9c6d22-5b1a-4f8e-bd34-1a7e9c2d5e30}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

@@ -1,0 +1,56 @@
+name: Feature request
+description: Suggest an enhancement for TONE3000 Player.
+title: "[feature] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest an improvement to **TONE3000 Player**.
+
+        Please **search [existing issues](../issues?q=is%3Aissue)** first — your idea may already be tracked, and adding context to an existing thread is more useful than opening a duplicate.
+
+        Good feature requests start from a real problem. Tell us what hurts today, then propose a fix.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement — what hurts today?
+      description: What are you trying to do that TONE3000 Player makes hard, slow, or impossible right now?
+      placeholder: "When I try to A/B two models mid-session, I have to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe the change you'd like to see. Be as concrete as you can — UI, behavior, defaults.
+      placeholder: "Add a second model slot that..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you've thought about, and why they fall short.
+      placeholder: "I considered using two plugin instances, but..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, mockups, links to related discussions, anything else that helps.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I have searched existing issues for duplicates.
+          required: true

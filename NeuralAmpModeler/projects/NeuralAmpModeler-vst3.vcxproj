@@ -399,6 +399,7 @@
     <ClInclude Include="..\ui\views\DownloadsView.h" />
     <ClInclude Include="..\ui\views\SettingsView.h" />
     <ClInclude Include="..\ui\views\T3kFirstRunModal.h" />
+    <ClInclude Include="..\ui\views\T3kRestoreModal.h" />
     <ClInclude Include="..\ui\ToneRoot.h" />
     <ClInclude Include="..\net\HttpRequest.h" />
     <ClInclude Include="..\net\HttpResponse.h" />
@@ -423,6 +424,7 @@
     <ClInclude Include="..\cloud\Downloader.h" />
     <ClInclude Include="..\cloud\SyncConfig.h" />
     <ClInclude Include="..\cloud\LibrarySync.h" />
+    <ClInclude Include="..\crash\Minidump.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\iPlug2\Dependencies\IPlug\VST3_SDK\base\source\baseiids.cpp" />
@@ -553,6 +555,7 @@
     <ClCompile Include="..\ui\views\DownloadsView.cpp" />
     <ClCompile Include="..\ui\views\SettingsView.cpp" />
     <ClCompile Include="..\ui\views\T3kFirstRunModal.cpp" />
+    <ClCompile Include="..\ui\views\T3kRestoreModal.cpp" />
     <ClCompile Include="..\ui\ToneRoot.cpp" />
     <ClCompile Include="..\net\UrlEncode.cpp" />
     <ClCompile Include="..\net\WorkerPool.cpp" />
@@ -568,6 +571,7 @@
     <ClCompile Include="..\cloud\ThumbnailCache.cpp" />
     <ClCompile Include="..\cloud\Downloader.cpp" />
     <ClCompile Include="..\cloud\LibrarySync.cpp" />
+    <ClCompile Include="..\crash\Minidump.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\resources\main.rc" />

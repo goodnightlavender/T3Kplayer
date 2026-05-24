@@ -18,6 +18,7 @@
 #include "NeuralAmpModelerControls.h"
 #include "cloud/LibrarySync.h"
 #include "cloud/Session.h"
+#include "crash/Minidump.h"
 #include "ui/ToneRoot.h"
 #include "ui/theme.h"
 
@@ -83,6 +84,7 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
 : Plugin(info, MakeConfig(kNumParams, kNumPresets))
 {
   _InitToneStack();
+  t3k::crash::installCrashHandler();
   nam::activations::Activation::enable_fast_tanh();
   GetParam(kInputLevel)->InitGain("Input", 0.0, -20.0, 20.0, 0.1);
   GetParam(kToneBass)->InitDouble("Bass", 5.0, 0.0, 10.0, 0.1);

@@ -1,0 +1,106 @@
+name: Bug report
+description: Report a defect in TONE3000 Player (Windows VST3).
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report for **TONE3000 Player**.
+
+        Before submitting, please **search [existing issues](../issues?q=is%3Aissue)** to make sure this hasn't already been reported. Duplicate reports slow triage down for everyone.
+
+        The more concrete detail you give us (exact versions, repro steps, logs), the faster we can fix it.
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: TONE3000 Player version
+      description: Find it in the plugin's about / settings panel, or in the installed VST3 file properties.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: daw
+    attributes:
+      label: DAW
+      description: Which host are you running TONE3000 Player in?
+      options:
+        - Ableton Live
+        - Reaper
+        - FL Studio
+        - Cubase
+        - Studio One
+        - Bitwig
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: daw-version
+    attributes:
+      label: DAW version
+      description: Optional — exact version of the host (e.g. "Reaper 7.15", "Live 12.0.10").
+      placeholder: "e.g. Reaper 7.15"
+    validations:
+      required: false
+
+  - type: input
+    id: windows-version
+    attributes:
+      label: Windows version
+      description: Run `winver` to get the exact build. Include the feature update version.
+      placeholder: "Windows 11 22H2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      description: Describe the behavior you were expecting.
+      placeholder: "Loading a .nam model file should..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened?
+      description: Describe what actually occurred. Include exact error messages if any.
+      placeholder: "Instead, the plugin..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Use numbered steps. The more precise, the faster we can fix it.
+      placeholder: |
+        1. Open Reaper 7.15
+        2. Create a new track and add TONE3000 Player as an insert
+        3. Click the model browser button
+        4. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Crash dump or logs
+      description: |
+        Optional but very helpful. Logs live at `%LOCALAPPDATA%\TONE3000\logs\`.
+        If the plugin crashed, please attach any `.dmp` files from that directory by dragging them into this textarea.
+      placeholder: "Drag .dmp / .log files here, or paste relevant log excerpts."
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I have read CONTRIBUTING.md and searched existing issues for duplicates.
+          required: true

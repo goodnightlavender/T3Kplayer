@@ -6,7 +6,7 @@
 #define PLUG_MFR_ID 'T3k0'
 #define PLUG_URL_STR "https://github.com/goodnightlavender/tone3000-player"
 #define PLUG_EMAIL_STR ""
-#define PLUG_COPYRIGHT_STR "Copyright 2022 Steven Atkinson"
+#define PLUG_COPYRIGHT_STR "Copyright 2022 Steven Atkinson; fork (c) 2026 Kai van Deursen"
 #define PLUG_CLASS_NAME NeuralAmpModeler
 #define BUNDLE_NAME "TONE3000Player"
 #define BUNDLE_MFR "KaivanDeursen"

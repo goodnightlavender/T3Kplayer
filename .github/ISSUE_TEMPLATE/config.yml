@@ -1,0 +1,14 @@
+# TODO(maintainer): Once this repo is pushed to GitHub, replace `USER/REPO`
+# in the "Build issues" contact_link below with the actual owner/repository
+# slug (e.g. `tone3000/nam-fork`). The placeholder URL will 404 until then.
+
+blank_issues_enabled: false
+
+contact_links:
+  - name: TONE3000 community
+    url: https://www.tone3000.com
+    about: Browse and share NAM models, find tone matches, and chat with the wider TONE3000 community. (This is the broader community site — not the TONE3000 Player plugin maintainers.)
+
+  - name: Build issues
+    url: https://github.com/USER/REPO/blob/main/docs/setup/BUILD-WIN.md
+    about: Having trouble building TONE3000 Player from source on Windows? Read the build guide first — most setup problems are covered there.

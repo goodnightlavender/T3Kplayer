@@ -24,8 +24,10 @@
 #include "views/LibraryView.h"
 #include "views/SettingsView.h"
 #include "views/T3kFirstRunModal.h"
+#include "views/T3kRestoreModal.h"
 #include "views/ToneView.h"
 
+#include "../cloud/LibrarySync.h"
 #include "../cloud/OAuthFlow.h"
 #include "../cloud/Session.h"
 #include "../cloud/SessionEvent.h"
@@ -162,6 +164,10 @@ void ToneRoot::OnResize()
 
   // First-run modal covers the entire window.
   if (mFirstRunModal) mFirstRunModal->SetTargetAndDrawRECTs(mRECT);
+
+  // Restore modal also covers the entire window (the card is centered
+  // inside via its own OnResize).
+  if (mRestoreModal) mRestoreModal->SetTargetAndDrawRECTs(mRECT);
 }
 
 void ToneRoot::OnAttached()
@@ -334,6 +340,40 @@ void ToneRoot::OnAttached()
     // refresh so the library reflects any files added since last run.
     ::t3k::library::LibraryScanner::instance().rescan();
   }
+
+  // ── Phase 8: restore-library modal ────────────────────────────
+  // Attached AFTER the first-run modal so it sits at the top of the
+  // z-order. Starts hidden; LibrarySync's pull listener flips it on
+  // when a freshly-pulled library reveals tones that aren't on disk.
+  mRestoreModal = new T3kRestoreModal(mRECT,
+      /*onRestore*/ [this] {
+        ::t3k::cloud::sync::LibrarySync::instance().restoreAllMissing(
+            /*onDone*/ {});
+        if (mRestoreModal) mRestoreModal->Hide(true);
+      },
+      /*onDismiss*/ [this] {
+        if (mRestoreModal) mRestoreModal->Hide(true);
+      });
+  g->AttachControl(mRestoreModal);
+  mRestoreModal->Hide(true);
+
+  // Register the LibrarySync pull listener. Fires on the HTTP worker
+  // thread; we only flip IControl::Hide + SetDirty here, which iPlug2
+  // tolerates from any thread (same pattern as Session events that
+  // hide/show the sign-in pill). Capturing `this` is safe because
+  // ToneRoot outlives LibrarySync — the singleton is never destroyed
+  // before the IGraphics teardown that drops this control.
+  ::t3k::cloud::sync::LibrarySync::instance().setPullListener(
+      [this](bool ok, int entries) {
+        if (!ok || entries <= 0) return;
+        const int missing =
+            ::t3k::cloud::sync::LibrarySync::instance().countLocalMissing();
+        if (missing <= 0) return;
+        if (!mRestoreModal) return;
+        mRestoreModal->setMissingCount(missing);
+        mRestoreModal->Hide(false);
+        SetDirty(false);
+      });
 
   // Load the active preset's state into the chain so the UI restores
   // across DAW restarts. Falls back to the demo seed inside ToneView

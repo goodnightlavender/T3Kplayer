@@ -40,6 +40,7 @@ class T3kPresetPill;
 class T3kPresetOverlay;
 class T3kClickBackdrop;
 class T3kFirstRunModal;
+class T3kRestoreModal;
 class T3kSignInPill;
 class T3kAccountMenu;
 class ToneView;
@@ -124,6 +125,14 @@ private:
   // (Decision: keep the dim layer above the tab body until the user
   // picks a folder).
   T3kFirstRunModal* mFirstRunModal = nullptr;
+  // Phase 8 restore modal — attached above everything, hidden by
+  // default. ToneRoot subscribes to LibrarySync::setPullListener and
+  // flips the modal on when the pull reports a non-zero entry count
+  // AND LibraryDb has at least one row with missing=1.
+  T3kRestoreModal* mRestoreModal = nullptr;
+  // LibrarySync pull-listener id is not exposed (the LibrarySync API
+  // is "last writer wins" — there's no id-based unsubscribe path). On
+  // teardown we just stop LibrarySync, which is itself idempotent.
 
   Tab mActiveTab = Tab::Tone;
 

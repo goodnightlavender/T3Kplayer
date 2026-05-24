@@ -5,6 +5,8 @@
 #include "Session.h"
 #include "SessionEvent.h"
 #include "SyncConfig.h"
+#include "Tone3000Client.h"
+#include "Downloader.h"
 #include "../library/EventBus.h"
 #include "../library/LibraryDb.h"
 #include "../library/ModelMeta.h"
@@ -13,8 +15,12 @@
 #include "../net/HttpResponse.h"
 
 #include "nlohmann/json.hpp"
+#include "sqlite3.h"
 
+#include <atomic>
+#include <memory>
 #include <sstream>
+#include <unordered_set>
 
 namespace t3k::cloud::sync {
 
@@ -197,10 +203,24 @@ void LibrarySync::pullLibrary(PullCompletion onDone)
   req.timeout_ms = 30'000;
 
   ::t3k::net::HttpClient::instance().send(std::move(req),
-      [onDone = std::move(onDone)](const ::t3k::net::HttpResponse& res) {
+      [this, onDone = std::move(onDone)](const ::t3k::net::HttpResponse& res) {
+        // Fan out the result to onDone AND any persistent listener
+        // registered via setPullListener. The listener pattern lets
+        // ToneRoot react to every pull (e.g. show the restore modal)
+        // without each call site having to wire its own completion.
+        auto fireListeners = [this](bool ok, int entries) {
+          PullListener listener;
+          {
+            std::lock_guard<std::mutex> lk(this->mMtx);
+            listener = this->mPullListener;
+          }
+          if (listener) listener(ok, entries);
+        };
+
         if (res.status_code < 200 || res.status_code >= 300
             || res.body.empty()) {
           if (onDone) onDone(false, 0);
+          fireListeners(false, 0);
           return;
         }
 
@@ -259,10 +279,129 @@ void LibrarySync::pullLibrary(PullCompletion onDone)
           }
         } catch (...) {
           if (onDone) onDone(false, 0);
+          fireListeners(false, 0);
           return;
         }
         if (onDone) onDone(true, applied);
+        fireListeners(true, applied);
       });
+}
+
+void LibrarySync::setPullListener(PullListener cb)
+{
+  std::lock_guard<std::mutex> lk(mMtx);
+  mPullListener = std::move(cb);
+}
+
+int LibrarySync::countLocalMissing() const
+{
+  // queryByName("") with the default limit returns up to 200 non-
+  // missing rows by design — it filters missing=1 OUT. We need the
+  // count of MISSING rows so we'd ordinarily add a dedicated query.
+  // For Phase 8 polish we lean on LibraryDb's raw connection: a
+  // single COUNT(*) prepared statement. Caller is on the GUI thread.
+  sqlite3* db = ::t3k::library::LibraryDb::instance().raw();
+  if (!db) return 0;
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "SELECT COUNT(*) FROM models WHERE missing = 1";
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return 0;
+  }
+  int count = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    count = sqlite3_column_int(stmt, 0);
+  }
+  sqlite3_finalize(stmt);
+  return count;
+}
+
+void LibrarySync::restoreAllMissing(RestoreCompletion onDone)
+{
+  if (!isConfigured()) {
+    if (onDone) onDone(0, 0);
+    return;
+  }
+  if (!::t3k::cloud::Session::instance().accessTokenIfValid().has_value()) {
+    if (onDone) onDone(0, 0);
+    return;
+  }
+
+  // Walk LibraryDb rows where missing=1 and dedupe to unique tone_ids.
+  // We need raw SQL here for the missing=1 filter — queryByName hides
+  // missing rows by design.
+  std::vector<std::string> tone_ids;
+  {
+    sqlite3* db = ::t3k::library::LibraryDb::instance().raw();
+    if (!db) {
+      if (onDone) onDone(0, 0);
+      return;
+    }
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql =
+        "SELECT DISTINCT t3k_tone_id FROM models "
+        "WHERE missing = 1 AND t3k_tone_id <> '' "
+        "ORDER BY t3k_tone_id";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+      if (onDone) onDone(0, 0);
+      return;
+    }
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+      const unsigned char* p = sqlite3_column_text(stmt, 0);
+      if (p) tone_ids.emplace_back(reinterpret_cast<const char*>(p));
+    }
+    sqlite3_finalize(stmt);
+  }
+
+  if (tone_ids.empty()) {
+    if (onDone) onDone(0, 0);
+    return;
+  }
+
+  // Shared progress counters — getTone fires async, so we tally as
+  // each response lands. shared_ptr keeps the state alive across
+  // worker-thread callbacks.
+  struct Progress {
+    std::atomic<int> queued{0};
+    std::atomic<int> failed{0};
+    std::atomic<int> pending{0};
+    RestoreCompletion onDone;
+  };
+  auto prog = std::make_shared<Progress>();
+  prog->pending.store(static_cast<int>(tone_ids.size()),
+                      std::memory_order_release);
+  prog->onDone = std::move(onDone);
+
+  for (const auto& tone_id_str : tone_ids) {
+    int tone_id = 0;
+    try {
+      tone_id = std::stoi(tone_id_str);
+    } catch (...) {
+      tone_id = 0;
+    }
+    if (tone_id <= 0) {
+      prog->failed.fetch_add(1, std::memory_order_relaxed);
+      if (prog->pending.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+        if (prog->onDone) prog->onDone(prog->queued.load(),
+                                       prog->failed.load());
+      }
+      continue;
+    }
+
+    ::t3k::cloud::Tone3000Client::instance().getTone(
+        tone_id,
+        [prog](::t3k::cloud::ToneResult r) {
+          if (r.success) {
+            ::t3k::cloud::Downloader::instance().enqueueTone(r.data);
+            prog->queued.fetch_add(1, std::memory_order_relaxed);
+          } else {
+            prog->failed.fetch_add(1, std::memory_order_relaxed);
+          }
+          if (prog->pending.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+            if (prog->onDone) prog->onDone(prog->queued.load(),
+                                           prog->failed.load());
+          }
+        });
+  }
 }
 
 }  // namespace t3k::cloud::sync

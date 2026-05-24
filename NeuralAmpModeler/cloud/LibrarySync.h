@@ -59,6 +59,29 @@ public:
   using PullCompletion = std::function<void(bool ok, int entries)>;
   void pullLibrary(PullCompletion onDone = {});
 
+  // Persistent listener for every pull (both auto-triggered ones from
+  // the Session::SignedIn event and explicit pullLibrary() calls).
+  // ToneRoot registers one to know when to show the restore modal.
+  // Fires on the HTTP worker thread.
+  using PullListener = std::function<void(bool ok, int entries)>;
+  void setPullListener(PullListener cb);
+
+  // Count LibraryDb rows with missing=1. These are tones the user has
+  // in their cloud library but doesn't have on disk yet — typically
+  // because they signed in on a new machine and pullLibrary just
+  // hydrated stub rows. Safe to call from the GUI thread.
+  int countLocalMissing() const;
+
+  // Walk every missing row, deduplicate by tone_id, and queue a
+  // Phase-7 Downloader::enqueueTone for each unique tone after
+  // fetching the full Tone metadata via Tone3000Client::getTone.
+  // onDone fires after all enqueueTone calls have been kicked off
+  // (NOT after the downloads themselves complete — those run async
+  // through the existing Downloader pipeline and surface via the
+  // Cloud-tab status banner + per-card pill state).
+  using RestoreCompletion = std::function<void(int queued, int failed)>;
+  void restoreAllMissing(RestoreCompletion onDone = {});
+
 private:
   LibrarySync() = default;
   ~LibrarySync() = default;
@@ -78,7 +101,8 @@ private:
   int mSessionListenerId  = 0;
   int mEventBusListenerId = 0;
 
-  mutable std::mutex mMtx;  // covers listener-id mutation only
+  mutable std::mutex mMtx;  // covers listener-id + mPullListener
+  PullListener mPullListener;
 };
 
 }  // namespace t3k::cloud::sync
