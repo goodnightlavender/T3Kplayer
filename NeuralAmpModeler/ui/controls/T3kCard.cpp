@@ -9,6 +9,8 @@
 
 #include "IGraphics.h"
 
+#include "../../cloud/ThumbnailCache.h"
+
 namespace t3k::ui {
 
 using namespace ::iplug::igraphics;
@@ -198,9 +200,47 @@ void T3kCard::Draw(IGraphics& g)
   g.DrawRoundRect(outline, mRECT, th::kRadiusLg,
                   /*pBlend*/ nullptr, /*thickness*/ 1.f);
 
-  // ── Image square (or placeholder gradient) ──
+  // ── Image square ──
+  // Priority: explicit IBitmap > lazy-loaded thumb from URL > placeholder.
+  //
+  // First Draw with a non-empty imageUrl kicks off an async fetch via
+  // ThumbnailCache. The callback writes the local path into mThumbPath
+  // and marks dirty; subsequent Draws load the bitmap and cache it on
+  // mThumbBitmap. If LoadBitmap returns an invalid bitmap (corrupt
+  // file), mThumbLoadFailed flips so we don't spin retrying.
+  if (!mData.image.has_value() && !mData.imageUrl.empty()
+      && !mThumbRequested && !mThumbLoadFailed) {
+    mThumbRequested = true;
+    ::t3k::cloud::ThumbnailCache::instance().fetch(
+        mData.imageUrl,
+        [this](const std::string& path, bool ok) {
+          // Worker-thread callback. Just stash the path + mark dirty;
+          // GUI thread picks it up next paint.
+          if (ok && !path.empty()) {
+            mThumbPath = path;
+          } else {
+            mThumbLoadFailed = true;
+          }
+          this->SetDirty(false);
+        });
+  }
+  if (!mData.image.has_value() && !mThumbBitmap.has_value()
+      && !mThumbPath.empty() && !mThumbLoadFailed) {
+    IBitmap bmp = g.LoadBitmap(mThumbPath.c_str(),
+                                /*nStates*/ 1,
+                                /*framesAreHorizontal*/ false,
+                                /*targetScale*/ 0);
+    if (bmp.W() > 0 && bmp.H() > 0) {
+      mThumbBitmap = bmp;
+    } else {
+      mThumbLoadFailed = true;
+    }
+  }
+
   if (mData.image.has_value()) {
     g.DrawBitmap(*mData.image, mImageRect, /*srcX*/ 0, /*srcY*/ 0);
+  } else if (mThumbBitmap.has_value()) {
+    g.DrawFittedBitmap(*mThumbBitmap, mImageRect);
   } else {
     const IPattern grad = IPattern::CreateLinearGradient(
         mImageRect.L, mImageRect.T, mImageRect.L, mImageRect.B,

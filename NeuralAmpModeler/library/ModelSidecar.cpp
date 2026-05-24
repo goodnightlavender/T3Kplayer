@@ -177,4 +177,92 @@ std::optional<ModelMeta> loadSidecarFor(const std::string& modelPath)
   return m;
 }
 
+bool writeSidecarFor(const std::string& modelPath, const ModelMeta& m)
+{
+  if (modelPath.empty()) return false;
+
+  // Resolve "<stem>.tone3000.json" sibling.
+  const fs::path mp = fs::u8path(modelPath);
+  fs::path sidecar = mp;
+  sidecar.replace_extension();
+  sidecar += ".tone3000.json";
+  fs::path partial = sidecar;
+  partial += ".partial";
+
+  // Build the JSON body. Wrapper-key format ("tone3000": {...}) — the
+  // reader prefers this over a flat top-level object.
+  json inner;
+  inner["tone_id"]  = m.t3k_tone_id;
+  inner["model_id"] = m.t3k_model_id;
+  if (!m.display_name.empty())    inner["tone_name"]   = m.display_name;
+  if (!m.t3k_description.empty()) inner["description"] = m.t3k_description;
+  if (!m.t3k_image_url.empty())   inner["image_url"]   = m.t3k_image_url;
+  if (!m.gear_type.empty())       inner["gear_type"]   = m.gear_type;
+  if (!m.make.empty())            inner["make"]        = m.make;
+  if (!m.model_name.empty())      inner["model_name"]  = m.model_name;
+
+  // Creator object — reader tolerates both shapes; emit the object
+  // form when we have at least an id, otherwise a bare string.
+  if (!m.t3k_creator_id.empty()) {
+    json cobj;
+    cobj["username"] = m.t3k_creator;
+    cobj["id"]       = m.t3k_creator_id;
+    inner["creator"] = std::move(cobj);
+  } else if (!m.t3k_creator.empty()) {
+    inner["creator"] = m.t3k_creator;
+  }
+
+  if (!m.tags.empty()) inner["tags"] = m.tags;
+
+  // image_filename — the sibling-on-disk name. Derived from
+  // t3k_image_path if it lives next to the model file; otherwise
+  // omitted (the reader resolves siblings only).
+  if (!m.t3k_image_path.empty()) {
+    const fs::path ip = fs::u8path(m.t3k_image_path);
+    if (ip.parent_path() == mp.parent_path()) {
+      inner["image_filename"] = pathToUtf8(ip.filename());
+    }
+  }
+
+  json root;
+  root["schema"]   = 1;
+  root["tone3000"] = std::move(inner);
+
+  // Serialize with 2-space indent for human-readable sidecars.
+  std::string body;
+  try {
+    body = root.dump(2);
+  } catch (...) {
+    return false;
+  }
+
+  // ── Atomic write: bytes hit `.partial`, then rename onto the final
+  // path. A crash between the write and the rename leaves a .partial
+  // that the next download / library scan can clean up; it never
+  // leaves a half-written .tone3000.json the reader could choke on.
+  {
+    std::ofstream f(partial, std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!f.is_open()) return false;
+    f.write(body.data(), static_cast<std::streamsize>(body.size()));
+    if (!f.good()) {
+      f.close();
+      std::error_code ec;
+      fs::remove(partial, ec);
+      return false;
+    }
+  }
+
+  std::error_code ec;
+  fs::rename(partial, sidecar, ec);
+  if (ec) {
+    // Cross-volume fallback (rare here since both paths share a
+    // parent directory, but handled defensively).
+    fs::copy_file(partial, sidecar,
+                  fs::copy_options::overwrite_existing, ec);
+    if (ec) return false;
+    fs::remove(partial, ec);
+  }
+  return true;
+}
+
 }  // namespace t3k::library

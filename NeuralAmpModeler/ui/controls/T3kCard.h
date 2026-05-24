@@ -46,7 +46,12 @@ public:
     std::string subtitle;
     std::string creator;
     std::string badgeText;
+    // Direct bitmap (e.g. from a Library row that already loaded one).
     std::optional<IBitmap> image;
+    // Remote thumbnail URL — when set, T3kCard asks
+    // cloud::ThumbnailCache on first Draw and lazy-loads the cached
+    // IBitmap once available. Ignored when `image` is already set.
+    std::string imageUrl;
     int downloads = 0;
     int bookmarks = 0;
     int modelCount = 0;
@@ -91,6 +96,15 @@ private:
   bool mHovered  = false;
   float mHoverFrom = 0.f;
   float mHoverTo   = 0.f;
+
+  // Lazy thumbnail wiring. On first Draw we ask cloud::ThumbnailCache
+  // for mData.imageUrl; once the worker thread writes the file, the
+  // callback stashes the local path here. The next paint cycle calls
+  // g.LoadBitmap and we render the bitmap from then on.
+  bool        mThumbRequested = false;
+  std::string mThumbPath;          // populated when the cache resolves
+  std::optional<IBitmap> mThumbBitmap;   // loaded lazily from mThumbPath
+  bool        mThumbLoadFailed = false;  // gives up after one bad attempt
 
   // Cached rects (rebuilt in OnResize / RecomputeRects).
   IRECT mImageRect;

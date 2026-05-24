@@ -60,6 +60,22 @@ std::string suggestedToneRoot();
 // exist. Idempotent. Safe to call from any thread.
 void ensureAppDataLayout();
 
+// Returns `<toneRoot>/<toneId>/` and creates the directory if needed.
+// Used by cloud::Downloader to land model files + sidecars in a
+// per-tone subfolder. `toneId` is the canonical TONE3000 tone id as
+// a string (digits at this revision); we don't sanitize because the
+// upstream is server-issued.
+std::string toneDir(const std::string& toneRoot, const std::string& toneId);
+
+// Crash-safe write: serialize `data`/`size` bytes to `<path>.partial`,
+// then rename onto `path` (replacing any existing file). Returns
+// false on any I/O failure. The partial sentinel survives a crash
+// so the next download / library scan can clean it up. Used by
+// cloud::Downloader for the model bodies + cloud::ThumbnailCache
+// for the image cache.
+bool atomicWriteFile(const std::string& path,
+                     const unsigned char* data, std::size_t size);
+
 }  // namespace Paths
 
 }  // namespace t3k::library

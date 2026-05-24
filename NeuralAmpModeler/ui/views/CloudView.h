@@ -194,6 +194,15 @@ private:
 
   // Session listener id — unsubscribed in dtor.
   int mSessionListenerId = 0;
+
+  // Downloader subscription. Set in OnAttached, unsubscribed in
+  // dtor. The listener stashes the latest status under mDlStatusMtx
+  // and flips dirty; Draw drains it into mErrorMessage so the
+  // existing bottom-banner pipeline renders the progress.
+  int                       mDlListenerId = 0;
+  mutable std::mutex        mDlStatusMtx;
+  std::string               mDlStatusText;          // latest UI-facing message
+  std::chrono::steady_clock::time_point mDlStatusExpiry{};
 };
 
 }  // namespace t3k::ui

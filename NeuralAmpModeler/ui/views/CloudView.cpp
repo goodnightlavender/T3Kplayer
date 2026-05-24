@@ -17,6 +17,7 @@
 #include "../controls/T3kSearchBar.h"
 #include "../controls/T3kSignInPill.h"
 
+#include "../../cloud/Downloader.h"
 #include "../../cloud/OAuthFlow.h"
 #include "../../cloud/Session.h"
 #include "../../cloud/SessionEvent.h"
@@ -107,7 +108,10 @@ T3kCard::CardData makeCardData(const ::t3k::cloud::Tone& t) {
   std::string badge = ::t3k::cloud::toWire(t.platform);
   for (auto& c : badge) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
   d.badgeText    = std::move(badge);
-  d.image        = std::nullopt;  // Phase 7 wires thumbnail download
+  d.image        = std::nullopt;
+  if (t.images.has_value() && !t.images->empty()) {
+    d.imageUrl = (*t.images)[0];
+  }
   d.downloads    = t.downloads_count;
   d.bookmarks    = t.favorites_count;
   d.modelCount   = t.models_count;
@@ -128,6 +132,10 @@ CloudView::~CloudView()
   if (mSessionListenerId > 0) {
     ::t3k::cloud::Session::instance().unsubscribe(mSessionListenerId);
     mSessionListenerId = 0;
+  }
+  if (mDlListenerId > 0) {
+    ::t3k::cloud::Downloader::instance().unsubscribe(mDlListenerId);
+    mDlListenerId = 0;
   }
   // Cancel anything in flight so the worker's completion can't fire
   // into a destroyed `this`.
@@ -304,6 +312,52 @@ void CloudView::OnAttached()
         SetDirty(false);
       });
 
+  // Downloader listener — refresh the bottom status banner as
+  // downloads move through their pipeline. Worker-thread callback;
+  // stash the text + expiry under the mutex and let the next paint
+  // drain it (the SetDirty marker triggers a redraw).
+  mDlListenerId = ::t3k::cloud::Downloader::instance().subscribe(
+      [this](const ::t3k::cloud::DownloadStatus& s) {
+        using Stage = ::t3k::cloud::DownloadStatus::Stage;
+        std::string msg;
+        std::chrono::seconds ttl{8};
+        switch (s.stage) {
+          case Stage::Queued:
+            msg = "Queued: " + s.tone_title;
+            break;
+          case Stage::Listing:
+            msg = "Listing models: " + s.tone_title;
+            break;
+          case Stage::Downloading: {
+            const int n = s.model_index + 1;
+            const int t = std::max(1, s.total_models);
+            msg = "Downloading " + s.tone_title +
+                  " (" + std::to_string(n) + " of " +
+                  std::to_string(t) + ")\xE2\x80\xA6";
+            break;
+          }
+          case Stage::Writing:
+            msg = "Saving: " + s.tone_title;
+            break;
+          case Stage::Done:
+            msg = "Downloaded: " + s.tone_title;
+            ttl = std::chrono::seconds{5};
+            break;
+          case Stage::Failed:
+            msg = "Failed: " + s.tone_title +
+                  (s.error_message.empty() ? std::string{}
+                                           : (" \xE2\x80\x94 " + s.error_message));
+            ttl = std::chrono::seconds{12};
+            break;
+        }
+        {
+          std::lock_guard<std::mutex> lk(mDlStatusMtx);
+          mDlStatusText   = std::move(msg);
+          mDlStatusExpiry = std::chrono::steady_clock::now() + ttl;
+        }
+        this->SetDirty(false);
+      });
+
   refreshFromSession();
 }
 
@@ -321,6 +375,24 @@ void CloudView::Draw(IGraphics& g)
                    mSidebarRect.R + 1.f, mSidebarRect.B));
 
   drainPendingResult();
+
+  // Drain the latest Downloader status into mErrorMessage so the
+  // existing bottom-banner pipeline renders it. Expires after the
+  // TTL the listener set. Held under a mutex because the listener
+  // fires from the HTTP worker thread.
+  {
+    std::lock_guard<std::mutex> lk(mDlStatusMtx);
+    if (!mDlStatusText.empty()) {
+      if (std::chrono::steady_clock::now() < mDlStatusExpiry) {
+        mErrorMessage = mDlStatusText;
+      } else {
+        // TTL expired — clear both the download status and the banner
+        // so a stale "Downloaded: …" doesn't linger forever.
+        mDlStatusText.clear();
+        mErrorMessage.clear();
+      }
+    }
+  }
 
   // Re-sync state from Session — catches sign-in/out done from
   // another tab while we weren't visible.
@@ -499,11 +571,16 @@ void CloudView::onCardSelected(int toneIndex)
   SetDirty(false);
 }
 
-void CloudView::onCardDownload(int /*toneIndex*/)
+void CloudView::onCardDownload(int toneIndex)
 {
-  mErrorMessage = "Phase 7 will deliver real downloads.";
-  // Keep mState == Loaded so cards stay visible — the message renders
-  // as a small banner at the bottom of the body (see drawStateOverlay).
+  if (toneIndex < 0 || toneIndex >= static_cast<int>(mTones.size())) return;
+  const auto& tone = mTones[toneIndex];
+
+  // Surface a "Queued" banner immediately; Downloader's listener
+  // (wired in OnAttached) updates the banner through the remaining
+  // pipeline stages.
+  mErrorMessage = "Queued: " + tone.title;
+  ::t3k::cloud::Downloader::instance().enqueueTone(tone);
   SetDirty(false);
 }
 

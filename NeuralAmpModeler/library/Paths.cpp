@@ -12,7 +12,9 @@
 #include <knownfolders.h>
 #include <objbase.h>  // CoTaskMemFree
 
+#include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <system_error>
 
@@ -108,6 +110,67 @@ void ensureAppDataLayout()
     const std::string logs = logsDir();
     if (!logs.empty())  fs::create_directories(fs::u8path(logs), ec);
   }
+}
+
+std::string toneDir(const std::string& toneRoot, const std::string& toneId)
+{
+  namespace fs = std::filesystem;
+  if (toneRoot.empty() || toneId.empty()) return {};
+  fs::path p = fs::u8path(toneRoot);
+  p /= fs::u8path(toneId);
+  std::error_code ec;
+  fs::create_directories(p, ec);
+  // Always return a trailing-separator path so callers can string-
+  // concat filenames directly. Mirrors the other Paths helpers.
+  std::string out = pathToUtf8(p);
+  if (!out.empty() && out.back() != '\\' && out.back() != '/') {
+    out.push_back('\\');
+  }
+  return out;
+}
+
+bool atomicWriteFile(const std::string& path,
+                     const unsigned char* data, std::size_t size)
+{
+  if (path.empty() || !data) return false;
+  namespace fs = std::filesystem;
+
+  const fs::path finalP   = fs::u8path(path);
+  fs::path       partialP = finalP;
+  partialP += ".partial";
+
+  // Write bytes to .partial.
+  {
+    std::ofstream f(partialP, std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!f.is_open()) return false;
+    if (size > 0) {
+      f.write(reinterpret_cast<const char*>(data),
+              static_cast<std::streamsize>(size));
+    }
+    if (!f.good()) {
+      f.close();
+      std::error_code ec;
+      fs::remove(partialP, ec);
+      return false;
+    }
+  }
+
+  // Rename onto final. ReplaceFileW + MoveFileExW would give a stronger
+  // atomic guarantee on Windows, but fs::rename via std::filesystem is
+  // adequate when both paths share a parent (same volume). A crash
+  // between the write and the rename leaves a stranded .partial that
+  // the next download / scan can clean up — the final file never sees
+  // a half-written state.
+  std::error_code ec;
+  fs::rename(partialP, finalP, ec);
+  if (ec) {
+    // Cross-volume / locked-destination fallback.
+    fs::copy_file(partialP, finalP,
+                  fs::copy_options::overwrite_existing, ec);
+    if (ec) return false;
+    fs::remove(partialP, ec);  // best effort
+  }
+  return true;
 }
 
 }  // namespace Paths
