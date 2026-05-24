@@ -58,10 +58,17 @@ public:
           std::function<void()> onSelect,
           std::function<void()> onDownload);
 
+  // Wire a scroll-wheel forwarder. iPlug2 dispatches OnMouseWheel to
+  // the topmost control under the cursor — without this hook, scroll
+  // gestures over a card don't reach CloudView's scroll handler, and
+  // the result list reads as unscrollable.
+  void setOnWheel(std::function<void(float delta)> cb) { mOnWheel = std::move(cb); }
+
   void Draw(IGraphics& g) override;
   void OnMouseDown(float x, float y, const IMouseMod& mod) override;
   void OnMouseOver(float x, float y, const IMouseMod& mod) override;
   void OnMouseOut() override;
+  void OnMouseWheel(float x, float y, const IMouseMod& mod, float d) override;
   void OnResize() override;
 
   void setSelected(bool s) { mSelected = s; SetDirty(false); }
@@ -78,6 +85,7 @@ private:
   CardData mData;
   std::function<void()> mOnSelect;
   std::function<void()> mOnDownload;
+  std::function<void(float)> mOnWheel;  // wheel forwarder; nullable
 
   bool mSelected = false;
   bool mHovered  = false;

@@ -26,7 +26,8 @@ void T3kPill::Draw(IGraphics& g)
   const IColor stroke = mOn ? th::kBorderActive : th::kBorder;
   const IColor textCol = mOn ? th::kText : th::kTextMuted;
 
-  g.DrawRoundRect(stroke, mRECT, th::kRadiusPill, /*pBlend*/ nullptr, /*thickness*/ 1.f);
+  g.DrawRoundRect(stroke, mRECT, th::pillRadius(mRECT.H()),
+                  /*pBlend*/ nullptr, /*thickness*/ 1.f);
 
   const IText label(th::kTypeSmall,
                     textCol,

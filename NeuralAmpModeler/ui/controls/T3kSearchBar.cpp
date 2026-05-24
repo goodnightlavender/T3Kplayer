@@ -43,9 +43,12 @@ void T3kSearchBar::Draw(IGraphics& g)
 {
   namespace th = ::t3k::theme;
 
-  // Pill background + outline.
-  g.FillRoundRect(th::kBgSurface, mRECT, th::kRadiusPill);
-  g.DrawRoundRect(th::kBorder, mRECT, th::kRadiusPill, /*pBlend*/ nullptr, /*thickness*/ 1.f);
+  // Pill background + outline. NB: pass the height-clamped pill radius —
+  // kRadiusPill = 999 would otherwise blow up iPlug2's PathRoundRect (see
+  // theme.h for the full diagnosis of the diagonal-lines bug).
+  const float pr = th::pillRadius(mRECT.H());
+  g.FillRoundRect(th::kBgSurface, mRECT, pr);
+  g.DrawRoundRect(th::kBorder, mRECT, pr, /*pBlend*/ nullptr, /*thickness*/ 1.f);
 
   // Magnifier glyph at left.
   DrawMagnifier(g, mRECT, th::kTextMuted);

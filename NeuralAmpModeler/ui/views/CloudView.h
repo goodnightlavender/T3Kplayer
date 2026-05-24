@@ -96,6 +96,13 @@ private:
   // the body area are Hide(true)'d so iPlug2 skips their paint.
   void layoutCards();
 
+  // Apply a wheel delta `d` to mScrollOffset. Shared by OnMouseWheel
+  // (cursor over CloudView body padding) and the per-card wheel
+  // forwarder (cursor over a T3kCard — iPlug2 dispatches the wheel
+  // to the topmost control under the cursor, so cards have to
+  // forward explicitly).
+  void scrollBy(float d);
+
   // Pull any worker-thread completion result into UI state. Called
   // from Draw at the start of each paint cycle so the GUI thread owns
   // all card mutations.

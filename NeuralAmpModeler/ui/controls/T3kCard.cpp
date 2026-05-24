@@ -112,9 +112,16 @@ void T3kCard::Draw(IGraphics& g)
 
   // ── Outer surface ──
   // Surface color lerps from kBgSurface -> kBgElevated as hover advances.
+  // Clamp progress to [0,1] — without the clamp, GetAnimationProgress
+  // keeps growing past 1.0 (the animation lambda below doesn't end the
+  // animation), and Lerp extrapolates the color past kBgElevated → the
+  // tile slowly brightens toward white over many seconds. That was the
+  // "15-second hover ramp" bug.
   float hoverT = mHoverTo;
   if (GetAnimationFunction()) {
-    const float p = float(GetAnimationProgress());
+    float p = float(GetAnimationProgress());
+    if (p > 1.f) p = 1.f;
+    if (p < 0.f) p = 0.f;
     hoverT = Lerp(mHoverFrom, mHoverTo, p);
   }
   const IColor surface = LerpColor(th::kBgSurface, th::kBgElevated, hoverT);
@@ -168,8 +175,13 @@ void T3kCard::Draw(IGraphics& g)
   g.DrawText(titleT, mData.title.c_str(), titleRect);
   y += rowH_title;
 
-  // Download pill at the top-right of the right column.
-  g.DrawRoundRect(th::kBorder, mDownloadRect, th::kRadiusPill,
+  // Download pill at the top-right of the right column. Clamp the
+  // pill radius to the pill's half-height; kRadiusPill = 999 on a
+  // 22-tall rect would blow PathRoundRect into screen-spanning arcs —
+  // those are the diagonal lines that flowed across every card in the
+  // list (see theme.h diagnosis).
+  g.DrawRoundRect(th::kBorder, mDownloadRect,
+                  th::pillRadius(mDownloadRect.H()),
                   /*pBlend*/ nullptr, /*thickness*/ 1.f);
   const IText pillT(th::kTypeSmall,
                     th::kTextMuted,
@@ -341,7 +353,17 @@ void T3kCard::OnMouseOver(float x, float y, const IMouseMod& mod)
   mHovered = true;
   mHoverFrom = mHoverTo;
   mHoverTo = 1.f;
-  SetAnimation([](IControl* c) { c->SetDirty(false); },
+  // Animation lambda repaints + ends the animation when progress > 1.0.
+  // Without the OnEndAnimation call, mAnimationFunc stays non-null
+  // forever and GetAnimationProgress keeps climbing, which is what
+  // caused the original "hover slowly brightens to white over 15s" bug.
+  SetAnimation([](IControl* c) {
+                 if (c->GetAnimationProgress() > 1.) {
+                   c->OnEndAnimation();
+                   return;
+                 }
+                 c->SetDirty(false);
+               },
                int(kCardHoverTime));
   SetDirty(false);
 }
@@ -353,9 +375,29 @@ void T3kCard::OnMouseOut()
   mHovered = false;
   mHoverFrom = mHoverTo;
   mHoverTo = 0.f;
-  SetAnimation([](IControl* c) { c->SetDirty(false); },
+  // Animation lambda repaints + ends the animation when progress > 1.0.
+  // Without the OnEndAnimation call, mAnimationFunc stays non-null
+  // forever and GetAnimationProgress keeps climbing, which is what
+  // caused the original "hover slowly brightens to white over 15s" bug.
+  SetAnimation([](IControl* c) {
+                 if (c->GetAnimationProgress() > 1.) {
+                   c->OnEndAnimation();
+                   return;
+                 }
+                 c->SetDirty(false);
+               },
                int(kCardHoverTime));
   SetDirty(false);
+}
+
+void T3kCard::OnMouseWheel(float /*x*/, float /*y*/,
+                            const IMouseMod& /*mod*/, float d)
+{
+  // Forward to whatever scroll-handler the parent wired up. Without
+  // this, wheel events over a card stop at the card (iPlug2 dispatches
+  // to the topmost control under the cursor), and the cloud-results
+  // list reads as unscrollable.
+  if (mOnWheel) mOnWheel(d);
 }
 
 }  // namespace t3k::ui

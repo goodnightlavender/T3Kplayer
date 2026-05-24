@@ -69,8 +69,10 @@ void T3kPresetPill::Draw(IGraphics& g)
   // Pill background + outline. Hover slightly brightens the border so the
   // affordance reads on mouse-over (matches the .plg-preset-name:hover CSS).
   const IColor stroke = mMouseIsOver ? th::kBorderActive : th::kBorder;
-  g.FillRoundRect(th::kBgSurface, mRECT, th::kRadiusPill);
-  g.DrawRoundRect(stroke, mRECT, th::kRadiusPill, nullptr, 1.f);
+  // Clamp pill radius to half-height — see theme.h diagnosis.
+  const float pr = th::pillRadius(mRECT.H());
+  g.FillRoundRect(th::kBgSurface, mRECT, pr);
+  g.DrawRoundRect(stroke, mRECT, pr, nullptr, 1.f);
 
   // Dot — clean (accent blue) vs dirty (warning amber).
   const float dotCx = mRECT.L + kPadLeft;

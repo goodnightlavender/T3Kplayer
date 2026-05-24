@@ -48,16 +48,20 @@ void T3kButton::Draw(IGraphics& g)
 
   const bool hover = mMouseIsOver;
 
+  // Clamp the pill radius to the button's half-height — kRadiusPill = 999
+  // would otherwise blow iPlug2's PathRoundRect into screen-spanning
+  // arcs (see theme.h diagnosis).
+  const float pr = th::pillRadius(mRECT.H());
   if (mVariant == Variant::Primary)
   {
     const IColor fill = hover ? LightenTowardWhite(th::kAccent, 0.10f) : th::kAccent;
-    g.FillRoundRect(fill, mRECT, th::kRadiusPill);
+    g.FillRoundRect(fill, mRECT, pr);
   }
   else  // Secondary
   {
     // Transparent background; outline indicates the affordance.
     const IColor stroke = hover ? th::kBorderActive : th::kBorder;
-    g.DrawRoundRect(stroke, mRECT, th::kRadiusPill, /*pBlend*/ nullptr, /*thickness*/ 1.f);
+    g.DrawRoundRect(stroke, mRECT, pr, /*pBlend*/ nullptr, /*thickness*/ 1.f);
   }
 
   const IText label(th::kTypeBody,

@@ -334,6 +334,11 @@ void CloudView::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
 void CloudView::OnMouseWheel(float /*x*/, float /*y*/,
                              const IMouseMod& /*mod*/, float d)
 {
+  scrollBy(d);
+}
+
+void CloudView::scrollBy(float d)
+{
   if (mState != State::Loaded) return;
   mScrollOffset -= d * 80.f;
   if (mScrollOffset < 0.f) mScrollOffset = 0.f;
@@ -475,6 +480,11 @@ void CloudView::rebuildCards()
         makeCardData(mTones[idx]),
         /*onSelect*/   [this, idx]() { this->onCardSelected(idx); },
         /*onDownload*/ [this, idx]() { this->onCardDownload(idx); });
+    // Forward scroll-wheel events from this card up to CloudView's
+    // scroll handler. Without this, iPlug2 dispatches the wheel to
+    // the card (topmost control under the cursor) and our scrollBy
+    // never runs — the list reads as unscrollable.
+    c->setOnWheel([this](float d) { this->scrollBy(d); });
     g->AttachControl(c);
     mCards.push_back(c);
   }

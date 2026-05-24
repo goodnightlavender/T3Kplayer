@@ -55,7 +55,16 @@ constexpr float kS1 = 4.f, kS2 = 8.f, kS3 = 12.f, kS4 = 16.f, kS5 = 24.f, kS6 = 
 constexpr float kRadiusSm   = 4.f;
 constexpr float kRadiusMd   = 8.f;
 constexpr float kRadiusLg   = 12.f;
+// kRadiusPill is a SENTINEL — do NOT pass it directly to FillRoundRect /
+// DrawRoundRect. iPlug2's PathRoundRect builds its corners from four
+// PathArc calls with NO radius clamp, and NanoVG's nvgArc happily draws
+// 999-pixel arcs that span the entire viewport (this is the root cause
+// of the "diagonal lines on the search bar / cards" Phase 6 smoke-test
+// bug). For pill-shaped controls, call pillRadius(mRECT.H()) — it
+// returns the largest geometrically valid corner radius for a true
+// pill end.
 constexpr float kRadiusPill = 999.f;
+inline float pillRadius(float height) { return height * 0.5f; }
 
 // ─── Animation durations (ms) ──────────────────────────────────────────────
 constexpr int kAnimTabSlide       = 200;

@@ -39,7 +39,7 @@ void T3kSignInPill::Draw(IGraphics& g)
   const IColor fill = mMouseIsOver
       ? LightenTowardWhite(th::kAccent, 0.10f)
       : th::kAccent;
-  g.FillRoundRect(fill, mRECT, th::kRadiusPill);
+  g.FillRoundRect(fill, mRECT, th::pillRadius(mRECT.H()));
 
   // White "Sign in" label centered.
   const IText label(th::kTypeSmall,

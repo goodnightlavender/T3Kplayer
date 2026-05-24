@@ -107,11 +107,17 @@ void T3kAccordion::Draw(IGraphics& g)
   g.DrawText(label, mLabel, labelRect);
 
   // Chevron at the right. Compute current rotation (interpolated if
-  // animating, else at the target value).
+  // animating, else at the target value). Clamp progress to [0,1] —
+  // without the clamp, GetAnimationProgress keeps climbing past 1.0
+  // (the original animation lambda only called SetDirty without ending
+  // the animation), and the ease extrapolation made the chevron spin
+  // past 90° on every redraw (the "rotates endlessly" bug).
   float deg = mChevronToDeg;
   if (GetAnimationFunction())
   {
-    const float t = float(GetAnimationProgress());
+    float t = float(GetAnimationProgress());
+    if (t > 1.f) t = 1.f;
+    if (t < 0.f) t = 0.f;
     // Ease-out: 1 - (1 - t)^3
     const float eased = 1.f - (1.f - t) * (1.f - t) * (1.f - t);
     deg = Lerp(mChevronFromDeg, mChevronToDeg, eased);
@@ -133,10 +139,13 @@ void T3kAccordion::OnMouseDown(float /*x*/, float /*y*/, const IMouseMod& /*mod*
 {
   // Snapshot the current animated rotation as the new "from" so the next
   // transition picks up where this one left off if it was mid-flight.
+  // Same [0,1] clamp as Draw() — see comment there.
   float currentDeg = mChevronToDeg;
   if (GetAnimationFunction())
   {
-    const float t = float(GetAnimationProgress());
+    float t = float(GetAnimationProgress());
+    if (t > 1.f) t = 1.f;
+    if (t < 0.f) t = 0.f;
     const float eased = 1.f - (1.f - t) * (1.f - t) * (1.f - t);
     currentDeg = Lerp(mChevronFromDeg, mChevronToDeg, eased);
   }
@@ -145,7 +154,16 @@ void T3kAccordion::OnMouseDown(float /*x*/, float /*y*/, const IMouseMod& /*mod*
   mOpen = !mOpen;
   mChevronToDeg = mOpen ? 90.f : 0.f;
 
-  SetAnimation([](IControl* c) { c->SetDirty(false); },
+  // Animation lambda ends the animation when progress > 1.0 so
+  // mAnimationFunc returns null afterward — otherwise the chevron
+  // would keep rotating (eased extrapolation past 90°) every paint.
+  SetAnimation([](IControl* c) {
+                 if (c->GetAnimationProgress() > 1.) {
+                   c->OnEndAnimation();
+                   return;
+                 }
+                 c->SetDirty(false);
+               },
                ::t3k::theme::kAnimAccordionChevron);
 
   SetDirty(false);
