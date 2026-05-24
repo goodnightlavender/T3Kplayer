@@ -193,6 +193,40 @@ private:
   std::function<void(NAM_SAMPLE**, NAM_SAMPLE**, int)> mBlockProcessFunc;
 };
 
+// ── Phase 10: multi-stage chain support ────────────────────────────────
+// The plug-in carries up to kNumChainSlots NAM models in series. Slot 0
+// is the legacy "primary" model — it retains all the upstream NAM
+// behavior (input/output calibration, normalized/calibrated output
+// mode, slimmable controls). Slots 1..N are pure additive stages: each
+// owns its own NAM model + 3-band tone stack + per-slot input/output
+// gain trim (dB), processed in numeric order after slot 0's tone stack
+// but before the global IR + DC blocker. Empty slots are skipped.
+//
+// The 5 visible knobs (Bass / Mid / Treble / Input / Output) always
+// drive whichever slot is currently "active" (mActiveSlot). Switching
+// the active slot is a UI affordance — the EQ knobs jump to the newly
+// active slot's stored values, the underlying iPlug param value moves
+// with them. Inactive slots keep processing with their last-stored EQ.
+constexpr int kNumChainSlots = 5;
+
+// ExtraSlot — slots 1..N-1. Slot 0 stays on the legacy members below
+// (mModel / mStagedModel / mShouldRemoveModel / mToneStack) so no
+// upstream NAM behavior changes.
+struct ExtraSlot
+{
+  std::unique_ptr<ResamplingNAM>                       model;
+  std::unique_ptr<ResamplingNAM>                       stagedModel;
+  std::atomic<bool>                                    shouldRemove{false};
+  std::unique_ptr<dsp::tone_stack::AbstractToneStack>  toneStack;
+  bool   eqActive = true;
+  double bass     = 5.0;   // 0..10, matches kToneBass range
+  double mid      = 5.0;
+  double treble   = 5.0;
+  double inGainDb = 0.0;   // -20..+20
+  double outGainDb = 0.0;  // -40..+40
+  WDL_String namPath;
+};
+
 class NeuralAmpModeler final : public iplug::Plugin
 {
 public:
@@ -200,6 +234,24 @@ public:
   ~NeuralAmpModeler();
 
   void ProcessBlock(iplug::sample** inputs, iplug::sample** outputs, int nFrames) override;
+
+  // ── Phase 10 public chain API ───────────────────────────────────
+  // Stage a NAM model into a specific slot. slot=0 routes to the
+  // legacy _StageModel path; slots 1..N-1 go to the ExtraSlot.
+  // Returns an empty string on success, or an error message on failure.
+  std::string StageModelInSlot(int slot, const WDL_String& namPath);
+  // Tear down a slot (arms its clear flag; the actual unique_ptr swap
+  // happens on the next audio thread tick via _ApplyDSPStaging).
+  void UnloadSlot(int slot);
+  // Update the active slot. The kToneBass/Mid/Treble/InputLevel/
+  // OutputLevel iPlug params snap to that slot's stored values so the
+  // knob UI reflects the new selection. Out-of-range indices clamp.
+  void SetActiveSlot(int slot);
+  int  GetActiveSlot() const { return mActiveSlot; }
+  // Per-slot path inquiry. slot=0 returns mNAMPath; 1..N-1 returns
+  // mExtraSlots[slot-1].namPath. Returns "" for empty slots.
+  const char* GetSlotNamPath(int slot) const;
+  bool        SlotHasModel(int slot) const;
   void OnReset() override;
   void OnIdle() override;
 
@@ -324,4 +376,37 @@ private:
   std::unordered_map<std::string, double> mNAMParams = {{"Input", 0.0}, {"Output", 0.0}};
 
   NAMSender mInputSender, mOutputSender;
+
+  // ── Phase 10 chain state ────────────────────────────────────
+  // mExtraSlots[i] corresponds to chain slot (i + 1). The primary
+  // slot 0 stays on the legacy mModel / mToneStack members above.
+  ExtraSlot mExtraSlots[kNumChainSlots - 1];
+
+  // Active slot drives knob routing. 0..kNumChainSlots-1.
+  int mActiveSlot = 0;
+
+  // Per-slot EQ + gain stored for slot 0 (so we have a canonical
+  // place to push to / pull from when the active slot changes).
+  // The values live in iPlug params (kToneBass etc.) when slot 0 is
+  // active; we shadow them here so flipping the active slot away
+  // and back restores the slot-0 settings.
+  double mSlot0Bass     = 5.0;
+  double mSlot0Mid      = 5.0;
+  double mSlot0Treble   = 5.0;
+  double mSlot0InGainDb = 0.0;
+  double mSlot0OutGainDb = 0.0;
+
+  // Guards re-entrant push-from-active-slot → SetParameterValue →
+  // OnParamChange → push-back loops.
+  bool mInActiveSlotPush = false;
+
+  // Helpers — see NeuralAmpModeler.cpp.
+  void  _ApplyEqToSlot(int slot);
+  void  _PushActiveSlotIntoParams();
+  ExtraSlot* _Extra(int slot) {
+    return (slot >= 1 && slot < kNumChainSlots) ? &mExtraSlots[slot - 1] : nullptr;
+  }
+  const ExtraSlot* _Extra(int slot) const {
+    return (slot >= 1 && slot < kNumChainSlots) ? &mExtraSlots[slot - 1] : nullptr;
+  }
 };

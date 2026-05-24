@@ -65,9 +65,86 @@ void NeuralAmpModeler::_UnserializeApplyConfig(nlohmann::json& config)
   {
     _StageIR(mIRPath);
   }
+
+  // ── Phase 10: restore chain state if the envelope is present.
+  // Slot 0's iPlug param values were already applied in the loop
+  // above (so the visible knobs are correct when slot 0 is active);
+  // the per-slot shadow values are restored here from the envelope.
+  if (config.contains("__chain__"))
+  {
+    const nlohmann::json& chain = config["__chain__"];
+    try
+    {
+      if (chain.contains("active"))
+        mActiveSlot = chain["active"].get<int>();
+      if (mActiveSlot < 0)
+        mActiveSlot = 0;
+      if (mActiveSlot >= kNumChainSlots)
+        mActiveSlot = kNumChainSlots - 1;
+
+      if (chain.contains("slot0") && chain["slot0"].is_object())
+      {
+        const auto& s0 = chain["slot0"];
+        mSlot0Bass      = s0.value("b",   5.0);
+        mSlot0Mid       = s0.value("m",   5.0);
+        mSlot0Treble    = s0.value("t",   5.0);
+        mSlot0InGainDb  = s0.value("in",  0.0);
+        mSlot0OutGainDb = s0.value("out", 0.0);
+      }
+
+      if (chain.contains("slots") && chain["slots"].is_array())
+      {
+        for (const auto& sj : chain["slots"])
+        {
+          int i = sj.value("i", 0);
+          if (i < 1 || i >= kNumChainSlots)
+            continue;
+          ExtraSlot& es = mExtraSlots[i - 1];
+          es.bass      = sj.value("b",   5.0);
+          es.mid       = sj.value("m",   5.0);
+          es.treble    = sj.value("t",   5.0);
+          es.inGainDb  = sj.value("in",  0.0);
+          es.outGainDb = sj.value("out", 0.0);
+          es.eqActive  = sj.value("eq",  true);
+          std::string namPath = sj.value("nam", std::string{});
+          if (!namPath.empty())
+          {
+            WDL_String wp(namPath.c_str());
+            StageModelInSlot(i, wp);
+            es.namPath = wp;
+          }
+          // Push the restored EQ into the slot's tone stack so audio
+          // is correct even if this slot never becomes active.
+          if (es.toneStack)
+          {
+            es.toneStack->SetParam("bass",   es.bass);
+            es.toneStack->SetParam("middle", es.mid);
+            es.toneStack->SetParam("treble", es.treble);
+          }
+        }
+      }
+
+      // If the saved active slot wasn't slot 0, push that slot's
+      // values into the visible iPlug knobs.
+      if (mActiveSlot != 0)
+        _PushActiveSlotIntoParams();
+    }
+    catch (...)
+    {
+      // Malformed envelope — params already loaded the legacy way; just leave chain state at defaults.
+    }
+  }
 }
 
-// Unserialize NAM Path, IR path, then named keys
+// Unserialize NAM Path, IR path, then (optionally) a Phase 10 chain
+// envelope as a JSON string, then named keys.
+//
+// The chain envelope is detected by attempting a string read after
+// IRPath and checking the contents look like our JSON (must start
+// with '{' and parse cleanly into an object with a "v" key). If
+// detection fails, we rewind to the position right after IRPath so
+// the legacy double-stream reader picks up exactly where it always
+// did.
 int _UnserializePathsAndExpectedKeys(const iplug::IByteChunk& chunk, int startPos, nlohmann::json& config,
                                      std::vector<std::string>& paramNames)
 {
@@ -77,6 +154,31 @@ int _UnserializePathsAndExpectedKeys(const iplug::IByteChunk& chunk, int startPo
   config["NAMPath"] = std::string(path.Get());
   pos = chunk.GetStr(path, pos);
   config["IRPath"] = std::string(path.Get());
+
+  // ── Phase 10: optional chain envelope.
+  const int posBeforeChain = pos;
+  WDL_String chainStr;
+  int chainPos = chunk.GetStr(chainStr, pos);
+  bool chainConsumed = false;
+  if (chainPos > pos && chainStr.GetLength() > 0 && chainStr.Get()[0] == '{')
+  {
+    try
+    {
+      auto parsed = nlohmann::json::parse(chainStr.Get());
+      if (parsed.is_object() && parsed.contains("v"))
+      {
+        config["__chain__"] = parsed;
+        pos = chainPos;
+        chainConsumed = true;
+      }
+    }
+    catch (...)
+    {
+      // Not a chain envelope — fall through and rewind.
+    }
+  }
+  if (!chainConsumed)
+    pos = posBeforeChain;
 
   for (auto it = paramNames.begin(); it != paramNames.end(); ++it)
   {

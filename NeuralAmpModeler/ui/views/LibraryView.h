@@ -1,24 +1,23 @@
-// LibraryView.h — Phase 3 implementation of the Library tab body.
+// LibraryView.h — Phase 10 reimagining of the Library tab body.
 //
-// Composite control: search bar + Rescan button (chrome) plus a virtual
-// vertical list of model rows drawn by the LibraryView itself. Each row
-// shows the model's effective display name, the creator, and the file
-// size; right-click on a row opens a popup menu with "Rename" which
-// positions a shared T3kRenameOverlay below the row.
+// Layout: header (search + Rescan) on top; below that the body is split
+// into a virtual list (~70% of width) on the left and a fixed-width
+// detail pane (~300px) on the right. Selecting a row in the list fills
+// the detail pane and reveals action buttons (Load, Rename, Remove,
+// Show in Explorer). The legacy "TEST NET" button has been retired —
+// Phase 4 brought the network online, the smoke-test surface no longer
+// earns its slot in the header chrome.
 //
-// LibraryView OWNS the scroll list (T3kVScrollList) but draws each row
-// inline via T3kVScrollList's draw-callback rather than attaching one
-// IControl per row. This keeps the control-list shallow (a 1000-model
-// library would otherwise need 1000 IControls) and lets the right-click
-// → rename flow work without forwarding mouse events through child
-// indirection.
+// LibraryView still OWNS the scroll list (T3kVScrollList) and renders
+// each row inline via T3kVScrollList's draw-callback; the rows are
+// taller now (~88px) and carry a thumbnail tile on the left, so the
+// virtualization budget stays the same regardless of library size.
 
 #pragma once
 
 #include <chrono>
 #include <cstdint>
 #include <functional>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -71,36 +70,59 @@ class LibraryView : public iplug::igraphics::IControl {
   // Find a row by row-id. Returns -1 if not visible.
   int findRowIndexById(int64_t modelId) const;
 
-  // Phase 4 smoke-test: GET https://www.gstatic.com/generate_204,
-  // store the result string for Draw to render. Completion runs on a
-  // WORKER thread — do NOT call any IGraphics method from it; just
-  // stash state under mNetStatusMtx and let the next paint pick it up.
-  void runNetTest();
+  // Remove `mSelectedId` from LibraryDb + nuke the on-disk files. Called
+  // from the detail-pane Remove button and the popup-menu Remove item
+  // after the user confirms via a two-step "Remove → Confirm" popup.
+  void removeSelected();
+
+  // Open the OS file explorer focused on `mSelectedId`'s on-disk path.
+  void revealSelected();
+
+  // Stage `mSelectedId` into the chain (delegates to mOnModelClicked).
+  void loadSelected();
+
+  // Refresh the detail-pane button visibility based on whether a row
+  // is selected. The detail pane stays visible always; the buttons
+  // disappear when nothing is selected.
+  void updateDetailButtons();
 
   // Header chrome rects, recomputed in OnResize.
   iplug::igraphics::IRECT mHeaderRect;
   iplug::igraphics::IRECT mSearchRect;
   iplug::igraphics::IRECT mRescanRect;
-  iplug::igraphics::IRECT mTestNetRect;
-  iplug::igraphics::IRECT mListRect;
+  iplug::igraphics::IRECT mBodyRect;        // header.B → mRECT.B
+  iplug::igraphics::IRECT mListRect;        // left side of body
+  iplug::igraphics::IRECT mDetailRect;      // right side of body
+
+  // Detail-pane child button rects.
+  iplug::igraphics::IRECT mLoadBtnRect;
+  iplug::igraphics::IRECT mRenameBtnRect;
+  iplug::igraphics::IRECT mRevealBtnRect;
+  iplug::igraphics::IRECT mRemoveBtnRect;
 
   // Children. Owned by IGraphics after AttachControl.
   T3kSearchBar*     mSearchBar       = nullptr;
   T3kButton*        mRescanBtn       = nullptr;
-  T3kButton*        mTestNetBtn      = nullptr;
   T3kVScrollList*   mScrollList      = nullptr;
   T3kRenameOverlay* mRenameOverlay   = nullptr;
+  // Detail-pane action buttons.
+  T3kButton*        mLoadBtn         = nullptr;
+  T3kButton*        mRenameBtn       = nullptr;
+  T3kButton*        mRevealBtn       = nullptr;
+  T3kButton*        mRemoveBtn       = nullptr;
 
   // Data backing the list.
   std::vector<::t3k::library::ModelRow> mRows;
 
-  // Debounced search.
+  // Search query (debounce handled by T3kSearchBar itself).
   std::string mSearch;
-  std::string mPendingSearch;
-  std::chrono::steady_clock::time_point mPendingSince{};
 
   // EventBus subscription token (so we can unsubscribe in dtor).
   int mBusToken = 0;
+
+  // Selection state — the currently-focused row in the list. Drives the
+  // detail pane and the action buttons. 0 = nothing selected.
+  int64_t mSelectedId = 0;
 
   // Right-click context state — set in OnMouseDown when a right-click
   // hits a row, consumed by OnPopupMenuSelection.
@@ -110,13 +132,11 @@ class LibraryView : public iplug::igraphics::IControl {
   // T3kRenameOverlay fires its callback).
   int64_t mRenameTargetId = 0;
 
-  // Phase 4 smoke-test state. mNetStatus is set by the HttpClient
-  // completion lambda (worker thread) and read by Draw (GUI thread);
-  // the mutex protects both string + expiry. The expiry is checked in
-  // Draw so the status auto-clears ~5s after the request completes.
-  std::mutex                              mNetStatusMtx;
-  std::string                             mNetStatus;
-  std::chrono::steady_clock::time_point   mNetStatusExpiry{};
+  // Two-step popup-menu remove confirmation. When the user picks
+  // "Remove from library…" we open a second popup menu that asks
+  // "Confirm: delete <name>?" — we remember which model id we're
+  // about to wipe between the two popup roundtrips here.
+  int64_t mRemoveConfirmId = 0;
 
   OnModelClicked mOnModelClicked;
 };

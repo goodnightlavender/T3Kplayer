@@ -25,6 +25,7 @@
 #include "views/SettingsView.h"
 #include "views/T3kFirstRunModal.h"
 #include "views/T3kRestoreModal.h"
+#include "views/T3kSettingsModal.h"
 #include "views/ToneView.h"
 
 #include "../cloud/LibrarySync.h"
@@ -168,6 +169,8 @@ void ToneRoot::OnResize()
   // Restore modal also covers the entire window (the card is centered
   // inside via its own OnResize).
   if (mRestoreModal) mRestoreModal->SetTargetAndDrawRECTs(mRECT);
+  // Settings modal — same full-window backdrop.
+  if (mSettingsModal) mSettingsModal->SetTargetAndDrawRECTs(mRECT);
 }
 
 void ToneRoot::OnAttached()
@@ -356,6 +359,17 @@ void ToneRoot::OnAttached()
       });
   g->AttachControl(mRestoreModal);
   mRestoreModal->Hide(true);
+
+  // ── Phase 10: settings modal. Attached after the restore modal so
+  // both sit at the top of the z-order. Hidden by default; the account
+  // menu's onSettings callback flips it on.
+  mSettingsModal = new T3kSettingsModal(mRECT,
+      /*onClose*/ [this] {
+        if (mSettingsModal) mSettingsModal->Hide(true);
+        SetDirty(false);
+      });
+  g->AttachControl(mSettingsModal);
+  mSettingsModal->Hide(true);
 
   // Register the LibrarySync pull listener. Fires on the HTTP worker
   // thread; we only flip IControl::Hide + SetDirty here, which iPlug2
@@ -696,9 +710,14 @@ void ToneRoot::attachAccountMenu(bool startVisible)
 
   mAccountMenu = new T3kAccountMenu(accountMenuRect());
   mAccountMenu->onSettings = [this]() {
-    // Phase 5 stub — Settings panel comes online in Phase 9.
-    this->setSignInStatus("Settings panel: TODO (Phase 9)");
+    // Phase 10 — real settings modal. Close the account menu first
+    // so it doesn't paint above the modal's dim backdrop.
     if (mAccountMenu && !mAccountMenu->IsHidden()) toggleAccountMenu();
+    if (mSettingsModal) {
+      mSettingsModal->refresh();
+      mSettingsModal->Hide(false);
+      SetDirty(false);
+    }
   };
   mAccountMenu->onMockSignIn = [this]() {
     ::t3k::cloud::Session::instance().mockSignIn();

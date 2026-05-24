@@ -73,6 +73,16 @@ class LibraryDb {
   // Set or clear the user-rename column.
   void setDisplayNameOverride(int64_t id, std::optional<std::string> name);
 
+  // Delete the row identified by `id`. Caller is responsible for any
+  // filesystem cleanup (see `Paths::deleteModelFiles`). Returns true
+  // if a row was actually removed.
+  bool removeRow(int64_t id);
+
+  // Single-row lookup by primary key. Returns std::nullopt when the
+  // id doesn't exist. Used by LibraryView's remove flow to fetch the
+  // on-disk paths before deletion.
+  std::optional<ModelRow> findById(int64_t id);
+
   // missing=1 hides the row from the default LibraryView query but
   // keeps it around for redownload (Phase 7).
   void markMissing(int64_t id, bool missing);

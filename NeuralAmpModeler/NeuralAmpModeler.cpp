@@ -3,6 +3,9 @@
 #include <filesystem>
 #include <iostream>
 #include <utility>
+#include <vector>
+
+#include "nlohmann/json.hpp"
 
 #include "Colors.h"
 #include "../NeuralAmpModelerCore/NAM/activations.h"
@@ -217,9 +220,47 @@ void NeuralAmpModeler::ProcessBlock(iplug::sample** inputs, iplug::sample** outp
                                     ? mToneStack->Process(gateGainOutput, numChannelsInternal, nFrames)
                                     : gateGainOutput;
 
-  sample** irPointers = toneStackOutPointers;
+  // ── Phase 10: chain the extra slots in series. Each slot reads from
+  // `currentPointers`, runs its own NAM model + tone stack with its
+  // stored EQ, applies per-slot in/out gain, and produces its output
+  // in mOutputPointers (which acts as the chain's rolling buffer).
+  // To avoid in-place read/write hazards when the slot's input and
+  // output both alias mOutputPointers, we copy through a thread-local
+  // scratch buffer. ProcessBlock is called from a single audio thread
+  // per instance, so thread_local is safe.
+  static thread_local std::vector<sample> chainScratch;
+  static thread_local std::vector<sample*> chainScratchPtr(1, nullptr);
+  if (chainScratch.size() < numFrames)
+    chainScratch.resize(numFrames);
+  chainScratchPtr[0] = chainScratch.data();
+  sample** currentPointers = toneStackOutPointers;
+  for (auto& es : mExtraSlots)
+  {
+    if (es.model == nullptr)
+      continue;
+    // Apply per-slot input gain into scratch.
+    const double inGain = DBToAmp(es.inGainDb);
+    for (size_t s = 0; s < numFrames; ++s)
+      chainScratch[s] = inGain * currentPointers[0][s];
+    // Process the slot's NAM model — writes into mOutputPointers.
+    es.model->process(chainScratchPtr.data(), mOutputPointers, (int)nFrames);
+    // Slot's own tone stack (when its eqActive flag is set).
+    sample** afterEq = (es.eqActive && es.toneStack)
+                         ? es.toneStack->Process(mOutputPointers, numChannelsInternal, nFrames)
+                         : mOutputPointers;
+    // Apply slot's output gain back into mOutputArray. afterEq may
+    // alias mOutputPointers (eqActive==false) or the tone stack's
+    // internal buffer — copy back unconditionally so subsequent stages
+    // see a stable pointer.
+    const double outGain = DBToAmp(es.outGainDb);
+    for (size_t s = 0; s < numFrames; ++s)
+      mOutputArray[0][s] = outGain * afterEq[0][s];
+    currentPointers = mOutputPointers;
+  }
+
+  sample** irPointers = currentPointers;
   if (mIR != nullptr && GetParam(kIRToggle)->Value())
-    irPointers = mIR->Process(toneStackOutPointers, numChannelsInternal, numFrames);
+    irPointers = mIR->Process(currentPointers, numChannelsInternal, numFrames);
 
   // And the HPF for DC offset (Issue 271)
   const double highPassCutoffFreq = kDCBlockerFrequency;
@@ -306,6 +347,39 @@ bool NeuralAmpModeler::SerializeState(IByteChunk& chunk) const
   // when we unserialize)
   chunk.PutStr(mNAMPath.Get());
   chunk.PutStr(mIRPath.Get());
+  // ── Phase 10: chain envelope. Older versions of the plug-in stop
+  // reading here and go straight into SerializeParams; the reader
+  // treats this string as optional so legacy chunks still load.
+  // Slot 0's EQ/gain is stored redundantly with the iPlug params so a
+  // session saved while mActiveSlot != 0 still restores correctly.
+  nlohmann::json chain = {
+    {"v", 1},
+    {"active", mActiveSlot},
+    {"slot0", {
+      {"b",  mSlot0Bass},
+      {"m",  mSlot0Mid},
+      {"t",  mSlot0Treble},
+      {"in", mSlot0InGainDb},
+      {"out", mSlot0OutGainDb}
+    }},
+    {"slots", nlohmann::json::array()},
+  };
+  for (int i = 0; i < kNumChainSlots - 1; ++i)
+  {
+    const auto& es = mExtraSlots[i];
+    chain["slots"].push_back({
+      {"i",   i + 1},
+      {"nam", std::string(es.namPath.Get())},
+      {"b",   es.bass},
+      {"m",   es.mid},
+      {"t",   es.treble},
+      {"in",  es.inGainDb},
+      {"out", es.outGainDb},
+      {"eq",  es.eqActive}
+    });
+  }
+  WDL_String chainStr(chain.dump().c_str());
+  chunk.PutStr(chainStr.Get());
   return SerializeParams(chunk);
 }
 
@@ -357,17 +431,71 @@ void NeuralAmpModeler::OnParamChange(int paramIdx)
 {
   switch (paramIdx)
   {
-    // Changes to the input gain
+    // Calibration toggles affect only slot 0's gain stage.
     case kCalibrateInput:
-    case kInputCalibrationLevel:
-    case kInputLevel: _SetInputGain(); break;
-    // Changes to the output gain
+    case kInputCalibrationLevel: _SetInputGain(); break;
+    // Input level always drives the global pre-NAM gain stage, but the
+    // value also needs to land in whichever slot is currently active
+    // so the per-slot shadow is up to date. Guard against re-entrance
+    // from _PushActiveSlotIntoParams.
+    case kInputLevel:
+    {
+      if (!mInActiveSlotPush)
+      {
+        const double v = GetParam(kInputLevel)->Value();
+        if (mActiveSlot == 0)
+          mSlot0InGainDb = v;
+        else if (ExtraSlot* es = _Extra(mActiveSlot))
+          es->inGainDb = v;
+      }
+      _SetInputGain();
+      break;
+    }
     case kOutputLevel:
+    {
+      if (!mInActiveSlotPush)
+      {
+        const double v = GetParam(kOutputLevel)->Value();
+        if (mActiveSlot == 0)
+          mSlot0OutGainDb = v;
+        else if (ExtraSlot* es = _Extra(mActiveSlot))
+          es->outGainDb = v;
+      }
+      _SetOutputGain();
+      break;
+    }
     case kOutputMode: _SetOutputGain(); break;
-    // Tone stack:
-    case kToneBass: mToneStack->SetParam("bass", GetParam(paramIdx)->Value()); break;
-    case kToneMid: mToneStack->SetParam("middle", GetParam(paramIdx)->Value()); break;
-    case kToneTreble: mToneStack->SetParam("treble", GetParam(paramIdx)->Value()); break;
+    // Tone stack — route to whichever slot is currently active. Empty
+    // slots still let the knob move and store the value for later.
+    case kToneBass:
+    case kToneMid:
+    case kToneTreble:
+    {
+      if (!mInActiveSlotPush)
+      {
+        const double v = GetParam(paramIdx)->Value();
+        const char* tsParam = (paramIdx == kToneBass)   ? "bass"
+                            : (paramIdx == kToneMid)    ? "middle"
+                                                        : "treble";
+        if (mActiveSlot == 0)
+        {
+          if (paramIdx == kToneBass)        mSlot0Bass   = v;
+          else if (paramIdx == kToneMid)    mSlot0Mid    = v;
+          else                              mSlot0Treble = v;
+          if (mToneStack)
+            mToneStack->SetParam(tsParam, v);
+        }
+        else if (ExtraSlot* es = _Extra(mActiveSlot))
+        {
+          if (paramIdx == kToneBass)        es->bass   = v;
+          else if (paramIdx == kToneMid)    es->mid    = v;
+          else                              es->treble = v;
+          if (es->toneStack)
+            es->toneStack->SetParam(tsParam, v);
+        }
+      }
+      break;
+    }
     case kSlim: _ApplySlimParamToLoadedNAMs(); break;
     default: break;
   }
@@ -479,6 +607,27 @@ void NeuralAmpModeler::_ApplyDSPStaging()
     mIR = std::move(mStagedIR);
     mStagedIR = nullptr;
   }
+  // ── Phase 10: swap staged/live for every extra slot. A separate slot
+  // appearing or disappearing also changes the chain latency, so call
+  // _UpdateLatency() once at the end if anything moved.
+  bool extrasChanged = false;
+  for (auto& es : mExtraSlots)
+  {
+    if (es.shouldRemove)
+    {
+      es.model = nullptr;
+      es.shouldRemove = false;
+      extrasChanged = true;
+    }
+    if (es.stagedModel != nullptr)
+    {
+      es.model = std::move(es.stagedModel);
+      es.stagedModel = nullptr;
+      extrasChanged = true;
+    }
+  }
+  if (extrasChanged)
+    _UpdateLatency();
 }
 
 void NeuralAmpModeler::_DeallocateIOPointers()
@@ -537,6 +686,22 @@ void NeuralAmpModeler::_ResetModelAndIR(const double sampleRate, const int maxBl
       const auto irData = mIR->GetData();
       mStagedIR = std::make_unique<dsp::ImpulseResponse>(irData, sampleRate);
     }
+  }
+
+  // ── Phase 10: extras follow the same staged-or-live + tone-stack
+  // reset pattern as slot 0.
+  for (auto& es : mExtraSlots)
+  {
+    if (es.stagedModel != nullptr)
+    {
+      es.stagedModel->Reset(sampleRate, maxBlockSize);
+    }
+    else if (es.model != nullptr)
+    {
+      es.model->Reset(sampleRate, maxBlockSize);
+    }
+    if (es.toneStack)
+      es.toneStack->Reset(sampleRate, maxBlockSize);
   }
 }
 
@@ -695,7 +860,178 @@ void NeuralAmpModeler::_InitToneStack()
 {
   // If you want to customize the tone stack, then put it here!
   mToneStack = std::make_unique<dsp::tone_stack::BasicNamToneStack>();
+  // ── Phase 10: give every chain slot its own tone stack instance.
+  // Slot 0 stays on the legacy mToneStack above; mExtraSlots[i] is
+  // chain slot (i + 1).
+  for (auto& es : mExtraSlots)
+  {
+    es.toneStack = std::make_unique<dsp::tone_stack::BasicNamToneStack>();
+  }
 }
+
+// ── Phase 10 chain API ────────────────────────────────────────────
+
+std::string NeuralAmpModeler::StageModelInSlot(int slot, const WDL_String& namPath)
+{
+  if (slot < 0 || slot >= kNumChainSlots)
+    return "invalid slot";
+  // Slot 0 routes through the legacy single-model path so all the
+  // upstream NAM behavior (calibration broadcast, slimmable knob,
+  // settings-page model info, etc.) keeps working unchanged.
+  if (slot == 0)
+    return _StageModel(namPath);
+
+  ExtraSlot* es = _Extra(slot);
+  if (!es)
+    return "invalid slot";
+  try
+  {
+    auto dspPath = std::filesystem::u8path(namPath.Get());
+    std::unique_ptr<nam::DSP> model = nam::get_dsp(dspPath);
+    if (model->NumInputChannels() != 1 || model->NumOutputChannels() != 1)
+      throw std::runtime_error("Model must have 1 input + 1 output channel");
+    auto temp = std::make_unique<ResamplingNAM>(std::move(model), GetSampleRate());
+    temp->Reset(GetSampleRate(), GetBlockSize());
+    es->stagedModel = std::move(temp);
+    es->namPath = namPath;
+  }
+  catch (std::runtime_error& e)
+  {
+    es->stagedModel = nullptr;
+    return e.what();
+  }
+  return "";
+}
+
+void NeuralAmpModeler::UnloadSlot(int slot)
+{
+  if (slot == 0)
+  {
+    mShouldRemoveModel = true;
+    return;
+  }
+  if (ExtraSlot* es = _Extra(slot))
+  {
+    es->shouldRemove = true;
+    es->namPath.Set("");
+  }
+}
+
+void NeuralAmpModeler::SetActiveSlot(int slot)
+{
+  if (slot < 0)
+    slot = 0;
+  if (slot >= kNumChainSlots)
+    slot = kNumChainSlots - 1;
+  if (slot == mActiveSlot)
+    return;
+  // Snapshot the currently-active slot's iPlug param values into its
+  // shadow store so we don't lose them when we switch.
+  if (mActiveSlot == 0)
+  {
+    mSlot0Bass      = GetParam(kToneBass)->Value();
+    mSlot0Mid       = GetParam(kToneMid)->Value();
+    mSlot0Treble    = GetParam(kToneTreble)->Value();
+    mSlot0InGainDb  = GetParam(kInputLevel)->Value();
+    mSlot0OutGainDb = GetParam(kOutputLevel)->Value();
+  }
+  else if (ExtraSlot* prev = _Extra(mActiveSlot))
+  {
+    prev->bass      = GetParam(kToneBass)->Value();
+    prev->mid       = GetParam(kToneMid)->Value();
+    prev->treble    = GetParam(kToneTreble)->Value();
+    prev->inGainDb  = GetParam(kInputLevel)->Value();
+    prev->outGainDb = GetParam(kOutputLevel)->Value();
+  }
+  mActiveSlot = slot;
+  _PushActiveSlotIntoParams();
+}
+
+const char* NeuralAmpModeler::GetSlotNamPath(int slot) const
+{
+  if (slot == 0)
+    return mNAMPath.Get();
+  if (const ExtraSlot* es = _Extra(slot))
+    return es->namPath.Get();
+  return "";
+}
+
+bool NeuralAmpModeler::SlotHasModel(int slot) const
+{
+  if (slot == 0)
+    return mModel != nullptr;
+  if (const ExtraSlot* es = _Extra(slot))
+    return es->model != nullptr;
+  return false;
+}
+
+void NeuralAmpModeler::_PushActiveSlotIntoParams()
+{
+  mInActiveSlotPush = true;
+  double bass = 5.0, mid = 5.0, treble = 5.0, inDb = 0.0, outDb = 0.0;
+  if (mActiveSlot == 0)
+  {
+    bass = mSlot0Bass;
+    mid = mSlot0Mid;
+    treble = mSlot0Treble;
+    inDb = mSlot0InGainDb;
+    outDb = mSlot0OutGainDb;
+  }
+  else if (const ExtraSlot* es = _Extra(mActiveSlot))
+  {
+    bass = es->bass;
+    mid = es->mid;
+    treble = es->treble;
+    inDb = es->inGainDb;
+    outDb = es->outGainDb;
+  }
+  else
+  {
+    mInActiveSlotPush = false;
+    return;
+  }
+  // SendParameterValueFromDelegate informs the host + redraws the
+  // bound knob without firing OnParamChange recursion (we still guard
+  // with mInActiveSlotPush as belt-and-suspenders). The trailing
+  // `true` means the value we pass is already normalized 0..1.
+  SendParameterValueFromDelegate(kToneBass,    GetParam(kToneBass)   ->ToNormalized(bass),   true);
+  SendParameterValueFromDelegate(kToneMid,     GetParam(kToneMid)    ->ToNormalized(mid),    true);
+  SendParameterValueFromDelegate(kToneTreble,  GetParam(kToneTreble) ->ToNormalized(treble), true);
+  SendParameterValueFromDelegate(kInputLevel,  GetParam(kInputLevel) ->ToNormalized(inDb),   true);
+  SendParameterValueFromDelegate(kOutputLevel, GetParam(kOutputLevel)->ToNormalized(outDb),  true);
+  // Also push directly into GetParam so subsequent reads work.
+  GetParam(kToneBass)   ->Set(bass);
+  GetParam(kToneMid)    ->Set(mid);
+  GetParam(kToneTreble) ->Set(treble);
+  GetParam(kInputLevel) ->Set(inDb);
+  GetParam(kOutputLevel)->Set(outDb);
+  // Reapply EQ to the now-active slot's tone stack with these values.
+  _ApplyEqToSlot(mActiveSlot);
+  _SetInputGain();
+  _SetOutputGain();
+  mInActiveSlotPush = false;
+}
+
+void NeuralAmpModeler::_ApplyEqToSlot(int slot)
+{
+  if (slot == 0)
+  {
+    if (!mToneStack)
+      return;
+    mToneStack->SetParam("bass",   mSlot0Bass);
+    mToneStack->SetParam("middle", mSlot0Mid);
+    mToneStack->SetParam("treble", mSlot0Treble);
+  }
+  else if (ExtraSlot* es = _Extra(slot))
+  {
+    if (!es->toneStack)
+      return;
+    es->toneStack->SetParam("bass",   es->bass);
+    es->toneStack->SetParam("middle", es->mid);
+    es->toneStack->SetParam("treble", es->treble);
+  }
+}
+
 void NeuralAmpModeler::_PrepareBuffers(const size_t numChannels, const size_t numFrames)
 {
   const bool updateChannels = numChannels != _GetBufferNumChannels();
@@ -826,6 +1162,12 @@ void NeuralAmpModeler::_UpdateLatency()
   if (mModel)
   {
     latency += mModel->GetLatency();
+  }
+  // ── Phase 10: chain latency is the sum of all live slot latencies.
+  for (const auto& es : mExtraSlots)
+  {
+    if (es.model)
+      latency += es.model->GetLatency();
   }
   // Other things that add latency here...
 

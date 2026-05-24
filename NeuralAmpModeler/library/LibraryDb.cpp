@@ -302,6 +302,48 @@ void LibraryDb::setDisplayNameOverride(int64_t id, std::optional<std::string> na
   sqlite3_finalize(stmt);
 }
 
+bool LibraryDb::removeRow(int64_t id)
+{
+  if (!mDb || id <= 0) return false;
+  std::lock_guard<std::mutex> lk(mWriteMtx);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "DELETE FROM models WHERE id=?1";
+  if (sqlite3_prepare_v2(mDb, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    if (stmt) sqlite3_finalize(stmt);
+    return false;
+  }
+  sqlite3_bind_int64(stmt, 1, id);
+  const int rc = sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+  // sqlite3_changes reflects the most recent stmt on this connection;
+  // FULLMUTEX serializes it under our writeMutex.
+  return rc == SQLITE_DONE && sqlite3_changes(mDb) > 0;
+}
+
+std::optional<ModelRow> LibraryDb::findById(int64_t id)
+{
+  if (!mDb || id <= 0) return std::nullopt;
+  sqlite3_stmt* stmt = nullptr;
+  std::string sql;
+  sql.reserve(160);
+  sql += "SELECT ";
+  sql += kSelectColumns;
+  sql += " FROM models WHERE id=?1";
+  if (sqlite3_prepare_v2(mDb, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+    if (stmt) sqlite3_finalize(stmt);
+    return std::nullopt;
+  }
+  sqlite3_bind_int64(stmt, 1, id);
+  std::optional<ModelRow> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    ModelRow r;
+    HydrateModelRow(stmt, r);
+    out = std::move(r);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
 void LibraryDb::markMissing(int64_t id, bool missing)
 {
   if (!mDb || id <= 0) return;

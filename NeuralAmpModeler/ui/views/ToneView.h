@@ -79,10 +79,13 @@ private:
   // ── Chain snapshot ────────────────────────────────────────────────
   struct ChainView {
     struct LoadedSlot {
-      int        slotIndex;   // 0..11 — chain DSP index
+      int        slotIndex;   // 0..11 — chain UI index (visual slot)
       GearType   iconType;
       std::string toneId;
       std::string modelId;
+      std::string absPath;    // Absolute .nam path resolved from LibraryDb.uri,
+                              // cached here so syncDspChain doesn't re-query.
+      int        dspSlot = -1; // 0..kNumChainSlots-1 once staged, -1 otherwise.
       ModelInfoSnapshot info;
     };
     std::vector<LoadedSlot> loaded;
@@ -93,6 +96,14 @@ private:
   void onSlotSelected(int slotIndex);
   void onSlotRemoved(int slotIndex);
   void onSlotAdded();
+
+  // Phase 10 — push the current chain into the DSP. Walks mChain.loaded
+  // sorted by visual slotIndex, assigning DSP slots 0..kNumChainSlots-1.
+  // Excess models (more than 5 loaded) are not staged into the audio
+  // chain — they remain visible in the strip but are silent. Called
+  // from loadModelIntoSlot, onSlotRemoved, and after a drag-reorder
+  // commit.
+  void syncDspChain();
 
   // Drag-to-reorder: only pedal (slotIndex 0..4) and outboard (7..11)
   // tiles fire these. Within those categories the user can drag a tile

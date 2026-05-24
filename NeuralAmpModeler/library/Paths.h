@@ -76,6 +76,23 @@ std::string toneDir(const std::string& toneRoot, const std::string& toneId);
 bool atomicWriteFile(const std::string& path,
                      const unsigned char* data, std::size_t size);
 
+// Best-effort filesystem cleanup for a library entry. Deletes:
+//   - `namPath` itself
+//   - `sidecarPath` (the .tone3000.json next to it) when non-empty
+//   - `imagePath` when non-empty AND lives in the same parent directory
+//     as `namPath` (we never delete user-managed images that live
+//     elsewhere).
+// Empty / nonexistent paths are silently ignored. Returns true if the
+// nam file itself was removed (or was already absent).
+bool deleteModelFiles(const std::string& namPath,
+                      const std::string& sidecarPath = {},
+                      const std::string& imagePath   = {});
+
+// Opens File Explorer focused on `path`'s parent directory with `path`
+// pre-selected (Win32 `explorer.exe /select,...`). No-op when `path` is
+// empty or doesn't exist on disk.
+void revealInExplorer(const std::string& path);
+
 }  // namespace Paths
 
 }  // namespace t3k::library

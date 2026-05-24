@@ -379,6 +379,12 @@ void ToneView::onSlotSelected(int slotIndex)
     const bool sel = (mChain.loaded[i].slotIndex == slotIndex);
     if (i < mSlots.size() && mSlots[i]) mSlots[i]->setSelected(sel);
     if (sel && mInfoPane) mInfoPane->setSnapshot(mChain.loaded[i].info);
+    // Phase 10 — route the visible knobs to the just-selected slot's
+    // DSP slot. If the selected tile isn't in the audio chain (more
+    // than kNumChainSlots loaded), keep the previous active slot.
+    if (sel && mChain.loaded[i].dspSlot >= 0) {
+      mPlugin.SetActiveSlot(mChain.loaded[i].dspSlot);
+    }
   }
 }
 
@@ -399,7 +405,14 @@ void ToneView::onSlotRemoved(int slotIndex)
       mInfoPane->clear();
     }
   }
+  // Phase 10 — the removed entry's DSP slot is now free; resync so the
+  // remaining models pack down into 0..N-1.
+  // (Plugin::UnloadSlot is called via syncDspChain for any leftover
+  // DSP slot. We don't call it directly here so dspSlot reassignment
+  // stays centralized.)
+  for (auto& ls : mChain.loaded) ls.dspSlot = -1;  // force restage walk
   rebuildStrip();
+  syncDspChain();
   if (mChain.selectedIndex >= 0) onSlotSelected(mChain.selectedIndex);
 }
 
@@ -482,7 +495,11 @@ void ToneView::onSlotDragEnd(int slotIndex, float x, float y)
   // Keep the selection on the just-moved item.
   mChain.selectedIndex = mChain.loaded[adjustedDst].slotIndex;
 
+  // Phase 10 — reorder changed the rank order, so DSP slots need to
+  // shuffle to match. Force a re-stage walk.
+  for (auto& ls : mChain.loaded) ls.dspSlot = -1;
   rebuildStrip();
+  syncDspChain();
   if (mChain.selectedIndex >= 0) onSlotSelected(mChain.selectedIndex);
 }
 
@@ -649,6 +666,7 @@ void ToneView::applyPresetState(const ::t3k::library::PresetState& s)
   }
 
   rebuildStrip();
+  syncDspChain();
   if (mChain.selectedIndex >= 0) onSlotSelected(mChain.selectedIndex);
 }
 
@@ -691,6 +709,10 @@ void ToneView::loadModelIntoSlot(int slotIndex,
   ls.info.sizeBytes      = row->size_bytes;
   ls.info.downloadedAtMs = row->added_at;
   ls.info.description    = row->t3k_description;
+  // Phase 10 — cache the on-disk path so syncDspChain doesn't need to
+  // re-query LibraryDb when it walks the chain. row->uri is the UTF-8
+  // absolute path (see ModelSidecar / Downloader writers).
+  ls.absPath             = row->uri;
 
   // Replace any existing entry at `dst`; otherwise append.
   bool replaced = false;
@@ -705,7 +727,54 @@ void ToneView::loadModelIntoSlot(int slotIndex,
 
   mChain.selectedIndex = dst;
   rebuildStrip();
+  syncDspChain();
   onSlotSelected(dst);
+}
+
+void ToneView::syncDspChain()
+{
+  // Walk the loaded entries in visual slotIndex order (the audible
+  // chain runs left → right: pedals 0..4, amp 5, cab 6, outboards
+  // 7..11). Stage the first kNumChainSlots into the DSP; anything
+  // beyond that stays visible but isn't in the audio path.
+  std::vector<ChainView::LoadedSlot*> ordered;
+  ordered.reserve(mChain.loaded.size());
+  for (auto& ls : mChain.loaded) ordered.push_back(&ls);
+  std::sort(ordered.begin(), ordered.end(),
+            [](const ChainView::LoadedSlot* a, const ChainView::LoadedSlot* b) {
+              return a->slotIndex < b->slotIndex;
+            });
+
+  int dspIdx = 0;
+  for (auto* ls : ordered) {
+    if (dspIdx >= kNumChainSlots) {
+      ls->dspSlot = -1;  // beyond the DSP budget — silent in audio
+      continue;
+    }
+    if (ls->absPath.empty()) {
+      ls->dspSlot = -1;
+      continue;
+    }
+    // Only re-stage if path or DSP slot has changed (loading a NAM
+    // model is expensive — ~100ms+).
+    const bool needRestage =
+        (ls->dspSlot != dspIdx) ||
+        (dspIdx == 0
+            ? (std::string(mPlugin.GetSlotNamPath(0)) != ls->absPath)
+            : (std::string(mPlugin.GetSlotNamPath(dspIdx)) != ls->absPath));
+    if (needRestage) {
+      WDL_String wp(ls->absPath.c_str());
+      mPlugin.StageModelInSlot(dspIdx, wp);
+      ls->dspSlot = dspIdx;
+    }
+    ++dspIdx;
+  }
+  // Unload any DSP slots beyond the last staged one.
+  for (int i = dspIdx; i < kNumChainSlots; ++i) {
+    if (mPlugin.SlotHasModel(i)) {
+      mPlugin.UnloadSlot(i);
+    }
+  }
 }
 
 }  // namespace t3k::ui

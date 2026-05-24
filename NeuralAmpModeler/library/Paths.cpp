@@ -173,6 +173,71 @@ bool atomicWriteFile(const std::string& path,
   return true;
 }
 
+bool deleteModelFiles(const std::string& namPath,
+                      const std::string& sidecarPath,
+                      const std::string& imagePath)
+{
+  namespace fs = std::filesystem;
+  if (namPath.empty()) return false;
+  std::error_code ec;
+
+  const fs::path nam = fs::u8path(namPath);
+  const fs::path parent = nam.parent_path();
+
+  // Delete the nam file.
+  fs::remove(nam, ec);  // best-effort; non-existent files are not errors
+
+  // Delete the sidecar if a path was supplied.
+  if (!sidecarPath.empty()) {
+    fs::remove(fs::u8path(sidecarPath), ec);
+  }
+
+  // Image — only if it sits in the same per-tone directory as the
+  // model. Refuse to delete anything that lives elsewhere; the user
+  // may have provided their own gear photo from arbitrary disk
+  // location.
+  if (!imagePath.empty()) {
+    const fs::path img = fs::u8path(imagePath);
+    if (img.parent_path() == parent) {
+      fs::remove(img, ec);
+    }
+  }
+
+  // If the parent directory is now empty (we wiped the only entry),
+  // prune it so the user's TONE3000 folder doesn't grow stale tone-id
+  // subdirectories. Errors are ignored — if the directory still has
+  // files (e.g. a manually-added README) `remove` returns false and
+  // we move on.
+  if (!parent.empty()) {
+    fs::remove(parent, ec);
+  }
+
+  return true;
+}
+
+void revealInExplorer(const std::string& path)
+{
+  if (path.empty()) return;
+  namespace fs = std::filesystem;
+  std::error_code ec;
+  if (!fs::exists(fs::u8path(path), ec)) return;
+
+  // UTF-8 → UTF-16 for the ShellExecute argument.
+  const int wlen = MultiByteToWideChar(CP_UTF8, 0, path.c_str(),
+                                       static_cast<int>(path.size()),
+                                       nullptr, 0);
+  if (wlen <= 0) return;
+  std::wstring wpath(static_cast<size_t>(wlen), L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, path.c_str(),
+                      static_cast<int>(path.size()),
+                      wpath.data(), wlen);
+
+  // `/select,"..."` opens Explorer with the target file selected.
+  std::wstring params = L"/select,\"" + wpath + L"\"";
+  ShellExecuteW(nullptr, L"open", L"explorer.exe",
+                params.c_str(), nullptr, SW_SHOWNORMAL);
+}
+
 }  // namespace Paths
 
 }  // namespace t3k::library

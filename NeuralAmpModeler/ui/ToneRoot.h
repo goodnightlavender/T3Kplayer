@@ -41,6 +41,7 @@ class T3kPresetOverlay;
 class T3kClickBackdrop;
 class T3kFirstRunModal;
 class T3kRestoreModal;
+class T3kSettingsModal;
 class T3kSignInPill;
 class T3kAccountMenu;
 class ToneView;
@@ -130,6 +131,9 @@ private:
   // flips the modal on when the pull reports a non-zero entry count
   // AND LibraryDb has at least one row with missing=1.
   T3kRestoreModal* mRestoreModal = nullptr;
+  // Phase 10 settings modal — attached hidden; account-menu's
+  // onSettings callback flips it on.
+  T3kSettingsModal* mSettingsModal = nullptr;
   // LibrarySync pull-listener id is not exposed (the LibrarySync API
   // is "last writer wins" — there's no id-based unsubscribe path). On
   // teardown we just stop LibrarySync, which is itself idempotent.
