@@ -166,6 +166,12 @@ void T3kAccordion::OnMouseDown(float /*x*/, float /*y*/, const IMouseMod& /*mod*
                },
                ::t3k::theme::kAnimAccordionChevron);
 
+  // Tell the parent so it can reflow the sidebar — a collapsed
+  // accordion should take only its header height; the expanded ones
+  // expand below it. Without this, the sidebar leaves a 200-px gap
+  // where the content used to be.
+  if (mOnToggle) mOnToggle(mOpen);
+
   SetDirty(false);
 }
 

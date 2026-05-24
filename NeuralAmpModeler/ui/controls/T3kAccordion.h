@@ -45,6 +45,17 @@ public:
 
   bool isOpen() const { return mOpen; }
 
+  // Header height — exposed so layout code can compute the total
+  // height of a stack of collapsed/expanded accordions without
+  // duplicating the constant.
+  static constexpr float headerHeight() { return kHeaderH; }
+
+  // Fired immediately after the user toggles the accordion open or
+  // closed. The new state is reported via the bool arg. CloudView
+  // listens so it can reflow the sidebar (collapsed accordions take
+  // header-height only; expanded accordions take header + content).
+  void setOnToggle(std::function<void(bool isOpen)> cb) { mOnToggle = std::move(cb); }
+
 private:
   static constexpr float kHeaderH = 36.f;
 
@@ -54,6 +65,7 @@ private:
   const char* mLabel;
   std::function<float()> mMeasureContentHeight;
   std::function<void(const IRECT&)> mDrawContent;
+  std::function<void(bool)> mOnToggle;
   bool mOpen;
 
   // Chevron animation source/target rotation in degrees.

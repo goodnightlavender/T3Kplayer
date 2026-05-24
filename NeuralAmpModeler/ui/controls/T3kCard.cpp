@@ -3,6 +3,7 @@
 #include "T3kCard.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <string>
 
@@ -16,9 +17,16 @@ namespace {
 
 constexpr float kImageSize       = 88.f;
 constexpr float kAvatarSize      = 18.f;
-constexpr float kDownloadPillW   = 36.f;
+// DOWNLOAD pill — wider than the old "GET" so the full word fits at
+// 11pt Inter SemiBold without truncation.
+constexpr float kDownloadPillW   = 86.f;
 constexpr float kDownloadPillH   = 22.f;
 constexpr float kCardHoverTime   = float(::t3k::theme::kAnimCardHover);
+
+// Stats-row glyph metrics. Each icon (download arrow / star / folder)
+// occupies a 12-px square drawn immediately to the left of its number.
+constexpr float kStatIconSz   = 12.f;
+constexpr float kStatIconGap  = 4.f;
 
 float Lerp(float a, float b, float t) { return a + (b - a) * t; }
 
@@ -29,6 +37,65 @@ IColor LerpColor(const IColor& a, const IColor& b, float t)
     int(Lerp(float(a.R), float(b.R), t)),
     int(Lerp(float(a.G), float(b.G), t)),
     int(Lerp(float(a.B), float(b.B), t)));
+}
+
+// ── Stats-row icon glyphs (download / favorites / model-count) ────
+// Drawn as 12-px square paths instead of relying on font glyphs. The
+// vendored Inter subset doesn't include U+2193 / U+2605 / folder
+// emoji, which is why the previous "v" / "*" / "#" prefixes looked
+// like leftover ASCII.
+
+void DrawDownloadIcon(IGraphics& g, float cx, float cy, float sz, const IColor& col)
+{
+  // Vertical shaft + chevron point + base tray, ~⬇ shape.
+  const float h = sz * 0.5f;
+  const float w = sz * 0.5f;
+  // Shaft.
+  g.DrawLine(col, cx, cy - h * 0.9f, cx, cy + h * 0.2f, nullptr, 1.5f);
+  // Chevron (V pointing down).
+  g.DrawLine(col, cx - w * 0.55f, cy - h * 0.1f,
+                  cx,               cy + h * 0.4f, nullptr, 1.5f);
+  g.DrawLine(col, cx + w * 0.55f, cy - h * 0.1f,
+                  cx,               cy + h * 0.4f, nullptr, 1.5f);
+  // Tray.
+  g.DrawLine(col, cx - w * 0.75f, cy + h * 0.85f,
+                  cx + w * 0.75f, cy + h * 0.85f, nullptr, 1.5f);
+}
+
+void DrawStarIcon(IGraphics& g, float cx, float cy, float sz, const IColor& col)
+{
+  // 5-point star — outer radius = sz/2, inner radius = sz/2 * 0.45.
+  // Build as a 10-vertex polygon and fill via PathConvexPolygon.
+  const float ro = sz * 0.5f;
+  const float ri = ro * 0.45f;
+  float xs[10], ys[10];
+  const float k = 3.14159265f / 180.f;
+  for (int i = 0; i < 10; ++i) {
+    const float a = (-90.f + i * 36.f) * k;
+    const float r = (i % 2 == 0) ? ro : ri;
+    xs[i] = cx + r * std::cos(a);
+    ys[i] = cy + r * std::sin(a);
+  }
+  g.PathClear();
+  g.PathMoveTo(xs[0], ys[0]);
+  for (int i = 1; i < 10; ++i) g.PathLineTo(xs[i], ys[i]);
+  g.PathClose();
+  g.PathFill(col);
+}
+
+void DrawFolderIcon(IGraphics& g, float cx, float cy, float sz, const IColor& col)
+{
+  // Folder shape — small tab on top-left + main body.
+  const float w = sz;
+  const float h = sz * 0.85f;
+  const float bx = cx - w * 0.5f;
+  const float by = cy - h * 0.5f;
+  const float tabW = w * 0.45f;
+  const float tabH = h * 0.25f;
+  // Tab.
+  g.DrawRect(col, IRECT(bx, by, bx + tabW, by + tabH));
+  // Body.
+  g.DrawRect(col, IRECT(bx, by + tabH * 0.7f, bx + w, by + h));
 }
 
 // Format an integer with thousands separators (e.g. 12345 -> "12,345").
@@ -188,7 +255,7 @@ void T3kCard::Draw(IGraphics& g)
                     th::kFontBodySemi,
                     EAlign::Center,
                     EVAlign::Middle);
-  g.DrawText(pillT, "GET", mDownloadRect);
+  g.DrawText(pillT, "DOWNLOAD", mDownloadRect);
 
   // Subtitle + optional inline badge.
   const IRECT subRect(mRightColRect.L, y,
@@ -227,24 +294,33 @@ void T3kCard::Draw(IGraphics& g)
                     EAlign::Near,
                     EVAlign::Middle);
 
-  auto drawStat = [&](float& xCursor, const char* label) {
+  // Each stat = icon glyph + number, separated by kS5. Drawn via
+  // inline path so the icons render regardless of font subset (the
+  // vendored Inter doesn't include arrow / star / folder glyphs).
+  enum class Glyph { Download, Star, Folder };
+  auto drawStat = [&](float& xCursor, Glyph glyph, const char* label) {
+    const float iconCx = xCursor + kStatIconSz * 0.5f;
+    const float iconCy = statsBand.MH();
+    switch (glyph) {
+      case Glyph::Download: DrawDownloadIcon(g, iconCx, iconCy, kStatIconSz, th::kTextMuted); break;
+      case Glyph::Star:     DrawStarIcon(g, iconCx, iconCy, kStatIconSz, th::kTextMuted);     break;
+      case Glyph::Folder:   DrawFolderIcon(g, iconCx, iconCy, kStatIconSz, th::kTextMuted);   break;
+    }
+    const float numX = xCursor + kStatIconSz + kStatIconGap;
     IRECT m;
     g.MeasureText(statT, label, m);
-    const IRECT cell(xCursor, statsBand.T,
-                     xCursor + m.W() + 1.f, statsBand.B);
+    const IRECT cell(numX, statsBand.T, numX + m.W() + 1.f, statsBand.B);
     g.DrawText(statT, label, cell);
     xCursor = cell.R + th::kS5;
   };
 
   float xCursor = statsBand.L;
-  char buf[64];
-  std::snprintf(buf, sizeof(buf), "v %s",
-                CommaFormat(mData.downloads).c_str());
-  drawStat(xCursor, buf);
-  std::snprintf(buf, sizeof(buf), "* %d", mData.bookmarks);
-  drawStat(xCursor, buf);
-  std::snprintf(buf, sizeof(buf), "# %d", mData.modelCount);
-  drawStat(xCursor, buf);
+  const std::string downloadsStr = CommaFormat(mData.downloads);
+  const std::string bookmarksStr = std::to_string(mData.bookmarks);
+  const std::string modelsStr    = std::to_string(mData.modelCount);
+  drawStat(xCursor, Glyph::Download, downloadsStr.c_str());
+  drawStat(xCursor, Glyph::Star,     bookmarksStr.c_str());
+  drawStat(xCursor, Glyph::Folder,   modelsStr.c_str());
 
   y += rowH_stats + th::kS2;
 

@@ -112,12 +112,22 @@ private:
   // the click was handled (toggled a filter).
   bool handleSidebarClick(float x, float y);
 
-  // Draw the sidebar checkbox rows inside `r` for the given accordion.
-  // Side effect: records each row's rect into mGearRowRects /
-  // mSizeRowRects so the next OnMouseDown can hit-test them without
-  // recomputing layout.
+  // Draw the sidebar checkbox / placeholder content inside `r` for the
+  // matching accordion. Gear / Technical (Size) record their checkbox
+  // rects into mGearRowRects / mSizeRowRects so handleSidebarClick can
+  // hit-test them; Tags / Makes / Creators draw a "coming in Phase 7"
+  // placeholder line (the public SDK doesn't yet surface those filter
+  // params — see the Phase 6 plan).
   void drawGearAccordion(const iplug::igraphics::IRECT& r);
-  void drawSizeAccordion(const iplug::igraphics::IRECT& r);
+  void drawTagsAccordion(const iplug::igraphics::IRECT& r);
+  void drawMakesAccordion(const iplug::igraphics::IRECT& r);
+  void drawCreatorsAccordion(const iplug::igraphics::IRECT& r);
+  void drawTechnicalAccordion(const iplug::igraphics::IRECT& r);
+
+  // Recompute Y positions of the 5 sidebar accordions so collapsed
+  // ones consume only header height. Called from OnResize and from
+  // any accordion's onToggle callback.
+  void layoutSidebar();
 
   // Render the empty / loading / error overlays — only one is non-empty
   // at any given moment.
@@ -129,8 +139,6 @@ private:
   iplug::igraphics::IRECT mSortRect;
   iplug::igraphics::IRECT mSidebarRect;
   iplug::igraphics::IRECT mBodyRect;
-  iplug::igraphics::IRECT mGearAccordionRect;
-  iplug::igraphics::IRECT mSizeAccordionRect;
 
   // Cached rects for the per-checkbox rows in each accordion (filled
   // when the accordion's drawContent fires; consumed by
@@ -141,14 +149,29 @@ private:
   // ── Children (owned by IGraphics) ──────────────────────────────
   T3kSearchBar*  mSearchBar   = nullptr;
   T3kButton*     mSortBtn     = nullptr;
+  // Five filter accordions matching tone3000.com/search.
   T3kAccordion*  mGearAcc     = nullptr;
-  T3kAccordion*  mSizeAcc     = nullptr;
+  T3kAccordion*  mTagsAcc     = nullptr;
+  T3kAccordion*  mMakesAcc    = nullptr;
+  T3kAccordion*  mCreatorsAcc = nullptr;
+  T3kAccordion*  mTechAcc     = nullptr;  // Size lives inside this one
   T3kSignInPill* mSignInPill  = nullptr;
   std::vector<T3kCard*> mCards;
 
   // ── Data ───────────────────────────────────────────────────────
   State mState = State::Idle;
-  ::t3k::cloud::SearchTonesParams mQuery;
+  // Default sort = Trending so the empty-query landing view mirrors
+  // tone3000.com/search ("Trending" by default). startSearch on
+  // first sign-in fires immediately with an empty query, populating
+  // the right pane with trending tones — same UX as the website.
+  ::t3k::cloud::SearchTonesParams mQuery{
+      /*query*/      "",
+      /*page*/       1,
+      /*page_size*/  25,
+      /*sort*/       ::t3k::cloud::TonesSort::Trending,
+      /*gears*/      {},
+      /*sizes*/      {},
+  };
   std::set<::t3k::cloud::Gear> mSelectedGears;
   std::set<::t3k::cloud::Size> mSelectedSizes;
   std::vector<::t3k::cloud::Tone> mTones;

@@ -137,11 +137,14 @@ CloudView::~CloudView()
 void CloudView::Hide(bool hide)
 {
   IControl::Hide(hide);
-  if (mSearchBar)  mSearchBar->Hide(hide);
-  if (mSortBtn)    mSortBtn  ->Hide(hide);
-  if (mGearAcc)    mGearAcc  ->Hide(hide);
-  if (mSizeAcc)    mSizeAcc  ->Hide(hide);
-  if (mSignInPill) mSignInPill->Hide(hide || mState != State::SignedOut);
+  if (mSearchBar)   mSearchBar  ->Hide(hide);
+  if (mSortBtn)     mSortBtn    ->Hide(hide);
+  if (mGearAcc)     mGearAcc    ->Hide(hide);
+  if (mTagsAcc)     mTagsAcc    ->Hide(hide);
+  if (mMakesAcc)    mMakesAcc   ->Hide(hide);
+  if (mCreatorsAcc) mCreatorsAcc->Hide(hide);
+  if (mTechAcc)     mTechAcc    ->Hide(hide);
+  if (mSignInPill)  mSignInPill ->Hide(hide || mState != State::SignedOut);
   for (T3kCard* c : mCards) if (c) c->Hide(hide);
 }
 
@@ -168,19 +171,13 @@ void CloudView::OnResize()
   mSidebarRect = IRECT(below.L, below.T, below.L + kSidebarW, below.B);
   mBodyRect    = IRECT(mSidebarRect.R, below.T, below.R, below.B);
 
-  mGearAccordionRect = IRECT(mSidebarRect.L + kSidebarPad,
-                              mSidebarRect.T + kSidebarPad,
-                              mSidebarRect.R - kSidebarPad,
-                              mSidebarRect.T + kSidebarPad + kAccordionH);
-  mSizeAccordionRect = IRECT(mGearAccordionRect.L,
-                              mGearAccordionRect.B + th::kS2,
-                              mGearAccordionRect.R,
-                              mGearAccordionRect.B + th::kS2 + kAccordionH);
-
   if (mSearchBar) mSearchBar->SetTargetAndDrawRECTs(mSearchRect);
   if (mSortBtn)   mSortBtn  ->SetTargetAndDrawRECTs(mSortRect);
-  if (mGearAcc)   mGearAcc  ->SetTargetAndDrawRECTs(mGearAccordionRect);
-  if (mSizeAcc)   mSizeAcc  ->SetTargetAndDrawRECTs(mSizeAccordionRect);
+
+  // Position the 5 sidebar accordions based on which ones are open.
+  // Closed accordions take only their header height; open ones add
+  // their content height. layoutSidebar walks the list top-to-bottom.
+  layoutSidebar();
 
   if (mSignInPill) {
     const float pillW = 140.f, pillH = 32.f;
@@ -191,6 +188,36 @@ void CloudView::OnResize()
   }
 
   layoutCards();
+}
+
+void CloudView::layoutSidebar()
+{
+  namespace th = ::t3k::theme;
+  // Walk the 5 accordions top-to-bottom, stacking each at the next
+  // free Y. A collapsed accordion contributes only its header height
+  // (~36px); an expanded one adds its content height as well.
+  T3kAccordion* accs[] = {
+      mGearAcc, mTagsAcc, mMakesAcc, mCreatorsAcc, mTechAcc,
+  };
+  // Per-accordion content height when expanded. Indices match accs[].
+  const float contentH[] = {
+      5 * kCheckboxRowH + 8.f,  // Gear: 5 enum values
+      kCheckboxRowH    + 8.f,   // Tags: single "coming soon" line
+      kCheckboxRowH    + 8.f,   // Makes & Models: same
+      kCheckboxRowH    + 8.f,   // Creators: same
+      5 * kCheckboxRowH + 8.f,  // Technical: 5 size enum values
+  };
+  float y = mSidebarRect.T + kSidebarPad;
+  const float left  = mSidebarRect.L + kSidebarPad;
+  const float right = mSidebarRect.R - kSidebarPad;
+  for (size_t i = 0; i < 5; ++i) {
+    T3kAccordion* a = accs[i];
+    if (!a) continue;
+    const float h = T3kAccordion::headerHeight()
+                  + (a->isOpen() ? contentH[i] : 0.f);
+    a->SetTargetAndDrawRECTs(IRECT(left, y, right, y + h));
+    y += h + th::kS2;
+  }
 }
 
 void CloudView::OnAttached()
@@ -208,19 +235,58 @@ void CloudView::OnAttached()
       T3kButton::Variant::Secondary);
   g->AttachControl(mSortBtn);
 
-  mGearAcc = new T3kAccordion(mGearAccordionRect,
+  // Helper to wire the shared onToggle handler — every accordion needs
+  // to re-run layoutSidebar after the user flips it open/closed.
+  auto wireToggle = [this](T3kAccordion* acc) {
+    acc->setOnToggle([this](bool /*isOpen*/) {
+      this->layoutSidebar();
+      this->SetDirty(false);
+    });
+  };
+
+  // Bounds get fixed up by layoutSidebar() below — pass a 1×1 placeholder
+  // here so iPlug2 has a valid rect at attach time.
+  const IRECT placeholder(0.f, 0.f, 1.f, 1.f);
+
+  mGearAcc = new T3kAccordion(placeholder,
       "Gear",
-      /*measureContentHeight*/ []() { return 5 * kCheckboxRowH + 8.f; },
-      /*drawContent*/ [this](const IRECT& r) { this->drawGearAccordion(r); },
+      []() { return 5 * kCheckboxRowH + 8.f; },
+      [this](const IRECT& r) { this->drawGearAccordion(r); },
       /*initiallyOpen*/ true);
+  wireToggle(mGearAcc);
   g->AttachControl(mGearAcc);
 
-  mSizeAcc = new T3kAccordion(mSizeAccordionRect,
-      "Size",
-      /*measureContentHeight*/ []() { return 5 * kCheckboxRowH + 8.f; },
-      /*drawContent*/ [this](const IRECT& r) { this->drawSizeAccordion(r); },
-      /*initiallyOpen*/ true);
-  g->AttachControl(mSizeAcc);
+  mTagsAcc = new T3kAccordion(placeholder,
+      "Tags",
+      []() { return kCheckboxRowH + 8.f; },
+      [this](const IRECT& r) { this->drawTagsAccordion(r); },
+      /*initiallyOpen*/ false);
+  wireToggle(mTagsAcc);
+  g->AttachControl(mTagsAcc);
+
+  mMakesAcc = new T3kAccordion(placeholder,
+      "Makes and Models",
+      []() { return kCheckboxRowH + 8.f; },
+      [this](const IRECT& r) { this->drawMakesAccordion(r); },
+      /*initiallyOpen*/ false);
+  wireToggle(mMakesAcc);
+  g->AttachControl(mMakesAcc);
+
+  mCreatorsAcc = new T3kAccordion(placeholder,
+      "Creators",
+      []() { return kCheckboxRowH + 8.f; },
+      [this](const IRECT& r) { this->drawCreatorsAccordion(r); },
+      /*initiallyOpen*/ false);
+  wireToggle(mCreatorsAcc);
+  g->AttachControl(mCreatorsAcc);
+
+  mTechAcc = new T3kAccordion(placeholder,
+      "Technical",
+      []() { return 5 * kCheckboxRowH + 8.f; },
+      [this](const IRECT& r) { this->drawTechnicalAccordion(r); },
+      /*initiallyOpen*/ false);
+  wireToggle(mTechAcc);
+  g->AttachControl(mTechAcc);
 
   mSignInPill = new T3kSignInPill(
       IRECT(0.f, 0.f, 1.f, 1.f),
@@ -269,9 +335,13 @@ void CloudView::Draw(IGraphics& g)
       for (T3kCard* c : mCards) if (c) c->Hide(true);
     }
   }
-  if (mSignInPill) mSignInPill->Hide(mState != State::SignedOut);
-  if (mGearAcc)    mGearAcc->Hide(mState == State::SignedOut);
-  if (mSizeAcc)    mSizeAcc->Hide(mState == State::SignedOut);
+  if (mSignInPill)  mSignInPill ->Hide(mState != State::SignedOut);
+  const bool hideFilters = (mState == State::SignedOut);
+  if (mGearAcc)     mGearAcc    ->Hide(hideFilters);
+  if (mTagsAcc)     mTagsAcc    ->Hide(hideFilters);
+  if (mMakesAcc)    mMakesAcc   ->Hide(hideFilters);
+  if (mCreatorsAcc) mCreatorsAcc->Hide(hideFilters);
+  if (mTechAcc)     mTechAcc    ->Hide(hideFilters);
 
   drawStateOverlay(g);
 }
@@ -318,9 +388,21 @@ void CloudView::refreshFromSession()
 {
   const auto s = ::t3k::cloud::Session::instance().state();
   const bool signedIn = (s == ::t3k::cloud::Session::State::SignedIn);
-  mState = signedIn ? State::Idle : State::SignedOut;
-  if (signedIn && !mTones.empty()) mState = State::Loaded;
-  SetDirty(false);
+  if (!signedIn) {
+    mState = State::SignedOut;
+    SetDirty(false);
+    return;
+  }
+  // Signed in. If we already have results, just stay in Loaded; if
+  // not, kick a fresh search with the current (defaults-to-Trending)
+  // query so the user sees something the moment they hit the tab —
+  // matches tone3000.com/search's empty-query landing UX.
+  if (!mTones.empty()) {
+    mState = State::Loaded;
+    SetDirty(false);
+    return;
+  }
+  startSearch();
 }
 
 void CloudView::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
@@ -549,8 +631,14 @@ void CloudView::drawGearAccordion(const IRECT& r)
   }
 }
 
-void CloudView::drawSizeAccordion(const IRECT& r)
+void CloudView::drawTechnicalAccordion(const IRECT& r)
 {
+  // The "Technical" accordion currently houses only the Size filter
+  // (the public Tone3000 SDK's `SearchTonesParams.sizes` field). The
+  // tone3000.com Technical drawer also exposes platform, license,
+  // sample-rate and license filters — none of which are surfaced by
+  // the public SDK at this revision, so they're deferred to a future
+  // round once we know how to send those params.
   namespace th = ::t3k::theme;
   mSizeRowRects.clear();
   const ::t3k::cloud::Size all[] = {
@@ -579,6 +667,46 @@ void CloudView::drawSizeAccordion(const IRECT& r)
   }
 }
 
+// ── Placeholder accordions ─────────────────────────────────────────
+// Tags / Makes-and-Models / Creators are documented filter dimensions
+// on tone3000.com/search but the public Tone3000 SDK
+// (tone-3000/api/src/types.ts) doesn't yet expose query params for
+// them on /tones/search. We ship the UI shell so the layout matches
+// the website, and surface a "coming soon" line until the API does.
+
+void CloudView::drawTagsAccordion(const IRECT& r)
+{
+  namespace th = ::t3k::theme;
+  auto* gfx = GetUI();
+  if (!gfx) return;
+  const IRECT row(r.L + 8.f, r.T + 4.f, r.R - 8.f, r.T + 4.f + kCheckboxRowH);
+  gfx->DrawText(IText(th::kTypeSmall, th::kTextMuted,
+                      th::kFontBody, EAlign::Near, EVAlign::Middle),
+                "Tag filter coming soon", row);
+}
+
+void CloudView::drawMakesAccordion(const IRECT& r)
+{
+  namespace th = ::t3k::theme;
+  auto* gfx = GetUI();
+  if (!gfx) return;
+  const IRECT row(r.L + 8.f, r.T + 4.f, r.R - 8.f, r.T + 4.f + kCheckboxRowH);
+  gfx->DrawText(IText(th::kTypeSmall, th::kTextMuted,
+                      th::kFontBody, EAlign::Near, EVAlign::Middle),
+                "Make/model filter coming soon", row);
+}
+
+void CloudView::drawCreatorsAccordion(const IRECT& r)
+{
+  namespace th = ::t3k::theme;
+  auto* gfx = GetUI();
+  if (!gfx) return;
+  const IRECT row(r.L + 8.f, r.T + 4.f, r.R - 8.f, r.T + 4.f + kCheckboxRowH);
+  gfx->DrawText(IText(th::kTypeSmall, th::kTextMuted,
+                      th::kFontBody, EAlign::Near, EVAlign::Middle),
+                "Creator filter coming soon", row);
+}
+
 void CloudView::drawStateOverlay(IGraphics& g)
 {
   namespace th = ::t3k::theme;
@@ -597,10 +725,13 @@ void CloudView::drawStateOverlay(IGraphics& g)
       break;
     }
     case State::Idle: {
+      // Idle is now a transient state — refreshFromSession kicks a
+      // trending search immediately on sign-in, so we only see this
+      // before the first request fires. A brief "Loading…" is more
+      // honest than "Type to search…" because that's what the user
+      // is actually waiting on.
       if (mTones.empty()) {
-        g.DrawText(body,
-                   "Type to search the TONE3000 catalog\xE2\x80\xA6",
-                   mBodyRect);
+        g.DrawText(body, "Loading\xE2\x80\xA6", mBodyRect);
       }
       break;
     }
