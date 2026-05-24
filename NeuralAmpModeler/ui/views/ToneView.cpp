@@ -71,7 +71,8 @@ bool isReorderableCategory(int slotIndex)
 ToneView::ToneView(const IRECT& bounds, NeuralAmpModeler& plugin)
 : IControl(bounds), mPlugin(plugin)
 {
-  seedDemoSnapshot();
+  // Phase 2b smoke-test seed retired on 2026-05-25 — the chain stays
+  // empty until the user loads something from the Library tab.
   OnResize();
 }
 
@@ -249,6 +250,10 @@ void ToneView::rebuildStrip()
         /*onRemove*/ [this](int slot) { onSlotRemoved(slot); },
         /*onAdd*/    {});
     tile->setSelected(idx == mChain.selectedIndex);
+    // Push the image source — Phase-10-polish (2026-05-25). The slot
+    // renders the bitmap fit-cover when available and falls back to
+    // the gear-type SVG otherwise.
+    tile->setImage(ls.imagePath, ls.imageUrl);
 
     // Only pedal / outboard tiles support drag-to-reorder. Amp / Cab /
     // FullRig live at fixed positions, so we leave their drag callbacks
@@ -505,23 +510,11 @@ void ToneView::onSlotDragEnd(int slotIndex, float x, float y)
 
 void ToneView::onSlotAdded()
 {
-  // Phase 2b stub — append a hard-coded sample model. Phase 3 replaces
-  // this with a real model-picker overlay.
-  ChainView::LoadedSlot sample;
-  int nextIdx = 0;
-  for (const auto& ls : mChain.loaded) nextIdx = std::max(nextIdx, ls.slotIndex + 1);
-  sample.slotIndex = nextIdx;
-  sample.iconType  = GearType::Pedal;
-  sample.toneId    = "sample-tone";
-  sample.modelId   = "sample-model";
-  sample.info.displayName = "Sample Pedal";
-  sample.info.creator     = "tone3000";
-  sample.info.format      = "NAM";
-  sample.info.sizeBytes   = 8 * 1024 * 1024;
-  sample.info.tags        = { "sample", "phase-2b" };
-  sample.info.description = "Phase 2b stub model. Real picker lands in Phase 3.";
-  mChain.loaded.push_back(std::move(sample));
-  rebuildStrip();
+  // Phase-10-polish (2026-05-25). The "+" tile now opens the Library
+  // tab — the user picks a real model there and clicks LOAD INTO
+  // CHAIN to land it back in this strip. The hardcoded "Sample Pedal"
+  // stub that lived here from Phase 2b has been retired.
+  if (mOnAddRequested) mOnAddRequested();
 }
 
 void ToneView::seedDemoSnapshot()
@@ -659,11 +652,11 @@ void ToneView::applyPresetState(const ::t3k::library::PresetState& s)
     ls.info.description    = row->t3k_description;
     mChain.loaded.push_back(std::move(ls));
   }
-  // If the preset was empty (e.g. fresh "Default Setting"), fall back
-  // to the demo seed so the UI isn't blank during smoke tests.
-  if (mChain.loaded.empty()) {
-    seedDemoSnapshot();
-  }
+  // The Phase-2b fallback that seeded a demo chain when the preset
+  // came back empty was retired on 2026-05-25 — it dropped sample
+  // pedals into the strip on every "Default Setting" recall. The
+  // chain now stays empty until the user explicitly loads from the
+  // Library tab.
 
   rebuildStrip();
   syncDspChain();
@@ -713,6 +706,10 @@ void ToneView::loadModelIntoSlot(int slotIndex,
   // re-query LibraryDb when it walks the chain. row->uri is the UTF-8
   // absolute path (see ModelSidecar / Downloader writers).
   ls.absPath             = row->uri;
+  // Image source (local sibling preferred; URL falls through to the
+  // ThumbnailCache when the slot paints).
+  if (row->t3k_image_path.has_value()) ls.imagePath = *row->t3k_image_path;
+  ls.imageUrl            = row->t3k_image_url;
 
   // Replace any existing entry at `dst`; otherwise append.
   bool replaced = false;

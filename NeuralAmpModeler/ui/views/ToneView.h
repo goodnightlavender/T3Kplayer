@@ -57,6 +57,13 @@ public:
   // particular — see ToneRoot::OnStripRebuilt). Optional.
   void setOnStripRebuilt(std::function<void()> cb) { mOnStripRebuilt = std::move(cb); }
 
+  // Fires when the user clicks the "+" tile. ToneRoot wires this to
+  // switchTab(Library) so the library tab acts as the model picker —
+  // double-click / LOAD INTO CHAIN on a card brings the model back
+  // here. Empty/null = no-op (the old hardcoded sample-pedal seed was
+  // retired on 2026-05-25).
+  void setOnAddSlotRequested(std::function<void()> cb) { mOnAddRequested = std::move(cb); }
+
   // ── Preset snapshot / apply (Phase 3) ───────────────────────────────
   // Snapshot the current chain + knob values into a PresetState ready
   // for PresetStore::saveCurrent.
@@ -85,6 +92,9 @@ private:
       std::string modelId;
       std::string absPath;    // Absolute .nam path resolved from LibraryDb.uri,
                               // cached here so syncDspChain doesn't re-query.
+      std::string imagePath;  // Local sibling image (t3k_image_path).
+      std::string imageUrl;   // Remote image URL (t3k_image_url), resolved
+                              // via cloud::ThumbnailCache when imagePath is empty.
       int        dspSlot = -1; // 0..kNumChainSlots-1 once staged, -1 otherwise.
       ModelInfoSnapshot info;
     };
@@ -179,6 +189,8 @@ private:
 
   // Optional z-order-promotion notifier (see setOnStripRebuilt).
   std::function<void()> mOnStripRebuilt;
+  // "+ tile" pressed — switches tabs to Library so the user can pick.
+  std::function<void()> mOnAddRequested;
 };
 
 }  // namespace t3k::ui

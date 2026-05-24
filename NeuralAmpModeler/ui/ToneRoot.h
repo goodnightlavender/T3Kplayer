@@ -130,7 +130,14 @@ private:
   // default. ToneRoot subscribes to LibrarySync::setPullListener and
   // flips the modal on when the pull reports a non-zero entry count
   // AND LibraryDb has at least one row with missing=1.
+  // mRestoreModalShownOnce: 2026-05-25 fix — the pull listener fires
+  // every time the session restores (which is every plug-in load with
+  // a valid refresh token), and a real cloud library typically has
+  // tones the user hasn't pulled to disk yet. Without this guard the
+  // modal nagged on every launch. Reset path: the user signs out and
+  // back in, OR they reload the plug-in instance.
   T3kRestoreModal* mRestoreModal = nullptr;
+  bool             mRestoreModalShownOnce = false;
   // Phase 10 settings modal — attached hidden; account-menu's
   // onSettings callback flips it on.
   T3kSettingsModal* mSettingsModal = nullptr;

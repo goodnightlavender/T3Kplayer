@@ -7,6 +7,8 @@
 
 #include "IGraphics.h"
 
+#include "../../cloud/ThumbnailCache.h"
+
 namespace t3k::ui {
 
 using namespace ::iplug::igraphics;
@@ -72,6 +74,21 @@ void T3kSlot::setVariant(Variant v)
   SetDirty(false);
 }
 
+void T3kSlot::setImage(std::string imagePath, std::string imageUrl)
+{
+  if (imagePath == mImagePath && imageUrl == mImageUrl) return;
+  mImagePath = std::move(imagePath);
+  mImageUrl  = std::move(imageUrl);
+  // Drop any cached bitmap so the next paint resolves the new source.
+  mBitmapLoaded     = false;
+  mBitmapLoadFailed = false;
+  mBitmap = IBitmap();
+  mThumbRequested   = false;
+  mThumbPath.clear();
+  mThumbLoadFailed  = false;
+  SetDirty(false);
+}
+
 IRECT T3kSlot::hoverXRect() const
 {
   // 18×18 button anchored at the tile's top-right corner, half-overlapping
@@ -122,12 +139,50 @@ void T3kSlot::Draw(IGraphics& g)
     g.DrawRoundRect(th::kBorder, mRECT, th::kRadiusLg, nullptr, 1.f);
   }
 
-  // ── Gear icon (inline draw — no child IControl) ─────────────────────
-  if (!mIconSvg.has_value())
-    mIconSvg.emplace(g.LoadSVG(T3kGearIcon::filenameFor(mIconType)));
-
-  const IRECT iconRect = mRECT.GetPadded(-kIconInset);
-  T3kGearIcon::drawInto(g, *mIconSvg, mIconType, iconRect);
+  // ── Image (when available) or gear icon fallback ───────────────────
+  // Kick a ThumbnailCache fetch when only a URL is set.
+  if (!mImageUrl.empty() && mImagePath.empty()
+      && !mThumbRequested && !mThumbLoadFailed) {
+    mThumbRequested = true;
+    ::t3k::cloud::ThumbnailCache::instance().fetch(
+        mImageUrl,
+        [this](const std::string& path, bool ok) {
+          if (ok && !path.empty()) mThumbPath = path;
+          else mThumbLoadFailed = true;
+          this->SetDirty(false);
+        });
+  }
+  const std::string& effPath =
+      !mImagePath.empty() ? mImagePath : mThumbPath;
+  if (!mBitmapLoaded && !mBitmapLoadFailed && !effPath.empty()) {
+    try {
+      mBitmap = g.LoadBitmap(effPath.c_str(), 1, false);
+      mBitmapLoaded = mBitmap.W() > 0;
+    } catch (...) {
+      mBitmapLoadFailed = true;
+    }
+    if (!mBitmapLoaded) mBitmapLoadFailed = true;
+  }
+  if (mBitmapLoaded) {
+    // Fit-cover the tile (preserve aspect, crop overflow); the rounded
+    // corners come from the FillRoundRect background that already
+    // painted underneath.
+    const float bw = static_cast<float>(mBitmap.W());
+    const float bh = static_cast<float>(mBitmap.H());
+    const float scale = std::max(mRECT.W() / bw, mRECT.H() / bh);
+    const float dstW = bw * scale;
+    const float dstH = bh * scale;
+    const float dstL = mRECT.MW() - dstW * 0.5f;
+    const float dstT = mRECT.MH() - dstH * 0.5f;
+    g.DrawFittedBitmap(mBitmap,
+                       IRECT(dstL, dstT, dstL + dstW, dstT + dstH));
+  } else {
+    // Gear-icon fallback.
+    if (!mIconSvg.has_value())
+      mIconSvg.emplace(g.LoadSVG(T3kGearIcon::filenameFor(mIconType)));
+    const IRECT iconRect = mRECT.GetPadded(-kIconInset);
+    T3kGearIcon::drawInto(g, *mIconSvg, mIconType, iconRect);
+  }
 
   // ── Hover-X (only when hovered AND not dragging) ────────────────────
   if (mMouseIsOver) {

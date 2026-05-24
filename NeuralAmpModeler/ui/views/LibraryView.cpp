@@ -534,11 +534,12 @@ void LibraryView::layoutCards()
     for (char& c : fmt) c = static_cast<char>(std::toupper((unsigned char)c));
     d.format = std::move(fmt);
     // Image — prefer the sidecar's t3k_image_path (already cached to
-    // disk by Downloader / ModelSidecar). Empty path -> card falls
-    // back to the gear icon.
+    // disk by Downloader / ModelSidecar). Fall back to t3k_image_url
+    // and let ThumbnailCache pull it on first paint.
     if (mRows[i].t3k_image_path.has_value()) {
       d.imagePath = *mRows[i].t3k_image_path;
     }
+    d.imageUrl = mRows[i].t3k_image_url;
     card->setData(std::move(d));
     card->setSelected(mRows[i].id == mSelectedId);
 
@@ -569,9 +570,54 @@ void LibraryView::onCardDblClicked(int64_t id)
   showDetailFor(id);
 }
 
+void LibraryView::recreateDetailModalOnTop()
+{
+  IGraphics* g = GetUI();
+  if (!g) return;
+  if (mDetailModal) {
+    // detachAllChildren first so the close/action buttons don't
+    // dangle when iPlug2 deletes the modal during RemoveControl.
+    mDetailModal->detachAllChildren();
+    g->RemoveControl(mDetailModal);
+    mDetailModal = nullptr;
+  }
+  mDetailModal = new T3kDetailModal(mRECT,
+      /*onClose*/ [this]() {
+        if (mDetailModal) mDetailModal->Hide(true);
+        SetDirty(false);
+      });
+  g->AttachControl(mDetailModal);
+  mDetailModal->Hide(true);
+}
+
+void LibraryView::recreateRenameOverlayOnTop()
+{
+  IGraphics* g = GetUI();
+  if (!g) return;
+  if (mRenameOverlay) {
+    g->RemoveControl(mRenameOverlay);
+    mRenameOverlay = nullptr;
+  }
+  mRenameOverlay = new T3kRenameOverlay(IRECT(0.f, 0.f, 1.f, 1.f));
+  mRenameOverlay->setOnSave([this](const std::string& newName) {
+    if (mRenameTargetId <= 0) return;
+    ::t3k::library::LibraryDb::instance().setDisplayNameOverride(
+        mRenameTargetId,
+        newName.empty() ? std::optional<std::string>(std::nullopt)
+                        : std::optional<std::string>(newName));
+    mRenameTargetId = 0;
+    refresh();
+  });
+  g->AttachControl(mRenameOverlay);
+}
+
 void LibraryView::showDetailFor(int64_t id)
 {
-  if (!mDetailModal || id <= 0) return;
+  if (id <= 0) return;
+  // Push the modal to the top of the z-order — cards attach lazily
+  // during refresh(), so a modal attached in OnAttached gets buried.
+  recreateDetailModalOnTop();
+  if (!mDetailModal) return;
   // Find the row in mRows + look up its variants.
   const ::t3k::library::ModelRow* row = nullptr;
   for (const auto& r : mRows) {
@@ -586,6 +632,7 @@ void LibraryView::showDetailFor(int64_t id)
   d.creator     = row->t3k_creator;
   d.description = row->t3k_description;
   if (row->t3k_image_path.has_value()) d.imagePath = *row->t3k_image_path;
+  d.imageUrl    = row->t3k_image_url;
   // Subtitle: gear-type . variant count (single variant -> just gear).
   auto vit = mVariantsByToneId.find(toneKey);
   std::string sub;
@@ -803,16 +850,22 @@ void LibraryView::updateDetailButtons()
 void LibraryView::showRenameOverlay(int64_t modelId)
 {
   mRenameTargetId = modelId;
+  // Push the rename overlay to the top of the z-order so cards
+  // (attached lazily after OnAttached) don't bury it and the native
+  // text-entry control isn't clipped by their paint surface.
+  recreateRenameOverlayOnTop();
   if (!mRenameOverlay) return;
   auto row = ::t3k::library::LibraryDb::instance().findById(modelId);
   if (!row.has_value()) return;
-  // Anchor under the detail-strip name area for predictability — any
-  // row could be off-screen at the time the user picks Rename from
-  // the popup, so we don't try to chase the card's position.
-  const IRECT anchor(mDetailRect.L + kDetailPad,
-                     mDetailRect.T + 8.f,
-                     mDetailRect.L + kDetailPad + 320.f,
-                     mDetailRect.T + 8.f + 36.f);
+  // Centre the overlay over the grid area. T3kRenameOverlay::show
+  // positions itself at `anchor.B + 4`, so we set anchor.B such that
+  // the overlay top lands near the vertical centre of the body.
+  const float overlayW = 360.f;
+  const float overlayH = 8.f + 14.f + 4.f + 28.f + 8.f;  // matches show()
+  const float cx = mGridRect.MW();
+  const float topY = mGridRect.MH() - overlayH * 0.5f;
+  const IRECT anchor(cx - overlayW * 0.5f, topY - 1.f - 4.f,
+                     cx + overlayW * 0.5f, topY - 4.f);
   mRenameOverlay->show(anchor, row->effectiveDisplayName());
 }
 

@@ -47,7 +47,8 @@ struct ModelRow {
   std::string                 t3k_model_id;
   std::string                 t3k_creator;
   std::string                 t3k_description;
-  std::optional<std::string>  t3k_image_path;
+  std::string                 t3k_image_url;     // remote, for ThumbnailCache
+  std::optional<std::string>  t3k_image_path;    // local fs sibling
   std::string                 gear_type;
   std::string                 make;
   std::string                 model_name;

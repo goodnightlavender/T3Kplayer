@@ -72,7 +72,7 @@ constexpr const char* kSelectColumns =
     "id, uri, filename, display_name, display_name_override, kind, "
     "size_bytes, mtime, added_at, missing, t3k_tone_id, t3k_model_id, "
     "t3k_creator, t3k_description, t3k_image_path, gear_type, make, "
-    "model_name";
+    "model_name, t3k_image_url";
 
 void HydrateModelRow(sqlite3_stmt* stmt, ModelRow& r)
 {
@@ -94,6 +94,7 @@ void HydrateModelRow(sqlite3_stmt* stmt, ModelRow& r)
   r.gear_type              = ColumnText(stmt, 15);
   r.make                   = ColumnText(stmt, 16);
   r.model_name             = ColumnText(stmt, 17);
+  r.t3k_image_url          = ColumnText(stmt, 18);
 }
 
 }  // namespace

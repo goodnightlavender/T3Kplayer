@@ -72,6 +72,12 @@ class T3kDetailModal : public iplug::igraphics::IControl {
   void OnMouseDown(float x, float y, const iplug::igraphics::IMouseMod& mod) override;
   void Hide(bool hide) override;
 
+  // Remove flat-attached children (close button, action buttons) from
+  // IGraphics. Call this BEFORE the owning view does
+  // g->RemoveControl(modal) so the buttons don't dangle. Used by the
+  // "recreate on top" z-order pattern.
+  void detachAllChildren();
+
  private:
   void recomputeLayout();
   void rebuildActionButtons();
@@ -96,10 +102,14 @@ class T3kDetailModal : public iplug::igraphics::IControl {
   std::vector<T3kButton*> mActionBtns;
   T3kButton* mCloseBtn = nullptr;
 
-  // Lazy bitmap cache for mData.imagePath.
+  // Lazy bitmap cache for mData.imagePath (or the ThumbnailCache
+  // resolved path when only imageUrl is set).
   bool mBitmapLoaded     = false;
   bool mBitmapLoadFailed = false;
   iplug::igraphics::IBitmap mBitmap;
+  bool        mThumbRequested  = false;
+  std::string mThumbPath;
+  bool        mThumbLoadFailed = false;
 };
 
 }  // namespace t3k::ui

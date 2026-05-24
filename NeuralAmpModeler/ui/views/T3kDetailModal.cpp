@@ -10,6 +10,7 @@
 
 #include "../theme.h"
 #include "../controls/T3kButton.h"
+#include "../../cloud/ThumbnailCache.h"
 
 namespace t3k::ui {
 
@@ -123,6 +124,9 @@ void T3kDetailModal::show(DetailData data, std::vector<Action> actions)
   mBitmapLoaded     = false;
   mBitmapLoadFailed = false;
   mBitmap = IBitmap();
+  mThumbRequested   = false;
+  mThumbPath.clear();
+  mThumbLoadFailed  = false;
 
   rebuildActionButtons();
   recomputeLayout();
@@ -152,6 +156,18 @@ void T3kDetailModal::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
 {
   if (!mCardRect.Contains(x, y)) {
     if (mOnClose) mOnClose();
+  }
+}
+
+void T3kDetailModal::detachAllChildren()
+{
+  IGraphics* g = GetUI();
+  if (!g) return;
+  for (T3kButton* b : mActionBtns) if (b) g->RemoveControl(b);
+  mActionBtns.clear();
+  if (mCloseBtn) {
+    g->RemoveControl(mCloseBtn);
+    mCloseBtn = nullptr;
   }
 }
 
@@ -217,9 +233,26 @@ void T3kDetailModal::Draw(IGraphics& g)
   // Image well.
   g.FillRoundRect(th::kBgSurface, mImageRect, th::kRadiusMd);
   g.DrawRoundRect(th::kBorder,    mImageRect, th::kRadiusMd, nullptr, 1.f);
-  if (!mBitmapLoaded && !mBitmapLoadFailed && !mData.imagePath.empty()) {
+
+  // If we don't have a local path but DO have a URL, fetch it via the
+  // ThumbnailCache. First Draw kicks the request; subsequent paints
+  // pick up mThumbPath when the worker fires the callback.
+  if (!mData.imageUrl.empty() && mData.imagePath.empty()
+      && !mThumbRequested && !mThumbLoadFailed) {
+    mThumbRequested = true;
+    ::t3k::cloud::ThumbnailCache::instance().fetch(
+        mData.imageUrl,
+        [this](const std::string& path, bool ok) {
+          if (ok && !path.empty()) mThumbPath = path;
+          else mThumbLoadFailed = true;
+          this->SetDirty(false);
+        });
+  }
+  const std::string& effPath =
+      !mData.imagePath.empty() ? mData.imagePath : mThumbPath;
+  if (!mBitmapLoaded && !mBitmapLoadFailed && !effPath.empty()) {
     try {
-      mBitmap = g.LoadBitmap(mData.imagePath.c_str(), 1, false);
+      mBitmap = g.LoadBitmap(effPath.c_str(), 1, false);
       mBitmapLoaded = mBitmap.W() > 0;
     } catch (...) {
       mBitmapLoadFailed = true;

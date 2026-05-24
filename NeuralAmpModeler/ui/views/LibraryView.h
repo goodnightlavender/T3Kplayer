@@ -102,6 +102,15 @@ class LibraryView : public iplug::igraphics::IControl {
   void onCardDblClicked(int64_t id);
   void onCardRightClicked(int64_t id, float x, float y);
   void showDetailFor(int64_t id);
+  // Rebuild the detail modal as a fresh control attached at the END
+  // of IGraphics' control list so it z-orders above the cards (which
+  // attach lazily on filter/scroll changes). Call BEFORE populating
+  // the modal in showDetailFor.
+  void recreateDetailModalOnTop();
+  // Same dance for the rename overlay — it gets covered by cards
+  // otherwise, and its native text-entry child appears in a clipped
+  // window region.
+  void recreateRenameOverlayOnTop();
   void removeSelected();
   void revealSelected();
   void loadSelected();

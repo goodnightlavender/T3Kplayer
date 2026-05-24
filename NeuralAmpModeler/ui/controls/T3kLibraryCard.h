@@ -45,7 +45,9 @@ public:
     std::string  creator;
     std::string  gearType;        // pedal / amp / cab / outboard / full-rig
     std::string  format;          // "NAM" or "IR"
-    std::string  imagePath;       // local filesystem path; empty -> use gear icon
+    std::string  imagePath;       // local filesystem path; preferred when set
+    std::string  imageUrl;        // remote URL (only used when imagePath empty);
+                                  // resolved via cloud::ThumbnailCache.
   };
 
   T3kLibraryCard(const IRECT& bounds,
@@ -91,13 +93,19 @@ private:
   bool  mSelected = false;
   bool  mHovered  = false;
 
-  // Lazy bitmap loading. When mData.imagePath is non-empty, the first
-  // Draw asks IGraphics::LoadBitmap and caches the result. A failed
-  // load disables further attempts so we don't thrash on a missing
-  // file.
+  // Lazy bitmap loading. When mData.imagePath is non-empty (or once
+  // ThumbnailCache resolves mData.imageUrl into a local path), the
+  // first Draw asks IGraphics::LoadBitmap and caches the result. A
+  // failed load disables further attempts so we don't thrash on a
+  // missing file.
   bool mBitmapLoaded     = false;
   bool mBitmapLoadFailed = false;
   IBitmap mBitmap;
+  // ThumbnailCache plumbing — populated when imagePath is empty but
+  // imageUrl is set.
+  bool        mThumbRequested = false;
+  std::string mThumbPath;
+  bool        mThumbLoadFailed = false;
 
   // Cached layout rects.
   IRECT mHeroRect;

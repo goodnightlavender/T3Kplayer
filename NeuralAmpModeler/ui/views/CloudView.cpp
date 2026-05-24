@@ -644,6 +644,23 @@ void CloudView::onCardDownload(int toneIndex)
 void CloudView::onCardDetail(int toneIndex)
 {
   if (toneIndex < 0 || toneIndex >= static_cast<int>(mTones.size())) return;
+  // Cards z-order > modal because cards attach lazily during
+  // rebuildCards (after OnAttached). Recreate the modal on top so it
+  // paints above them.
+  if (IGraphics* g = GetUI()) {
+    if (mDetailModal) {
+      mDetailModal->detachAllChildren();
+      g->RemoveControl(mDetailModal);
+      mDetailModal = nullptr;
+    }
+    mDetailModal = new T3kDetailModal(mRECT,
+        [this]() {
+          if (mDetailModal) mDetailModal->Hide(true);
+          SetDirty(false);
+        });
+    g->AttachControl(mDetailModal);
+    mDetailModal->Hide(true);
+  }
   if (!mDetailModal) return;
   const auto& tone = mTones[toneIndex];
 

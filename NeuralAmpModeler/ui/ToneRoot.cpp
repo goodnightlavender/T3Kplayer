@@ -260,6 +260,12 @@ void ToneRoot::OnAttached()
       recreatePresetOverlayOnTop();
     }
   });
+  // 2026-05-25 — the "+" tile on the chain strip now routes the user
+  // to the Library tab (the real picker). LibraryView's LOAD INTO
+  // CHAIN brings them back here.
+  mToneView->setOnAddSlotRequested([this]() {
+    this->switchTab(Tab::Library);
+  });
 
   // ── Legacy overlays — hidden; no longer reachable from the v6 header.
   // Attach BEFORE the preset overlay so the latter stays at the very end
@@ -380,10 +386,17 @@ void ToneRoot::OnAttached()
   ::t3k::cloud::sync::LibrarySync::instance().setPullListener(
       [this](bool ok, int entries) {
         if (!ok || entries <= 0) return;
+        // Only nag the user once per plug-in instance. The pull
+        // listener fires every time the session restores (which
+        // happens on every launch when a refresh token is on disk),
+        // and a real cloud library typically has tones not yet
+        // pulled — without this gate the modal pops on every load.
+        if (mRestoreModalShownOnce) return;
         const int missing =
             ::t3k::cloud::sync::LibrarySync::instance().countLocalMissing();
         if (missing <= 0) return;
         if (!mRestoreModal) return;
+        mRestoreModalShownOnce = true;
         mRestoreModal->setMissingCount(missing);
         mRestoreModal->Hide(false);
         SetDirty(false);

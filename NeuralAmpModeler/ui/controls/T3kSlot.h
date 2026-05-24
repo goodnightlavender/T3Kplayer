@@ -25,9 +25,10 @@
 
 #include <functional>
 #include <optional>
+#include <string>
 
 #include "IControl.h"
-#include "IGraphicsStructs.h"  // for ISVG
+#include "IGraphicsStructs.h"  // for ISVG, IBitmap
 #include "../theme.h"
 #include "T3kGearIcon.h"
 
@@ -37,6 +38,7 @@ using ::iplug::igraphics::IControl;
 using ::iplug::igraphics::IGraphics;
 using ::iplug::igraphics::IRECT;
 using ::iplug::igraphics::ISVG;
+using ::iplug::igraphics::IBitmap;
 using ::iplug::igraphics::IMouseMod;
 
 class T3kSlot : public IControl
@@ -57,6 +59,12 @@ public:
   void setIconType(GearType t);
   void setSelected(bool s);
   void setVariant(Variant v);
+  // Set the slot's image — when imagePath resolves to a loadable
+  // bitmap, the tile renders the image (fit-cover, rounded) instead
+  // of the gear-type SVG. Empty path falls back to the icon. imageUrl
+  // is an optional remote source resolved via cloud::ThumbnailCache
+  // when imagePath is empty.
+  void setImage(std::string imagePath, std::string imageUrl);
 
   // Drag-to-reorder hooks. Only Loaded variants drag — Add tiles never do.
   // Called by the parent (ToneView) after construction; any may be null
@@ -124,6 +132,19 @@ private:
   // first Draw and invalidated when mIconType changes — same pattern as
   // T3kLogo. ISVG has no default ctor, hence the optional.
   std::optional<ISVG> mIconSvg;
+
+  // Image rendering (Phase-10 polish 2026-05-25). When the slot has
+  // an image (local file path, or a URL that ThumbnailCache resolves),
+  // render the bitmap fit-cover inside the tile and skip the gear
+  // icon. Falls back to the icon on missing/corrupt images.
+  std::string mImagePath;
+  std::string mImageUrl;
+  bool        mBitmapLoaded     = false;
+  bool        mBitmapLoadFailed = false;
+  IBitmap     mBitmap;
+  bool        mThumbRequested   = false;
+  std::string mThumbPath;
+  bool        mThumbLoadFailed  = false;
 
   std::function<void(int)> mOnSelect;
   std::function<void(int)> mOnRemove;

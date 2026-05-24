@@ -2,9 +2,12 @@
 
 #include "T3kLibraryCard.h"
 
+#include <algorithm>
+
 #include "IGraphics.h"
 
 #include "../theme.h"
+#include "../../cloud/ThumbnailCache.h"
 #include "../../config.h"  // ICON_*_FN
 
 namespace t3k::ui {
@@ -44,7 +47,8 @@ T3kLibraryCard::T3kLibraryCard(const IRECT& bounds,
 
 void T3kLibraryCard::setData(CardData data)
 {
-  const bool imageChanged = (data.imagePath != mData.imagePath);
+  const bool imageChanged = (data.imagePath != mData.imagePath) ||
+                            (data.imageUrl  != mData.imageUrl);
   mData = std::move(data);
   if (imageChanged) {
     // Drop any cached bitmap so the next paint re-resolves the image
@@ -52,6 +56,9 @@ void T3kLibraryCard::setData(CardData data)
     mBitmapLoaded     = false;
     mBitmapLoadFailed = false;
     mBitmap = IBitmap();
+    mThumbRequested   = false;
+    mThumbPath.clear();
+    mThumbLoadFailed  = false;
   }
   SetDirty(false);
 }
@@ -130,12 +137,33 @@ void T3kLibraryCard::Draw(IGraphics& g)
   // Hero — try the cached image first, fall back to the gear icon SVG.
   g.FillRoundRect(th::kBgBase, mHeroRect, th::kRadiusSm);
   g.DrawRoundRect(th::kBorder, mHeroRect, th::kRadiusSm, nullptr, 1.f);
-  if (!mBitmapLoaded && !mBitmapLoadFailed && !mData.imagePath.empty()) {
-    // IGraphics::LoadBitmap is synchronous and accepts a UTF-8 path.
-    // It throws on failure; wrap so a missing file doesn't kill the
-    // paint cycle.
+
+  // If we don't have a local path but DO have a remote URL, kick off
+  // a ThumbnailCache fetch on first paint. The callback fills
+  // mThumbPath asynchronously; subsequent paints pick it up.
+  if (!mData.imageUrl.empty() && mData.imagePath.empty()
+      && !mThumbRequested && !mThumbLoadFailed) {
+    mThumbRequested = true;
+    ::t3k::cloud::ThumbnailCache::instance().fetch(
+        mData.imageUrl,
+        [this](const std::string& path, bool ok) {
+          // Worker-thread callback — only stash + mark dirty here.
+          if (ok && !path.empty()) {
+            mThumbPath = path;
+          } else {
+            mThumbLoadFailed = true;
+          }
+          this->SetDirty(false);
+        });
+  }
+  // Pick the effective path: explicit local path wins, otherwise the
+  // ThumbnailCache-resolved one.
+  const std::string& effectivePath =
+      !mData.imagePath.empty() ? mData.imagePath : mThumbPath;
+
+  if (!mBitmapLoaded && !mBitmapLoadFailed && !effectivePath.empty()) {
     try {
-      mBitmap = g.LoadBitmap(mData.imagePath.c_str(), 1, false);
+      mBitmap = g.LoadBitmap(effectivePath.c_str(), 1, false);
       mBitmapLoaded = mBitmap.W() > 0;
     } catch (...) {
       mBitmapLoadFailed = true;
