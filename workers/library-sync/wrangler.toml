@@ -14,7 +14,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "tone3000-library"
-database_id = "REPLACE_WITH_YOUR_D1_DB_ID"
+database_id = "d09b516f-05aa-4707-a3b1-96d0a83b3ced"
 
 [vars]
 # TONE3000 endpoint used to resolve Bearer tokens → user_id. The

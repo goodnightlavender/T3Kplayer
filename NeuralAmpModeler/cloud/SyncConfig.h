@@ -21,9 +21,10 @@
 
 namespace t3k::cloud::sync {
 
-// Worker base URL — no trailing slash. Example after deployment:
-//   "https://tone3000-library-sync.<your-subdomain>.workers.dev"
-constexpr const char* kLibrarySyncUrl = "REPLACE_ME";
+// Worker base URL — no trailing slash. Deployed via
+//   `wrangler deploy` from workers/library-sync/ (see that README).
+constexpr const char* kLibrarySyncUrl =
+    "https://tone3000-library-sync.k-vandeursen02.workers.dev";
 
 inline bool isConfigured()
 {
