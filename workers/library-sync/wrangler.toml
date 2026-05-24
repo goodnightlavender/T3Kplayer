@@ -1,0 +1,23 @@
+name = "tone3000-library-sync"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 database binding. To activate this Worker you must:
+#   1. Create a D1 database:
+#        wrangler d1 create tone3000-library
+#   2. Paste the returned database_id below.
+#   3. Initialize the schema:
+#        npm run init-db
+#   4. Deploy:
+#        wrangler deploy
+[[d1_databases]]
+binding = "DB"
+database_name = "tone3000-library"
+database_id = "REPLACE_WITH_YOUR_D1_DB_ID"
+
+[vars]
+# TONE3000 endpoint used to resolve Bearer tokens → user_id. The
+# Worker validates every incoming token against this so a malicious
+# client can't claim to be another user.
+TONE3000_USER_URL = "https://www.tone3000.com/api/v1/user"

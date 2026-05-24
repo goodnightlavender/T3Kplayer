@@ -1,0 +1,20 @@
+{
+  "name": "tone3000-library-sync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CloudFlare Worker that proxies TONE3000 Player library entries into a D1 database, keyed by TONE3000 user id.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "init-db": "wrangler d1 execute tone3000-library --remote --file=src/schema.sql",
+    "init-db-local": "wrangler d1 execute tone3000-library --local --file=src/schema.sql"
+  },
+  "dependencies": {
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240924.0",
+    "typescript": "^5.5.0",
+    "wrangler": "^3.78.0"
+  }
+}

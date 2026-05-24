@@ -321,6 +321,9 @@
     <ClCompile Include="..\cloud\Downloader.cpp">
       <Filter>cloud</Filter>
     </ClCompile>
+    <ClCompile Include="..\cloud\LibrarySync.cpp">
+      <Filter>cloud</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="../config.h" />
@@ -794,6 +797,12 @@
       <Filter>cloud</Filter>
     </ClInclude>
     <ClInclude Include="..\cloud\Downloader.h">
+      <Filter>cloud</Filter>
+    </ClInclude>
+    <ClInclude Include="..\cloud\SyncConfig.h">
+      <Filter>cloud</Filter>
+    </ClInclude>
+    <ClInclude Include="..\cloud\LibrarySync.h">
       <Filter>cloud</Filter>
     </ClInclude>
   </ItemGroup>

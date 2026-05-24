@@ -421,6 +421,8 @@
     <ClInclude Include="..\cloud\Tone3000Client.h" />
     <ClInclude Include="..\cloud\ThumbnailCache.h" />
     <ClInclude Include="..\cloud\Downloader.h" />
+    <ClInclude Include="..\cloud\SyncConfig.h" />
+    <ClInclude Include="..\cloud\LibrarySync.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\iPlug2\Dependencies\IPlug\VST3_SDK\base\source\baseiids.cpp" />
@@ -565,6 +567,7 @@
     <ClCompile Include="..\cloud\Tone3000Client.cpp" />
     <ClCompile Include="..\cloud\ThumbnailCache.cpp" />
     <ClCompile Include="..\cloud\Downloader.cpp" />
+    <ClCompile Include="..\cloud\LibrarySync.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\resources\main.rc" />

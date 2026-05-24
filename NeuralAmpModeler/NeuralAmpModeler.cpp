@@ -16,6 +16,7 @@
 #include "architecture.hpp"
 
 #include "NeuralAmpModelerControls.h"
+#include "cloud/LibrarySync.h"
 #include "cloud/Session.h"
 #include "ui/ToneRoot.h"
 #include "ui/theme.h"
@@ -147,6 +148,14 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
   // SignedOut state on the first paint, then flicker when the lazy
   // ctor finally fires.
   (void)::t3k::cloud::Session::instance();
+
+  // Phase 8 — start the library-sync client. When
+  // SyncConfig::kLibrarySyncUrl is the REPLACE_ME placeholder, start()
+  // is a complete no-op and the plug-in behaves identically to
+  // Phase 7. Once the user deploys their Worker and updates the
+  // constant, start() subscribes to Session + EventBus and runs an
+  // initial pull on sign-in.
+  ::t3k::cloud::sync::LibrarySync::instance().start();
 }
 
 NeuralAmpModeler::~NeuralAmpModeler()
