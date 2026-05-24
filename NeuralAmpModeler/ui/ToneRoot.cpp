@@ -268,16 +268,22 @@ void ToneRoot::OnAttached()
   mSignInPill = new T3kSignInPill(
       IRECT(0.f, 0.f, 1.f, 1.f),
       /*onClick*/ [this] {
-        // When OAuth is unconfigured, surface the toast — the user
-        // would otherwise see the browser open and immediately bail
-        // with the SignInFailed event below. Either path lands the
-        // same message; surfacing inline avoids the browser flash
-        // when it's clearly going to fail.
-        if (!::t3k::cloud::OAuthFlow::isConfigured()) {
-          this->setSignInStatus("Configure OAuth client_id in OAuthConfig.h");
+        // Configured: real OAuth flow on a background thread. The
+        // browser pops, the user authorizes, the loopback server
+        // receives the callback, and SessionEvent::SignedIn lands on
+        // mSessionListenerId — which flips mSignedIn and hides this
+        // pill. Surface a "Signing in…" toast so the user has feedback
+        // while the browser tab opens.
+        if (::t3k::cloud::OAuthFlow::isConfigured()) {
+          this->setSignInStatus("Signing in… check your browser", 8000);
+          ::t3k::cloud::Session::instance().signIn();
+          return;
         }
-        // Open the account menu so the user can pick mock-sign-in
-        // (Debug builds) without having to know to click the avatar.
+        // Unconfigured (fork operators who haven't set up their OAuth
+        // app yet): surface a toast directing them at OAuthConfig.h
+        // AND open the account menu so they can use mock-sign-in
+        // immediately, without having to know to click the avatar.
+        this->setSignInStatus("Configure OAuth client_id in OAuthConfig.h");
         this->toggleAccountMenu();
       });
   g->AttachControl(mSignInPill);

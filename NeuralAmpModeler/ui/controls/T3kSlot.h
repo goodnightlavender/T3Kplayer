@@ -59,12 +59,42 @@ public:
   void setVariant(Variant v);
 
   // Drag-to-reorder hooks. Only Loaded variants drag — Add tiles never do.
-  // Called by the parent (ToneView) after construction; either may be null
-  // (in which case drag is disabled even on Loaded tiles).
+  // Called by the parent (ToneView) after construction; any may be null
+  // (onDragMove being null disables drag entirely — OnMouseDrag bails
+  // early in that case).
+  //   onDragStart(slotIndex) — fired on the FIRST drag tick (false→true
+  //                            transition of mDragging). ToneView points
+  //                            T3kDragGhost at this slot so the drag
+  //                            visual renders above other tiles.
   //   onDragMove(slotIndex, mouseX, mouseY) — fired on every drag tick.
   //   onDragEnd (slotIndex, mouseX, mouseY) — fired on mouse-up after drag.
-  void setOnDragMove(std::function<void(int, float, float)> cb) { mOnDragMove = std::move(cb); }
-  void setOnDragEnd (std::function<void(int, float, float)> cb) { mOnDragEnd  = std::move(cb); }
+  void setOnDragStart(std::function<void(int)> cb)               { mOnDragStart = std::move(cb); }
+  void setOnDragMove (std::function<void(int, float, float)> cb) { mOnDragMove  = std::move(cb); }
+  void setOnDragEnd  (std::function<void(int, float, float)> cb) { mOnDragEnd   = std::move(cb); }
+
+  // Clamp the dragged tile's horizontal offset to keep it within its
+  // category. ToneView computes (minOffsetX, maxOffsetX) relative to
+  // mRECT.L so the drawn tile cannot cross the amp/cab boundary or run
+  // off the strip's edge. Both default to a wide range (effectively no
+  // clamp) until the parent sets them.
+  //   minOffsetX: most-negative drag offset allowed (tile slid LEFT)
+  //   maxOffsetX: most-positive drag offset allowed (tile slid RIGHT)
+  void setDragBoundsX(float minOffsetX, float maxOffsetX) {
+    mDragMinOffsetX = minOffsetX;
+    mDragMaxOffsetX = maxOffsetX;
+  }
+
+  // Paint the tile at its CURRENT dragged offset position. Called by
+  // T3kDragGhost during the drag so the moving tile renders above its
+  // siblings regardless of attach-order z-order. Includes the smoothing
+  // tick (mDragOffsetX eases toward mDragTargetX) so calling this once
+  // per frame keeps the ease alive.
+  void drawAtDragOffset(IGraphics& g);
+
+  // True iff the ease residual between target and displayed offset is
+  // still visible. T3kDragGhost reads this to decide whether to keep
+  // marking itself dirty.
+  bool dragSmoothingActive() const;
 
   // True between OnMouseDown and OnMouseUp while the user is dragging a
   // Loaded tile. Read by ToneView's drop-indicator paint, if any.
@@ -104,14 +134,22 @@ private:
   // outboards reorder within their category in 1D), and the displayed
   // offset eases toward the target each frame for smoothing.
   //   mDragTargetX — raw accumulated horizontal drag delta (1:1 with the
-  //                  mouse).
+  //                  mouse, clamped to [mDragMinOffsetX, mDragMaxOffsetX]).
   //   mDragOffsetX — what's actually rendered; lerped toward mDragTargetX
-  //                  in Draw. Decoupling target from displayed value gives
-  //                  the drag a smooth, weighted feel.
+  //                  in drawAtDragOffset. Decoupling target from displayed
+  //                  value gives the drag a smooth, weighted feel.
   bool  mDragging    = false;
   float mDragTargetX = 0.f;
   float mDragOffsetX = 0.f;
 
+  // X-axis drag clamp. Defaults to a wide-enough range that
+  // unconfigured callers get unconstrained drag; ToneView sets real
+  // bounds on every rebuildStrip() so the dragged tile can't escape
+  // its category.
+  float mDragMinOffsetX = -1e6f;
+  float mDragMaxOffsetX =  1e6f;
+
+  std::function<void(int)>               mOnDragStart;
   std::function<void(int, float, float)> mOnDragMove;
   std::function<void(int, float, float)> mOnDragEnd;
 };

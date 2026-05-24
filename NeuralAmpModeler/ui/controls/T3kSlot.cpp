@@ -2,6 +2,7 @@
 
 #include "T3kSlot.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include "IGraphics.h"
@@ -103,45 +104,33 @@ void T3kSlot::Draw(IGraphics& g)
     return;
   }
 
-  // Loaded variant. When dragging, render the tile shifted along X only —
-  // pedal/outboard reordering is one-dimensional, so locking Y keeps the
-  // tile aligned with its row and prevents accidental vertical drift.
-  // mDragOffsetX eases toward mDragTargetX each frame for smoothing.
-  if (mDragging) {
-    const float residual = mDragTargetX - mDragOffsetX;
-    if (std::fabs(residual) > kDragSnapEpsilon) {
-      mDragOffsetX += residual * kDragSmoothFactor;
-      // Keep redrawing while the ease still has visible travel left.
-      SetDirty(false);
-    } else {
-      mDragOffsetX = mDragTargetX;
-    }
-  }
-  const IRECT drawRect = mDragging
-      ? IRECT(mRECT.L + mDragOffsetX, mRECT.T,
-              mRECT.R + mDragOffsetX, mRECT.B)
-      : mRECT;
+  // Loaded variant. When dragging, skip our own paint — T3kDragGhost
+  // paints us at the offset position from the top of the strip's
+  // z-order so the dragged tile renders above other slots. Without
+  // this skip we'd double-render (once here at mRECT, once via the
+  // ghost at the offset rect).
+  if (mDragging) return;
 
-  g.FillRoundRect(th::kBgSurface, drawRect, th::kRadiusLg);
+  // Static paint at mRECT.
+  g.FillRoundRect(th::kBgSurface, mRECT, th::kRadiusLg);
 
   // Selection ring: 1px kAccent border (replaces the default 1px subtle
-  // border when selected). Decision 47. Dragging also draws kAccent so
-  // the user can track the floating tile.
-  if (mSelected || mDragging) {
-    g.DrawRoundRect(th::kAccent, drawRect, th::kRadiusLg, nullptr, 1.f);
+  // border when selected). Decision 47.
+  if (mSelected) {
+    g.DrawRoundRect(th::kAccent, mRECT, th::kRadiusLg, nullptr, 1.f);
   } else {
-    g.DrawRoundRect(th::kBorder, drawRect, th::kRadiusLg, nullptr, 1.f);
+    g.DrawRoundRect(th::kBorder, mRECT, th::kRadiusLg, nullptr, 1.f);
   }
 
   // ── Gear icon (inline draw — no child IControl) ─────────────────────
   if (!mIconSvg.has_value())
     mIconSvg.emplace(g.LoadSVG(T3kGearIcon::filenameFor(mIconType)));
 
-  const IRECT iconRect = drawRect.GetPadded(-kIconInset);
+  const IRECT iconRect = mRECT.GetPadded(-kIconInset);
   T3kGearIcon::drawInto(g, *mIconSvg, mIconType, iconRect);
 
   // ── Hover-X (only when hovered AND not dragging) ────────────────────
-  if (mMouseIsOver && !mDragging) {
+  if (mMouseIsOver) {
     const IRECT xr = hoverXRect();
     const float cx = xr.MW();
     const float cy = xr.MH();
@@ -157,6 +146,44 @@ void T3kSlot::Draw(IGraphics& g)
                        EVAlign::Middle);
     g.DrawText(xLabel, "\xC3\x97", xr);  // UTF-8 for ×
   }
+}
+
+void T3kSlot::drawAtDragOffset(IGraphics& g)
+{
+  namespace th = ::t3k::theme;
+
+  // Ease the displayed offset toward the target. When the residual
+  // is below the snap threshold, lock to the target so we don't burn
+  // frames on imperceptible sub-pixel deltas.
+  const float residual = mDragTargetX - mDragOffsetX;
+  if (std::fabs(residual) > kDragSnapEpsilon) {
+    mDragOffsetX += residual * kDragSmoothFactor;
+  } else {
+    mDragOffsetX = mDragTargetX;
+  }
+
+  const IRECT drawRect(mRECT.L + mDragOffsetX, mRECT.T,
+                       mRECT.R + mDragOffsetX, mRECT.B);
+
+  g.FillRoundRect(th::kBgSurface, drawRect, th::kRadiusLg);
+  // Always accent-bordered while dragging — the user is actively
+  // tracking this tile, and the accent edge reads as "lifted".
+  g.DrawRoundRect(th::kAccent, drawRect, th::kRadiusLg, nullptr, 1.f);
+
+  if (!mIconSvg.has_value())
+    mIconSvg.emplace(g.LoadSVG(T3kGearIcon::filenameFor(mIconType)));
+
+  const IRECT iconRect = drawRect.GetPadded(-kIconInset);
+  T3kGearIcon::drawInto(g, *mIconSvg, mIconType, iconRect);
+  // No hover-X while dragging — the user already committed to the
+  // gesture; rendering a remove affordance under the cursor at the
+  // same moment would be confusing.
+}
+
+bool T3kSlot::dragSmoothingActive() const
+{
+  if (!mDragging) return false;
+  return std::fabs(mDragTargetX - mDragOffsetX) > kDragSnapEpsilon;
 }
 
 void T3kSlot::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
@@ -191,12 +218,24 @@ void T3kSlot::OnMouseDrag(float x, float y, float dX, float /*dY*/,
   if (mVariant == Variant::Add) return;
   if (!mOnDragMove) return;
 
-  // First drag tick: flip on mDragging. iPlug2 only delivers OnMouseDrag
-  // after the cursor has actually moved past its mouse-down position, so
-  // we don't need an explicit motion threshold here. Drag is locked to
-  // the horizontal axis — vertical motion is intentionally discarded.
+  // First drag tick: flip on mDragging and notify the parent so the
+  // drag ghost can pick us up for top-of-z-order painting. iPlug2
+  // only delivers OnMouseDrag after the cursor has actually moved
+  // past its mouse-down position, so we don't need an explicit
+  // motion threshold here. Drag is locked to the horizontal axis —
+  // vertical motion is intentionally discarded.
+  const bool wasDragging = mDragging;
   mDragging = true;
-  mDragTargetX += dX;
+  if (!wasDragging && mOnDragStart) {
+    mOnDragStart(mSlotIndex);
+  }
+  // Clamp the running drag offset against the category bounds set by
+  // the parent. Without this, a tile can be visually dragged past the
+  // amp/cab boundary or off the edge of the strip — the drop logic
+  // would reject the move on mouse-up but the visual would mislead
+  // the user during the gesture.
+  mDragTargetX = std::min(std::max(mDragTargetX + dX, mDragMinOffsetX),
+                          mDragMaxOffsetX);
   mOnDragMove(mSlotIndex, x, y);
   SetDirty(false);
 }
@@ -211,6 +250,10 @@ void T3kSlot::OnMouseUp(float x, float y, const IMouseMod& /*mod*/)
     // Drag-release: fire onDragEnd, then snap the visual back to mRECT
     // (the parent decides whether to rebuild the strip — if it does, this
     // tile gets destroyed anyway; if it doesn't, the visual just snaps).
+    // We flip mDragging BEFORE firing onDragEnd so the ghost's clear()
+    // (invoked by ToneView in the onDragEnd handler) sees a non-dragging
+    // slot — otherwise the next paint cycle could re-render the ghost
+    // until the source pointer was nulled.
     mDragging    = false;
     mDragTargetX = 0.f;
     mDragOffsetX = 0.f;

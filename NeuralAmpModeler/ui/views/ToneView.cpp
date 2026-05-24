@@ -6,6 +6,7 @@
 
 #include "../theme.h"
 #include "../layout.h"
+#include "../controls/T3kDragGhost.h"
 #include "../controls/T3kSlot.h"
 #include "../controls/T3kKnob.h"
 
@@ -162,6 +163,7 @@ void ToneView::Hide(bool hide)
   // pane / knob row don't leak onto Library or Cloud tabs.
   for (T3kSlot* s : mSlots) if (s) s->Hide(hide);
   if (mAddTile)    mAddTile   ->Hide(hide);
+  if (mDragGhost)  mDragGhost ->Hide(hide);
   if (mInfoPane)   mInfoPane  ->Hide(hide);
   if (mKnobIn)     mKnobIn    ->Hide(hide);
   if (mKnobBass)   mKnobBass  ->Hide(hide);
@@ -217,6 +219,11 @@ void ToneView::layoutStripTiles()
   if (mAddTile) {
     mAddTile->SetTargetAndDrawRECTs(IRECT(x, topY, x + kSlotAddW, topY + kSlotH));
   }
+
+  // Tile positions changed → recompute the per-tile drag bounds so a
+  // window-resize during a drag (rare, but possible) doesn't leak
+  // stale clamps.
+  updateDragBoundsForCategories();
 }
 
 void ToneView::rebuildStrip()
@@ -247,10 +254,32 @@ void ToneView::rebuildStrip()
     // FullRig live at fixed positions, so we leave their drag callbacks
     // null and T3kSlot disables drag accordingly.
     if (isReorderableCategory(idx)) {
+      // onDragStart points the drag ghost at this tile so it paints
+      // above the strip's siblings. The ghost is attached last in
+      // z-order (see recreateDragGhostOnTop) — without this hook the
+      // dragged tile would render under tiles attached after it.
+      tile->setOnDragStart([this](int /*slot*/) {
+        if (mDragGhost) {
+          // Find the corresponding tile pointer to hand the ghost.
+          // mSlots is parallel to mChain.loaded so the active drag
+          // source is always the slot whose mDragging just flipped
+          // true — but for simplicity, scan to find the one that
+          // reports isDragging(). Cheap (≤5 entries per category).
+          for (T3kSlot* s : mSlots) {
+            if (s && s->isDragging()) { mDragGhost->setSource(s); break; }
+          }
+        }
+      });
       tile->setOnDragMove([this](int slot, float mx, float my) {
+        // The slot itself early-returns in Draw while dragging, so the
+        // ghost is the only thing that paints the moving tile. Mark
+        // it dirty on every drag tick so iPlug2 schedules a repaint
+        // in lock-step with the cursor motion.
+        if (mDragGhost) mDragGhost->SetDirty(false);
         onSlotDragMove(slot, mx, my);
       });
       tile->setOnDragEnd([this](int slot, float mx, float my) {
+        if (mDragGhost) mDragGhost->clear();
         onSlotDragEnd(slot, mx, my);
       });
     }
@@ -269,12 +298,78 @@ void ToneView::rebuildStrip()
       /*onAdd*/    [this](int /*slot*/) { onSlotAdded(); });
   g->AttachControl(mAddTile);
 
+  // Push the per-tile drag-bounds onto each reorderable slot now that
+  // positions exist.
+  updateDragBoundsForCategories();
+
+  // Bump the drag ghost to the very end of the IGraphics control list
+  // so it paints above the just-attached strip tiles.
+  recreateDragGhostOnTop();
+
   // The rebuild appended new tiles to the end of the IGraphics control
   // list. If anything was attached later (e.g. the preset overlay), that
   // control would now sit BELOW the strip in z-order. Notify any listener
   // (ToneRoot, currently) so it can re-promote overlays that should stay
   // on top.
   if (mOnStripRebuilt) mOnStripRebuilt();
+}
+
+void ToneView::updateDragBoundsForCategories()
+{
+  // For each reorderable tile, find the leftmost-L and rightmost-R of
+  // any same-category tile in the current layout, then express the
+  // dragged tile's allowable offset range relative to its own mRECT.L.
+  //
+  // This guarantees the dragged tile's drawn position can never cross
+  // the amp/cab boundary or run off the edge of the strip — the
+  // visual matches what the drop logic accepts in onSlotDragEnd.
+  if (mSlots.size() != mChain.loaded.size()) return;
+  for (size_t i = 0; i < mSlots.size(); ++i) {
+    if (!mSlots[i]) continue;
+    const int slotIdx = mChain.loaded[i].slotIndex;
+    if (!isReorderableCategory(slotIdx)) continue;
+    const int cat = slotCategory(slotIdx);
+
+    float catLeft  = mSlots[i]->GetRECT().L;
+    float catRight = mSlots[i]->GetRECT().R;
+    for (size_t j = 0; j < mSlots.size(); ++j) {
+      if (!mSlots[j]) continue;
+      if (slotCategory(mChain.loaded[j].slotIndex) != cat) continue;
+      catLeft  = std::min(catLeft,  mSlots[j]->GetRECT().L);
+      catRight = std::max(catRight, mSlots[j]->GetRECT().R);
+    }
+
+    const float baseL = mSlots[i]->GetRECT().L;
+    const float tileW = mSlots[i]->GetRECT().W();
+    // Allowable offsets:
+    //   minOffset → tile slid left until its L == catLeft
+    //   maxOffset → tile slid right until its R == catRight,
+    //               i.e. L == catRight - tileW.
+    mSlots[i]->setDragBoundsX(catLeft - baseL,
+                              catRight - tileW - baseL);
+  }
+}
+
+void ToneView::recreateDragGhostOnTop()
+{
+  IGraphics* g = GetUI();
+  if (!g) return;
+
+  // Destroy + recreate to land at the end of IGraphics's flat control
+  // list (= top of z-order). Same pattern as ToneRoot uses for the
+  // preset overlay. Ghost holds no state — just a non-owning pointer
+  // to whichever T3kSlot is currently dragging (cleared on drag-end),
+  // so destroying it mid-strip-rebuild is safe.
+  if (mDragGhost) {
+    g->RemoveControl(mDragGhost);
+    mDragGhost = nullptr;
+  }
+  // Size to the strip area — the actual paint happens at the slot's
+  // own offset rect, but iPlug2 uses the control's mRECT for dirty
+  // tracking, so spanning the strip captures any plausible drag
+  // position.
+  mDragGhost = new T3kDragGhost(mStripRect);
+  g->AttachControl(mDragGhost);
 }
 
 void ToneView::onSlotSelected(int slotIndex)

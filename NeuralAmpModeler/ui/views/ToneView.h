@@ -36,6 +36,7 @@ namespace t3k::ui {
 
 class T3kSlot;
 class T3kKnob;
+class T3kDragGhost;
 
 class ToneView : public iplug::igraphics::IControl {
 public:
@@ -122,6 +123,19 @@ private:
   // IGraphics) before a rebuild.
   void clearStripChildren();
 
+  // Drag-bounds helper. After tile positions are computed in
+  // rebuildStrip/layoutStripTiles, this iterates reorderable
+  // categories (pedals, outboards) and pushes the (minOffset,
+  // maxOffset) extent into each tile so its drag can't escape the
+  // category's span on the strip.
+  void updateDragBoundsForCategories();
+
+  // Ensure the drag ghost sits at the very end of the IGraphics
+  // control list so it paints above the strip tiles. Called after
+  // every rebuildStrip — without this the rebuild would push the
+  // newly-attached tiles past the ghost in z-order.
+  void recreateDragGhostOnTop();
+
   // Seed mChain with the v6 mockup's demo chain.
   void seedDemoSnapshot();
 
@@ -139,6 +153,12 @@ private:
   // ToneView.
   std::vector<T3kSlot*> mSlots;     // loaded slot tiles, sized to mChain.loaded
   T3kSlot*              mAddTile = nullptr;
+  // Invisible high-z-order overlay that paints whichever T3kSlot is
+  // currently being dragged so it floats above its siblings (iPlug2
+  // doesn't expose a move-to-front API — see T3kDragGhost.h for the
+  // full rationale). Re-attached to the end of the control list
+  // after every rebuildStrip via recreateDragGhostOnTop.
+  T3kDragGhost*         mDragGhost = nullptr;
   T3kModelInfoPane*     mInfoPane = nullptr;
   T3kKnob*              mKnobIn = nullptr;
   T3kKnob*              mKnobBass = nullptr;
