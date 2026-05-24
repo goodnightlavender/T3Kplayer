@@ -282,20 +282,55 @@ void T3kCard::Draw(IGraphics& g)
   g.DrawText(titleT, mData.title.c_str(), titleRect);
   y += rowH_title;
 
-  // Download pill at the top-right of the right column. Clamp the
-  // pill radius to the pill's half-height; kRadiusPill = 999 on a
-  // 22-tall rect would blow PathRoundRect into screen-spanning arcs —
-  // those are the diagonal lines that flowed across every card in the
-  // list (see theme.h diagnosis).
-  g.DrawRoundRect(th::kBorder, mDownloadRect,
-                  th::pillRadius(mDownloadRect.H()),
-                  /*pBlend*/ nullptr, /*thickness*/ 1.f);
+  // Download pill at the top-right of the right column. State drives
+  // BOTH the fill color and the label:
+  //   Idle    → border only, kTextMuted "DOWNLOAD"
+  //   Active  → kAccent fill, white "DOWNLOADING…" (or "QUEUED" etc.)
+  //   Done    → success-green fill, white "DOWNLOADED"
+  //   Failed  → kError fill, white "FAILED"
+  // The pill radius is clamped to half-height — kRadiusPill = 999 on a
+  // 22-tall rect would otherwise blow PathRoundRect into screen-
+  // spanning arcs (the diagonal-lines bug fixed in Phase 6 polish).
+  const float pillR = th::pillRadius(mDownloadRect.H());
+  IColor pillFill;
+  IColor pillTextCol = th::kText;
+  const char* defaultLabel = "DOWNLOAD";
+  bool pillFilled = true;
+  switch (mDlState) {
+    case DownloadState::Idle:
+      pillFilled = false;
+      pillTextCol = th::kTextMuted;
+      defaultLabel = "DOWNLOAD";
+      break;
+    case DownloadState::Active:
+      pillFill = th::kAccent;
+      defaultLabel = "DOWNLOADING\xE2\x80\xA6";
+      break;
+    case DownloadState::Done:
+      // Success teal-green — kept inline because the theme palette
+      // doesn't carry a dedicated kSuccess token at this revision.
+      pillFill = IColor(255, 56, 176, 110);
+      defaultLabel = "DOWNLOADED";
+      break;
+    case DownloadState::Failed:
+      pillFill = th::kError;
+      defaultLabel = "FAILED";
+      break;
+  }
+  if (pillFilled) {
+    g.FillRoundRect(pillFill, mDownloadRect, pillR);
+  } else {
+    g.DrawRoundRect(th::kBorder, mDownloadRect, pillR,
+                    /*pBlend*/ nullptr, /*thickness*/ 1.f);
+  }
   const IText pillT(th::kTypeSmall,
-                    th::kTextMuted,
+                    pillTextCol,
                     th::kFontBodySemi,
                     EAlign::Center,
                     EVAlign::Middle);
-  g.DrawText(pillT, "DOWNLOAD", mDownloadRect);
+  const char* pillLabel =
+      mDlLabel.empty() ? defaultLabel : mDlLabel.c_str();
+  g.DrawText(pillT, pillLabel, mDownloadRect);
 
   // Subtitle + optional inline badge.
   const IRECT subRect(mRightColRect.L, y,
@@ -514,6 +549,14 @@ void T3kCard::OnMouseWheel(float /*x*/, float /*y*/,
   // to the topmost control under the cursor), and the cloud-results
   // list reads as unscrollable.
   if (mOnWheel) mOnWheel(d);
+}
+
+void T3kCard::setDownloadState(DownloadState s, std::string label)
+{
+  if (s == mDlState && label == mDlLabel) return;
+  mDlState = s;
+  mDlLabel = std::move(label);
+  SetDirty(false);
 }
 
 }  // namespace t3k::ui

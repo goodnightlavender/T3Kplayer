@@ -27,6 +27,7 @@
 #include <mutex>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "IControl.h"
@@ -34,13 +35,13 @@
 #include "../../cloud/Tone3000Types.h"
 #include "../../cloud/Tone3000Client.h"
 #include "../../net/CancellationToken.h"
+#include "../controls/T3kCard.h"  // for T3kCard::DownloadState in mDlByToneId
 
 namespace t3k::ui {
 
 class T3kSearchBar;
 class T3kButton;
 class T3kAccordion;
-class T3kCard;
 class T3kSignInPill;
 
 class CloudView : public iplug::igraphics::IControl {
@@ -197,12 +198,29 @@ private:
 
   // Downloader subscription. Set in OnAttached, unsubscribed in
   // dtor. The listener stashes the latest status under mDlStatusMtx
-  // and flips dirty; Draw drains it into mErrorMessage so the
-  // existing bottom-banner pipeline renders the progress.
+  // and flips dirty; Draw drains it into the matching card via
+  // setDownloadState (and into mErrorMessage for the top-of-body
+  // status banner).
   int                       mDlListenerId = 0;
   mutable std::mutex        mDlStatusMtx;
-  std::string               mDlStatusText;          // latest UI-facing message
+  std::string               mDlStatusText;          // top-of-body banner text
   std::chrono::steady_clock::time_point mDlStatusExpiry{};
+
+  // Per-tone download state captured by the Downloader listener.
+  // Drained in Draw() by pushing into the matching T3kCard's pill.
+  // tone_id is the key because cards rebuild on every fresh search
+  // (mCards array indices change) but tone ids stay stable across
+  // searches if the same tone reappears.
+  struct ToneDlState {
+    T3kCard::DownloadState state = T3kCard::DownloadState::Idle;
+    std::string            label;
+  };
+  std::unordered_map<int, ToneDlState> mDlByToneId;  // under mDlStatusMtx
+
+  // tone_id → index into mCards / mTones. Rebuilt in rebuildCards.
+  // Used to look up the right card when a Downloader status event
+  // fires (the event carries tone_id, not the card index).
+  std::unordered_map<int, std::size_t> mToneIdToCardIdx;
 };
 
 }  // namespace t3k::ui

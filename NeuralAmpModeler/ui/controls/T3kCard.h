@@ -79,6 +79,22 @@ public:
   void setSelected(bool s) { mSelected = s; SetDirty(false); }
   bool isSelected() const { return mSelected; }
 
+  // Per-card download status (Phase 7 polish). The Cloud-tab status
+  // banner was getting occluded by cards that extend past the visible
+  // bottom — so we surface the state directly on the DOWNLOAD pill of
+  // the tone being downloaded.
+  enum class DownloadState {
+    Idle,    // default — pill renders as a 1px border with "DOWNLOAD"
+    Active,  // queued / listing / downloading / writing
+    Done,    // successfully landed in library
+    Failed,  // pipeline failed; label carries the reason fragment
+  };
+
+  // Set state + override label in one call. Empty `label` keeps the
+  // default label ("DOWNLOAD" for Idle, etc.). Marks the card dirty.
+  void setDownloadState(DownloadState s, std::string label = {});
+  DownloadState downloadState() const { return mDlState; }
+
 private:
   // Recompute the cached layout rects (image, right column, download pill,
   // player strip) given the current mRECT.
@@ -96,6 +112,10 @@ private:
   bool mHovered  = false;
   float mHoverFrom = 0.f;
   float mHoverTo   = 0.f;
+
+  // Download status — drives the DOWNLOAD pill's appearance + text.
+  DownloadState mDlState = DownloadState::Idle;
+  std::string   mDlLabel;          // override; empty → state default
 
   // Lazy thumbnail wiring. On first Draw we ask cloud::ThumbnailCache
   // for mData.imageUrl; once the worker thread writes the file, the

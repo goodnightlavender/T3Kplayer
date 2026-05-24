@@ -42,6 +42,12 @@ constexpr float kCheckboxBoxSz = 14.f;
 constexpr float kCardH         = 132.f;   // T3kCard tuned for 88px image
 constexpr float kCardGapY      = 8.f;
 constexpr float kBodyPad       = 16.f;
+// Reserve a row at the top of the body for the download / loading
+// status banner. Always present (not toggled on activity) so the
+// cards below it don't jitter every time a download starts. The row
+// renders empty when there's no message — fine, it just becomes
+// transparent space.
+constexpr float kStatusBannerH = 22.f;
 
 // Cycle through the TonesSort enum on each sort-button click.
 ::t3k::cloud::TonesSort nextSort(::t3k::cloud::TonesSort s) {
@@ -321,12 +327,22 @@ void CloudView::OnAttached()
         using Stage = ::t3k::cloud::DownloadStatus::Stage;
         std::string msg;
         std::chrono::seconds ttl{8};
+
+        // Per-card pill state for the in-card status fix. Done /
+        // Failed land as the card's permanent visual until the next
+        // search rebuilds cards — so the user can see at a glance
+        // which tones they've already grabbed.
+        T3kCard::DownloadState cardState = T3kCard::DownloadState::Active;
+        std::string cardLabel;
+
         switch (s.stage) {
           case Stage::Queued:
             msg = "Queued: " + s.tone_title;
+            cardLabel = "QUEUED";
             break;
           case Stage::Listing:
             msg = "Listing models: " + s.tone_title;
+            cardLabel = "LISTING\xE2\x80\xA6";
             break;
           case Stage::Downloading: {
             const int n = s.model_index + 1;
@@ -334,26 +350,33 @@ void CloudView::OnAttached()
             msg = "Downloading " + s.tone_title +
                   " (" + std::to_string(n) + " of " +
                   std::to_string(t) + ")\xE2\x80\xA6";
+            cardLabel = std::to_string(n) + "/" + std::to_string(t);
             break;
           }
           case Stage::Writing:
             msg = "Saving: " + s.tone_title;
+            cardLabel = "SAVING\xE2\x80\xA6";
             break;
           case Stage::Done:
             msg = "Downloaded: " + s.tone_title;
             ttl = std::chrono::seconds{5};
+            cardState = T3kCard::DownloadState::Done;
+            cardLabel.clear();        // pill uses the default "DOWNLOADED"
             break;
           case Stage::Failed:
             msg = "Failed: " + s.tone_title +
                   (s.error_message.empty() ? std::string{}
                                            : (" \xE2\x80\x94 " + s.error_message));
             ttl = std::chrono::seconds{12};
+            cardState = T3kCard::DownloadState::Failed;
+            cardLabel.clear();        // pill uses the default "FAILED"
             break;
         }
         {
           std::lock_guard<std::mutex> lk(mDlStatusMtx);
           mDlStatusText   = std::move(msg);
           mDlStatusExpiry = std::chrono::steady_clock::now() + ttl;
+          mDlByToneId[s.tone_id] = ToneDlState{cardState, std::move(cardLabel)};
         }
         this->SetDirty(false);
       });
@@ -376,18 +399,30 @@ void CloudView::Draw(IGraphics& g)
 
   drainPendingResult();
 
-  // Drain the latest Downloader status into mErrorMessage so the
-  // existing bottom-banner pipeline renders it. Expires after the
-  // TTL the listener set. Held under a mutex because the listener
-  // fires from the HTTP worker thread.
+  // Drain the latest Downloader status into BOTH the per-card pill
+  // states (primary visibility surface — pill colors + label) and
+  // the top-of-body summary banner (mErrorMessage). Held under
+  // mDlStatusMtx because the listener fires from the HTTP worker
+  // thread.
   {
     std::lock_guard<std::mutex> lk(mDlStatusMtx);
+
+    // Per-card update — find the card for each tone_id we have a
+    // status for and push the latest state into its DOWNLOAD pill.
+    for (const auto& kv : mDlByToneId) {
+      auto it = mToneIdToCardIdx.find(kv.first);
+      if (it == mToneIdToCardIdx.end()) continue;
+      const std::size_t cardIdx = it->second;
+      if (cardIdx >= mCards.size() || !mCards[cardIdx]) continue;
+      mCards[cardIdx]->setDownloadState(kv.second.state, kv.second.label);
+    }
+
+    // Top-of-body banner — expires after the TTL the listener set
+    // so a stale "Downloaded: …" doesn't linger forever.
     if (!mDlStatusText.empty()) {
       if (std::chrono::steady_clock::now() < mDlStatusExpiry) {
         mErrorMessage = mDlStatusText;
       } else {
-        // TTL expired — clear both the download status and the banner
-        // so a stale "Downloaded: …" doesn't linger forever.
         mDlStatusText.clear();
         mErrorMessage.clear();
       }
@@ -576,10 +611,12 @@ void CloudView::onCardDownload(int toneIndex)
   if (toneIndex < 0 || toneIndex >= static_cast<int>(mTones.size())) return;
   const auto& tone = mTones[toneIndex];
 
-  // Surface a "Queued" banner immediately; Downloader's listener
-  // (wired in OnAttached) updates the banner through the remaining
-  // pipeline stages.
-  mErrorMessage = "Queued: " + tone.title;
+  // enqueueTone publishes the Queued event synchronously inside
+  // this call → the listener stashes mDlByToneId + mDlStatusText
+  // before we return → the next paint cycle drains both into the
+  // card's pill (turns kAccent, label "QUEUED") and the top-of-body
+  // banner. Click feedback is therefore one frame away — no manual
+  // mErrorMessage set needed.
   ::t3k::cloud::Downloader::instance().enqueueTone(tone);
   SetDirty(false);
 }
@@ -651,8 +688,27 @@ void CloudView::rebuildCards()
   // If mTones shrunk, hide the surplus IControls but keep them around —
   // RemoveControl frees, and rebuilding cards on every fresh search
   // would churn iPlug2's control list.
-  for (size_t i = mTones.size(); i < mCards.size(); ++i) {
+  for (std::size_t i = mTones.size(); i < mCards.size(); ++i) {
     if (mCards[i]) mCards[i]->Hide(true);
+  }
+
+  // Rebuild tone_id → card index map and restore each card's
+  // download-state from the (sticky-across-searches) mDlByToneId
+  // map. Without restore, a Done card that scrolls out of view and
+  // back in via a fresh search would forget it's already downloaded.
+  mToneIdToCardIdx.clear();
+  mToneIdToCardIdx.reserve(mTones.size());
+  std::lock_guard<std::mutex> lk(mDlStatusMtx);
+  for (std::size_t i = 0; i < mTones.size(); ++i) {
+    const int tid = mTones[i].id;
+    mToneIdToCardIdx[tid] = i;
+    if (auto it = mDlByToneId.find(tid); it != mDlByToneId.end()) {
+      if (mCards[i]) {
+        mCards[i]->setDownloadState(it->second.state, it->second.label);
+      }
+    } else if (mCards[i]) {
+      mCards[i]->setDownloadState(T3kCard::DownloadState::Idle);
+    }
   }
 }
 
@@ -668,7 +724,7 @@ void CloudView::layoutCards()
     if (!c) continue;
     if (i >= mTones.size()) { c->Hide(true); continue; }
 
-    const float top = mBodyRect.T + kBodyPad
+    const float top = mBodyRect.T + kStatusBannerH + kBodyPad
                       + static_cast<float>(i) * (kCardH + kCardGapY)
                       - mScrollOffset;
     const float bot = top + kCardH;
@@ -816,9 +872,12 @@ void CloudView::drawStateOverlay(IGraphics& g)
       if (mTones.empty()) {
         g.DrawText(body, "Loading\xE2\x80\xA6", mBodyRect);
       } else {
-        const IRECT bottom(mBodyRect.L, mBodyRect.B - 22.f,
-                           mBodyRect.R, mBodyRect.B);
-        g.DrawText(smallBody, "Loading more\xE2\x80\xA6", bottom);
+        // Render in the reserved top banner row — cards start at
+        // mBodyRect.T + kStatusBannerH + kBodyPad, so this rect can
+        // never be occluded by a card scrolling past the bottom.
+        const IRECT banner(mBodyRect.L, mBodyRect.T,
+                           mBodyRect.R, mBodyRect.T + kStatusBannerH);
+        g.DrawText(smallBody, "Loading more\xE2\x80\xA6", banner);
       }
       break;
     }
@@ -826,9 +885,9 @@ void CloudView::drawStateOverlay(IGraphics& g)
       if (mTones.empty()) {
         g.DrawText(body, "No tones match these filters.", mBodyRect);
       } else if (!mErrorMessage.empty()) {
-        const IRECT bottom(mBodyRect.L, mBodyRect.B - 22.f,
-                           mBodyRect.R, mBodyRect.B);
-        g.DrawText(smallBody, mErrorMessage.c_str(), bottom);
+        const IRECT banner(mBodyRect.L, mBodyRect.T,
+                           mBodyRect.R, mBodyRect.T + kStatusBannerH);
+        g.DrawText(smallBody, mErrorMessage.c_str(), banner);
       }
       break;
     }
