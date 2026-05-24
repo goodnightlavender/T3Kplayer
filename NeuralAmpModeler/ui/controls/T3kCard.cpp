@@ -134,25 +134,48 @@ T3kCard::T3kCard(const IRECT& bounds,
 , mData(std::move(data))
 , mOnSelect(std::move(onSelect))
 , mOnDownload(std::move(onDownload))
+, mLogicalRect(bounds)
 {
   RecomputeRects();
 }
 
 void T3kCard::OnResize()
 {
+  // Intentionally a no-op. CloudView calls setLogicalRect to update
+  // content layout; SetTargetAndDrawRECTs from layoutCards passes the
+  // CLAMPED rect for scissor clipping, and we DO NOT want
+  // RecomputeRects to run with that clamped rect (it would distort
+  // content as the card scrolls into the body's top edge).
+}
+
+void T3kCard::setLogicalRect(const IRECT& r)
+{
+  // Skip if unchanged — RecomputeRects is cheap but SetDirty fires a
+  // redraw and we call this on every scroll tick.
+  if (r.L == mLogicalRect.L && r.T == mLogicalRect.T
+      && r.R == mLogicalRect.R && r.B == mLogicalRect.B) return;
+  mLogicalRect = r;
   RecomputeRects();
+  SetDirty(false);
 }
 
 void T3kCard::RecomputeRects()
 {
   namespace th = ::t3k::theme;
 
-  // Inner content rect (after card padding).
-  const IRECT body = mRECT.GetPadded(-th::kS3);
+  // All content rects are derived from the LOGICAL rect — NOT mRECT.
+  // mRECT may be clamped by CloudView's scroll clipping so iPlug2's
+  // scissor stops the card from painting into the header. Content
+  // positioned by the logical rect overflows that clamped area at
+  // the top and is clipped automatically by the scissor.
 
-  // Player strip sits at the bottom of mRECT (only drawn when mSelected).
-  mPlayerStripRect = IRECT(mRECT.L, mRECT.B - kPlayerStripH,
-                           mRECT.R, mRECT.B);
+  // Inner content rect (after card padding).
+  const IRECT body = mLogicalRect.GetPadded(-th::kS3);
+
+  // Player strip sits at the bottom of mLogicalRect (only drawn when
+  // mSelected).
+  mPlayerStripRect = IRECT(mLogicalRect.L, mLogicalRect.B - kPlayerStripH,
+                           mLogicalRect.R, mLogicalRect.B);
 
   // Top band — body, minus the player strip when expanded.
   const float bandBottom = mSelected ? (mPlayerStripRect.T - th::kS2)
@@ -194,10 +217,13 @@ void T3kCard::Draw(IGraphics& g)
     hoverT = Lerp(mHoverFrom, mHoverTo, p);
   }
   const IColor surface = LerpColor(th::kBgSurface, th::kBgElevated, hoverT);
-  g.FillRoundRect(surface, mRECT, th::kRadiusLg);
+  // Background + border use mLogicalRect (the un-clamped position).
+  // mRECT may be tighter (clamped by CloudView for scroll clipping)
+  // and iPlug2's scissor — set from mRECT — clips the overflow.
+  g.FillRoundRect(surface, mLogicalRect, th::kRadiusLg);
 
   const IColor outline = mSelected ? th::kBorderActive : th::kBorder;
-  g.DrawRoundRect(outline, mRECT, th::kRadiusLg,
+  g.DrawRoundRect(outline, mLogicalRect, th::kRadiusLg,
                   /*pBlend*/ nullptr, /*thickness*/ 1.f);
 
   // ── Image square ──

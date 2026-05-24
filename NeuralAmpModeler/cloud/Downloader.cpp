@@ -74,7 +74,14 @@ std::string sanitizeFilename(const std::string& in)
   m.t3k_tone_id  = std::to_string(tone.id);
   m.t3k_model_id = std::to_string(model.id);
 
-  m.display_name    = tone.title;
+  // Prefer the per-model name as the display name when it differs
+  // from the tone title — this is how multi-variant tones (e.g.
+  // "BASSRIG '64 + DCX BOOST" / "BASSRIG '64") show distinct rows
+  // in the Library tab instead of three duplicate entries. Falls
+  // back to the tone title when the model has no distinct name.
+  m.display_name = (!model.name.empty() && model.name != tone.title)
+                     ? model.name
+                     : tone.title;
   m.t3k_creator     = tone.user.username;
   m.t3k_creator_id  = tone.user.id;
   m.t3k_description = tone.description.value_or("");

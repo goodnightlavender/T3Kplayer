@@ -95,6 +95,15 @@ public:
   void setDownloadState(DownloadState s, std::string label = {});
   DownloadState downloadState() const { return mDlState; }
 
+  // Set the card's LOGICAL position — the un-clamped rect used for
+  // content layout (image / title / pill positions). CloudView calls
+  // this on every scroll tick alongside SetTargetAndDrawRECTs(clamped)
+  // so the card's mRECT (used by iPlug2 to set the NanoVG scissor)
+  // can stay inside the body while content stays at its true
+  // scroll-position. This decoupling is what makes scroll clipping
+  // work without distorting card contents at the top edge.
+  void setLogicalRect(const IRECT& r);
+
 private:
   // Recompute the cached layout rects (image, right column, download pill,
   // player strip) given the current mRECT.
@@ -126,7 +135,12 @@ private:
   std::optional<IBitmap> mThumbBitmap;   // loaded lazily from mThumbPath
   bool        mThumbLoadFailed = false;  // gives up after one bad attempt
 
-  // Cached rects (rebuilt in OnResize / RecomputeRects).
+  // Logical layout rect — un-clamped by scroll clipping. Content
+  // rects below are derived from this; iPlug2's mRECT (used for the
+  // scissor) may be tighter.
+  IRECT mLogicalRect;
+
+  // Cached rects (rebuilt by RecomputeRects from mLogicalRect).
   IRECT mImageRect;
   IRECT mRightColRect;
   IRECT mDownloadRect;

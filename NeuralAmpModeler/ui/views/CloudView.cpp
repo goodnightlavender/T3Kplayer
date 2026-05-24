@@ -724,12 +724,36 @@ void CloudView::layoutCards()
     if (!c) continue;
     if (i >= mTones.size()) { c->Hide(true); continue; }
 
-    const float top = mBodyRect.T + kStatusBannerH + kBodyPad
+    // Cards start kStatusBannerH below the top of the body so the
+    // top status banner has its own row.
+    const float cardsTop = mBodyRect.T + kStatusBannerH + kBodyPad;
+    const float top = cardsTop
                       + static_cast<float>(i) * (kCardH + kCardGapY)
                       - mScrollOffset;
     const float bot = top + kCardH;
-    const bool offscreen = (bot < mBodyRect.T) || (top > mBodyRect.B);
-    c->SetTargetAndDrawRECTs(IRECT(bodyLeft, top, bodyRight, bot));
+
+    // Logical (un-clamped) rect — used by T3kCard for content
+    // positioning so the image / title / pill slide smoothly with
+    // scroll instead of distorting when the card crosses the top
+    // edge of the body.
+    const IRECT logical(bodyLeft, top, bodyRight, bot);
+
+    // Paint rect — clamped to the cards area. iPlug2 scissors each
+    // control to its mRECT, so this clamping is what prevents the
+    // card from painting into the header / search-bar area when
+    // scrolled. Content positioned by the LOGICAL rect overflows
+    // the clamped area at the top, and iPlug2's scissor clips it.
+    const IRECT clipped(bodyLeft,
+                        std::max(top, cardsTop),
+                        bodyRight,
+                        std::min(bot, mBodyRect.B));
+
+    c->setLogicalRect(logical);
+    c->SetTargetAndDrawRECTs(clipped);
+
+    const bool offscreen = (clipped.B <= clipped.T) ||
+                           (bot < mBodyRect.T) ||
+                           (top > mBodyRect.B);
     c->Hide(offscreen || mState == State::SignedOut);
   }
 }
