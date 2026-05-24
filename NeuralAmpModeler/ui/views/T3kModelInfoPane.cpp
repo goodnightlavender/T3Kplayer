@@ -15,18 +15,24 @@ using namespace ::iplug::igraphics;
 
 namespace {
 
-// v6 mockup constants (see .plg-info CSS).
-constexpr float kImageSize  = 150.f;
-constexpr float kGap        = 16.f;   // gap between image and text column
-constexpr float kPanePadH   = 22.f;
-constexpr float kPanePadV   = 4.f;
-constexpr float kTitleH     = 24.f;
-constexpr float kMetaRowH   = 16.f;
-constexpr float kChipRowH   = 18.f;
-constexpr float kChipH      = 18.f;
-constexpr float kChipPadH   = 8.f;
-constexpr float kChipGap    = 6.f;
-constexpr float kSectionGap = 5.f;
+// v6 mockup constants (see .plg-info CSS). Scaled ~×1.4–1.6 for the
+// 1280×800 default window so the info pane actually fills the body
+// between the (bigger) slot strip and (bigger) knob row, instead of
+// rendering a tiny image + a few lines of text at the top of an
+// otherwise-empty middle.
+constexpr float kImageSize  = 240.f;
+constexpr float kGap        = 24.f;
+constexpr float kPanePadH   = 32.f;
+constexpr float kPanePadV   = 12.f;
+constexpr float kTitleH     = 34.f;
+constexpr float kMetaRowH   = 22.f;
+constexpr float kChipRowH   = 24.f;
+constexpr float kChipH      = 24.f;
+constexpr float kChipPadH   = 10.f;
+constexpr float kChipGap    = 8.f;
+constexpr float kSectionGap = 8.f;
+constexpr float kTitleSize  = 28.f;   // was 20pt at the IText site
+constexpr float kDescSize   = 14.f;   // was 12pt
 
 // Approx ms-per-day used to bucket "N days ago" / "N weeks ago".
 constexpr int64_t kDayMs   = 24LL * 60LL * 60LL * 1000LL;
@@ -179,7 +185,7 @@ void T3kModelInfoPane::Draw(IGraphics& g)
 
   // Title.
   const IRECT titleRect(col.L, y, col.R, y + kTitleH);
-  const IText title(20.f, th::kText, th::kFontDisplay,
+  const IText title(kTitleSize, th::kText, th::kFontDisplay,
                     EAlign::Near, EVAlign::Middle);
   const std::string clampedTitle = clampToWidth(g, title, mSnapshot.displayName, col.W());
   g.DrawText(title, clampedTitle.c_str(), titleRect);
@@ -235,17 +241,20 @@ void T3kModelInfoPane::Draw(IGraphics& g)
     y = chipRowRect.B + kSectionGap;
   }
 
-  // Description (approximate 3-line clamp).
+  // Description — approximate "fill the remaining height" clamp. iPlug2's
+  // DrawText doesn't auto-wrap on width, so we estimate characters-per-
+  // line from the column width and lines-available from the remaining
+  // height. The clamp grows with the window so a bigger pane fits more
+  // text (instead of leaving the bottom half blank like the 3-line
+  // version did on a 1280×800 window).
   const IRECT descRect(col.L, y, col.R, body.B);
   if (descRect.H() > 0.f) {
-    const IText desc(12.f, IColor(255, 184, 184, 184),
+    const IText desc(kDescSize, IColor(255, 184, 184, 184),
                      th::kFontBody, EAlign::Near, EVAlign::Top);
-    // iPlug2's DrawText doesn't auto-wrap on width; we approximate a
-    // 3-line clamp by character count tuned to the column width. For
-    // Phase 2b this is good enough — Phase 3 can swap in a proper line
-    // breaker once a real long-description renders out of bounds.
-    const float charsPerLine = std::max(20.f, descRect.W() / 6.f);
-    const int maxChars = static_cast<int>(charsPerLine * 3.f);
+    const float lineH        = kDescSize + 4.f;       // descender-padded
+    const int   linesAvail   = std::max(3, static_cast<int>(descRect.H() / lineH));
+    const float charsPerLine = std::max(20.f, descRect.W() / (kDescSize * 0.45f));
+    const int   maxChars     = static_cast<int>(charsPerLine * static_cast<float>(linesAvail));
     std::string body_text = mSnapshot.description;
     if (static_cast<int>(body_text.size()) > maxChars) {
       body_text.resize(maxChars);

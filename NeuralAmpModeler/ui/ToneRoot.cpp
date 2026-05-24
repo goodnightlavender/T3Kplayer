@@ -122,17 +122,18 @@ void ToneRoot::OnResize()
   if (mRedoGlyph)  mRedoGlyph->SetTargetAndDrawRECTs(mRedoRect);
   if (mTabBar)     mTabBar->SetTargetAndDrawRECTs(mTabStripRect);
   if (mPresetPill) mPresetPill->SetTargetAndDrawRECTs(mPresetPillRect);
-  // Sign-in pill occupies the avatar slot when signed-out. It's
-  // narrower than the avatar circle is wide, so we anchor right and
-  // give it a fixed ~80px width.
+  // Sign-in pill occupies the avatar slot when signed-out. It's wider
+  // than the avatar circle, so center-on-avatar would push the pill
+  // past the right window edge. Anchor the pill's RIGHT edge to the
+  // avatar's right edge so it stays inside the header padding.
   if (mSignInPill) {
     const float pillW = 84.f;
     const float pillH = 24.f;
-    const float cx    = mAvatarRect.MW();
+    const float pillR = mAvatarRect.R;
     const float cy    = mAvatarRect.MH();
     mSignInPill->SetTargetAndDrawRECTs(
-        IRECT(cx - pillW * 0.5f, cy - pillH * 0.5f,
-              cx + pillW * 0.5f, cy + pillH * 0.5f));
+        IRECT(pillR - pillW, cy - pillH * 0.5f,
+              pillR,         cy + pillH * 0.5f));
   }
   if (mAccountMenu) {
     mAccountMenu->SetTargetAndDrawRECTs(accountMenuRect());
@@ -704,12 +705,15 @@ void ToneRoot::refreshAccountMenuItems()
       (::t3k::cloud::Session::instance().state() ==
        ::t3k::cloud::Session::State::SignedIn);
 
-#ifdef _DEBUG
-  // Mock sign-in visible only when signed-out (in Debug builds).
-  items.showMockSignIn = !signedIn;
-#else
-  items.showMockSignIn = false;
-#endif
+  // Mock sign-in is visible whenever no real OAuth client_id is
+  // configured AND the user is signed-out. The original "Debug-only"
+  // gate (#ifdef _DEBUG) was unreliable across the user's build
+  // configurations — iPlug2's vcxproj doesn't consistently propagate
+  // _DEBUG to every cpp. Tying visibility to isConfigured() captures
+  // the actual intent: this entry exists *because* the real flow
+  // can't run yet. Once kClientId is swapped in OAuthConfig.h, the
+  // entry disappears automatically.
+  items.showMockSignIn = !signedIn && !::t3k::cloud::OAuthFlow::isConfigured();
   items.showSignOut    = signedIn;
   if (signedIn) {
     if (auto u = ::t3k::cloud::Session::instance().currentUser();

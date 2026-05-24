@@ -14,12 +14,13 @@ namespace {
 
 // Hover-X visual constants. Sized to overlap the tile's top-right corner
 // (Decision 45).
-constexpr float kHoverXDiameter = 18.f;
-constexpr float kHoverXInset    = 9.f;   // pulls the X half-out of the tile
+constexpr float kHoverXDiameter = 22.f;
+constexpr float kHoverXInset    = 11.f;  // pulls the X half-out of the tile
 
 // Inner padding around the gear icon — keeps the silhouette off the tile
-// edges so the selection ring is legible.
-constexpr float kIconInset = 8.f;
+// edges so the selection ring is legible. Bumped to match the larger
+// 88×88 tile (was 8 for the original 64×64).
+constexpr float kIconInset = 12.f;
 
 // Per-frame ease factor applied to the displayed drag offset. Higher = snappier;
 // 0.4 gives a perceptibly weighted feel without lagging the cursor noticeably.

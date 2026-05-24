@@ -22,15 +22,18 @@ using namespace iplug::igraphics;
 namespace {
 
 // Section heights (match the v6 mockup .plg-strip / .plg-info / .plg-knobs).
-constexpr float kStripH = 96.f;
-constexpr float kKnobH  = 78.f;
+// Scaled ~×1.36 for the 1280×800 default window — without this the strip and
+// knob row hugged the top and bottom of a tall body, leaving an oversized
+// empty middle where the info pane couldn't fill the space.
+constexpr float kStripH = 132.f;
+constexpr float kKnobH  = 108.f;
 
-// Slot tile dimensions (Decision 47).
-constexpr float kSlotW        = 64.f;
-constexpr float kSlotFullRigW = 82.f;
-constexpr float kSlotAddW     = 44.f;
-constexpr float kSlotH        = 64.f;
-constexpr float kSlotGap      = 8.f;
+// Slot tile dimensions (Decision 47). Scaled to match the bigger strip.
+constexpr float kSlotW        = 88.f;
+constexpr float kSlotFullRigW = 116.f;
+constexpr float kSlotAddW     = 60.f;
+constexpr float kSlotH        = 88.f;
+constexpr float kSlotGap      = 12.f;
 
 float widthForSlot(GearType t)
 {
