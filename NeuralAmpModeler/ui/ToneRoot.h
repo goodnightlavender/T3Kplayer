@@ -20,9 +20,12 @@
 #include <cstdint>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include "IControl.h"
 #include "IGraphics.h"
+
+#include "../library/PresetState.h"  // for UndoEntry
 
 // Forward-declare upstream plug-in to avoid pulling its full header chain in.
 class NeuralAmpModeler;
@@ -39,6 +42,8 @@ class T3kLooseGlyph;
 class T3kPresetPill;
 class T3kPresetOverlay;
 class T3kClickBackdrop;
+class T3kDownloadsPill;
+class T3kDownloadsPopover;
 class T3kFirstRunModal;
 class T3kRestoreModal;
 class T3kSettingsModal;
@@ -76,6 +81,12 @@ public:
   void switchTab(Tab tab);
   void togglePresetOverlay();
   void toggleAccountMenu();
+  void toggleDownloadsPopover();
+
+  // Routes popup-menu selections from per-preset Rename/Delete + the
+  // confirm-delete menu back through PresetStore.
+  void OnPopupMenuSelection(iplug::igraphics::IPopupMenu* pSelectedMenu,
+                            int valIdx) override;
 
 private:
   // Layout helpers — computed in OnResize, used in OnAttached to size children.
@@ -87,6 +98,7 @@ private:
   iplug::igraphics::IRECT mUndoRect;
   iplug::igraphics::IRECT mRedoRect;
   iplug::igraphics::IRECT mTabStripRect;
+  iplug::igraphics::IRECT mDownloadsPillRect;
   iplug::igraphics::IRECT mPresetPillRect;
   iplug::igraphics::IRECT mAvatarRect;
 
@@ -98,6 +110,9 @@ private:
   T3kLooseGlyph*   mUndoGlyph   = nullptr;
   T3kLooseGlyph*   mRedoGlyph   = nullptr;
   T3kTabBar*       mTabBar      = nullptr;
+  T3kDownloadsPill*    mDownloadsPill     = nullptr;
+  T3kDownloadsPopover* mDownloadsPopover  = nullptr;
+  T3kClickBackdrop*    mDownloadsBackdrop = nullptr;
   T3kPresetPill*   mPresetPill  = nullptr;
   // Phase 5 auth surface — pill OR avatar shows depending on Session
   // state; the account menu drops under the avatar/pill when clicked.
@@ -210,6 +225,58 @@ private:
   // Toast surfacing — store + auto-expire a 4-second status line
   // under the header. Thread-safe.
   void setSignInStatus(const std::string& msg, int durationMs = 4000);
+
+  // ── Polish 3c: undo/redo for chain mutations ─────────────────────
+  //
+  // Tiny LIFO stack of (before, after) snapshots taken via
+  // ToneView::snapshotPresetState. Scope is intentionally narrow —
+  // we cover "load preset" and "load model from library". Per-knob
+  // tweaks and per-slot drag-reorder live inside ToneView and would
+  // need deeper hooks; they aren't included in the undo trace yet.
+  //
+  // mUndoApplyInProgress suppresses re-entrant pushUndo calls during
+  // applyPresetState (ToneView fires its own mutation callbacks).
+  struct UndoEntry {
+    ::t3k::library::PresetState before;
+    ::t3k::library::PresetState after;
+  };
+  std::vector<UndoEntry> mUndoStack;
+  std::vector<UndoEntry> mRedoStack;
+  bool                   mUndoApplyInProgress = false;
+
+  // Snapshot current state and push the partial entry. The matching
+  // commitUndo writes the "after" half once the mutation lands. If
+  // the mutation never lands the partial entry stays — that's fine,
+  // a stale "before" still rolls back correctly.
+  void pushUndo();
+  void commitUndo();
+  void undo();
+  void redo();
+  // Flip glyph enabled-state to match stack contents.
+  void updateUndoGlyphs();
+
+  // Per-preset row right-click context — set by the overlay's row
+  // right-click handler before iPlug2's popup-menu mechanism opens
+  // the menu via CreatePopupMenu. Used by OnPopupMenuSelection to
+  // know which preset to rename / delete.
+  int64_t     mPendingPresetMenuId = 0;
+  std::string mPendingPresetMenuName;
+  // The "currently active" popup-menu kind, so OnPopupMenuSelection
+  // can route the selection correctly (multiple menus share the
+  // single OnPopupMenuSelection hook).
+  enum class PendingMenuKind {
+    None,
+    PresetRowAction,    // Rename / Delete
+    PresetDeleteConfirm,
+  };
+  PendingMenuKind mPendingMenuKind = PendingMenuKind::None;
+
+  // Phase 3c: Inline Save-As text entry, opened by the preset
+  // overlay's "SAVE AS…" button. The flag tells OnTextEntryCompletion
+  // whether it's receiving a Save-As name (true) or a Rename name
+  // (false).
+  enum class PendingTextEntry { None, SaveAs, RenamePreset };
+  PendingTextEntry mPendingTextEntry = PendingTextEntry::None;
 };
 
 }  // namespace t3k::ui

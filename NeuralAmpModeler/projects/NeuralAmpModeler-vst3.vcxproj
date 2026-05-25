@@ -379,6 +379,8 @@
     <ClInclude Include="..\ui\controls\T3kDragGhost.h" />
     <ClInclude Include="..\ui\controls\T3kPresetPill.h" />
     <ClInclude Include="..\ui\controls\T3kPresetOverlay.h" />
+    <ClInclude Include="..\ui\controls\T3kDownloadsPill.h" />
+    <ClInclude Include="..\ui\controls\T3kDownloadsPopover.h" />
     <ClInclude Include="..\ui\controls\T3kRenameOverlay.h" />
     <ClInclude Include="..\ui\controls\T3kSignInPill.h" />
     <ClInclude Include="..\ui\controls\T3kAccountMenu.h" />
@@ -533,6 +535,8 @@
     <ClCompile Include="..\ui\controls\T3kDragGhost.cpp" />
     <ClCompile Include="..\ui\controls\T3kPresetPill.cpp" />
     <ClCompile Include="..\ui\controls\T3kPresetOverlay.cpp" />
+    <ClCompile Include="..\ui\controls\T3kDownloadsPill.cpp" />
+    <ClCompile Include="..\ui\controls\T3kDownloadsPopover.cpp" />
     <ClCompile Include="..\ui\controls\T3kRenameOverlay.cpp" />
     <ClCompile Include="..\ui\controls\T3kSignInPill.cpp" />
     <ClCompile Include="..\ui\controls\T3kAccountMenu.cpp" />

@@ -234,9 +234,24 @@ void NeuralAmpModeler::ProcessBlock(iplug::sample** inputs, iplug::sample** outp
   if (chainScratch.size() < numFrames)
     chainScratch.resize(numFrames);
   chainScratchPtr[0] = chainScratch.data();
-  sample** currentPointers = toneStackOutPointers;
-  for (auto& es : mExtraSlots)
+
+  // Drain any pending chain-order update before walking the chain.
+  // Lock-free: UI thread filled mPendingChainOrder + set dirty; we
+  // atomically clear the flag and copy in. Skipped on common path
+  // when no reorder happened.
+  if (mChainOrderDirty.exchange(false, std::memory_order_acquire))
   {
+    mChainOrderLen = mPendingChainOrderLen;
+    for (int i = 0; i < mChainOrderLen; ++i)
+      mChainOrder[i] = mPendingChainOrder[i];
+  }
+
+  sample** currentPointers = toneStackOutPointers;
+  for (int orderIdx = 0; orderIdx < mChainOrderLen; ++orderIdx)
+  {
+    const int extraIdx = mChainOrder[orderIdx];
+    if (extraIdx < 0 || extraIdx >= kNumExtraSlots) continue;
+    auto& es = mExtraSlots[extraIdx];
     if (es.model == nullptr)
       continue;
     // Apply per-slot input gain into scratch.
@@ -913,6 +928,16 @@ std::string NeuralAmpModeler::StageModelInSlot(int slot, const WDL_String& namPa
     return e.what();
   }
   return "";
+}
+
+void NeuralAmpModeler::SetChainOrder(const int* order, int count)
+{
+  if (count < 0)               count = 0;
+  if (count > kNumExtraSlots)  count = kNumExtraSlots;
+  for (int i = 0; i < count; ++i)
+    mPendingChainOrder[i] = order ? order[i] : i;
+  mPendingChainOrderLen = count;
+  mChainOrderDirty.store(true, std::memory_order_release);
 }
 
 void NeuralAmpModeler::UnloadSlot(int slot)

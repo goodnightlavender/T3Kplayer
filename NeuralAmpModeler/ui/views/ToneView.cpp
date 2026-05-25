@@ -411,12 +411,10 @@ void ToneView::onSlotRemoved(int slotIndex)
       mInfoPane->clear();
     }
   }
-  // Phase 10 — the removed entry's DSP slot is now free; resync so the
-  // remaining models pack down into 0..N-1.
-  // (Plugin::UnloadSlot is called via syncDspChain for any leftover
-  // DSP slot. We don't call it directly here so dspSlot reassignment
-  // stays centralized.)
-  for (auto& ls : mChain.loaded) ls.dspSlot = -1;  // force restage walk
+  // Removed entry: syncDspChain detects it (its slot is no longer in
+  // mChain.loaded) and unloads the corresponding DSP slot. Remaining
+  // models stay pinned to their existing dspSlot — no restage, no
+  // audio dropout. The processing order updates via SetChainOrder.
   rebuildStrip();
   syncDspChain();
   if (mChain.selectedIndex >= 0) onSlotSelected(mChain.selectedIndex);
@@ -501,9 +499,10 @@ void ToneView::onSlotDragEnd(int slotIndex, float x, float y)
   // Keep the selection on the just-moved item.
   mChain.selectedIndex = mChain.loaded[adjustedDst].slotIndex;
 
-  // Phase 10 — reorder changed the rank order, so DSP slots need to
-  // shuffle to match. Force a re-stage walk.
-  for (auto& ls : mChain.loaded) ls.dspSlot = -1;
+  // Reorder doesn't move models between DSP slots — they stay
+  // pinned. syncDspChain just emits a new SetChainOrder reflecting
+  // the new visual rank, and ProcessBlock walks the chain in that
+  // order on the next audio tick. No restage, no audio glitch.
   rebuildStrip();
   syncDspChain();
   if (mChain.selectedIndex >= 0) onSlotSelected(mChain.selectedIndex);
@@ -735,10 +734,20 @@ void ToneView::loadModelIntoSlot(int slotIndex,
 
 void ToneView::syncDspChain()
 {
-  // Walk the loaded entries in visual slotIndex order (the audible
-  // chain runs left → right: pedals 0..4, amp 5, cab 6, outboards
-  // 7..11). Stage the first kNumChainSlots into the DSP; anything
-  // beyond that stays visible but isn't in the audio path.
+  // 2026-05-25 refactor: stable DSP slot assignment + chain-order
+  // indirection. Each loaded entry is PINNED to its first-assigned
+  // ExtraSlot once staged — subsequent reorders only update the
+  // processing order via mPlugin.SetChainOrder(), never restage the
+  // model. That kills the audio-pop the user reported.
+  //
+  // Slot 0 (mModel) is reserved for legacy paths and intentionally
+  // unused by ToneView — all chain entries go to ExtraSlots 1..N-1,
+  // giving us up to kNumChainSlots-1 audible models.
+  const int kExtraSlots = kNumChainSlots - 1;
+
+  // 1. Walk loaded entries in visual order so excess entries beyond
+  //    the DSP budget are deterministically the last ones to fall
+  //    off the audible chain.
   std::vector<ChainView::LoadedSlot*> ordered;
   ordered.reserve(mChain.loaded.size());
   for (auto& ls : mChain.loaded) ordered.push_back(&ls);
@@ -747,36 +756,66 @@ void ToneView::syncDspChain()
               return a->slotIndex < b->slotIndex;
             });
 
-  int dspIdx = 0;
+  // 2. First pass — invalidate dspSlot assignments whose path changed
+  //    on the plugin side (rare; happens after a state-chunk restore).
+  //    Mark any extra slots no longer claimed by a loaded entry as
+  //    "free" so step 3 can reuse them.
+  bool slotInUse[kNumChainSlots] = { false };
   for (auto* ls : ordered) {
-    if (dspIdx >= kNumChainSlots) {
-      ls->dspSlot = -1;  // beyond the DSP budget — silent in audio
-      continue;
+    if (ls->dspSlot >= 1 && ls->dspSlot < kNumChainSlots
+        && !ls->absPath.empty()
+        && std::string(mPlugin.GetSlotNamPath(ls->dspSlot)) == ls->absPath) {
+      slotInUse[ls->dspSlot] = true;
+    } else {
+      ls->dspSlot = -1;  // needs (re)staging into a free slot
     }
+  }
+
+  // 3. Assign unstaged entries to the first free DSP slot. Stage them
+  //    into the plugin — this is the ONLY path that triggers a
+  //    NeuralAmpModeler::StageModelInSlot now, and it only fires for
+  //    genuinely new models.
+  for (auto* ls : ordered) {
     if (ls->absPath.empty()) {
       ls->dspSlot = -1;
       continue;
     }
-    // Only re-stage if path or DSP slot has changed (loading a NAM
-    // model is expensive — ~100ms+).
-    const bool needRestage =
-        (ls->dspSlot != dspIdx) ||
-        (dspIdx == 0
-            ? (std::string(mPlugin.GetSlotNamPath(0)) != ls->absPath)
-            : (std::string(mPlugin.GetSlotNamPath(dspIdx)) != ls->absPath));
-    if (needRestage) {
+    if (ls->dspSlot < 0) {
+      // Find a free extra slot (skip 0 — reserved for legacy mModel).
+      int free = -1;
+      for (int i = 1; i < kNumChainSlots; ++i) {
+        if (!slotInUse[i]) { free = i; break; }
+      }
+      if (free < 0) {
+        // Over budget — silent in audio.
+        continue;
+      }
       WDL_String wp(ls->absPath.c_str());
-      mPlugin.StageModelInSlot(dspIdx, wp);
-      ls->dspSlot = dspIdx;
+      mPlugin.StageModelInSlot(free, wp);
+      ls->dspSlot     = free;
+      slotInUse[free] = true;
     }
-    ++dspIdx;
   }
-  // Unload any DSP slots beyond the last staged one.
-  for (int i = dspIdx; i < kNumChainSlots; ++i) {
-    if (mPlugin.SlotHasModel(i)) {
+
+  // 4. Free any DSP slots that no longer correspond to a loaded entry.
+  for (int i = 1; i < kNumChainSlots; ++i) {
+    if (!slotInUse[i] && mPlugin.SlotHasModel(i)) {
       mPlugin.UnloadSlot(i);
     }
   }
+
+  // 5. Push the new processing order. Walk `ordered` (visual order)
+  //    and emit the ExtraSlot indices (dspSlot-1, zero-based) for
+  //    each entry that landed in the audible chain.
+  int chainOrder[kNumChainSlots] = { 0 };
+  int chainOrderLen = 0;
+  for (auto* ls : ordered) {
+    if (ls->dspSlot < 1 || ls->dspSlot >= kNumChainSlots) continue;
+    if (chainOrderLen < kExtraSlots) {
+      chainOrder[chainOrderLen++] = ls->dspSlot - 1;
+    }
+  }
+  mPlugin.SetChainOrder(chainOrder, chainOrderLen);
 }
 
 }  // namespace t3k::ui

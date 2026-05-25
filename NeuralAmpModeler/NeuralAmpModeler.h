@@ -252,6 +252,18 @@ public:
   // mExtraSlots[slot-1].namPath. Returns "" for empty slots.
   const char* GetSlotNamPath(int slot) const;
   bool        SlotHasModel(int slot) const;
+
+  // ── Chain order indirection (2026-05-25, fixes pops on reorder) ─
+  // ToneView pushes the desired processing order for the ExtraSlots
+  // here. ProcessBlock walks the ExtraSlots in this order instead of
+  // the static array order. Reorder now updates the chain order
+  // WITHOUT restaging models — so no audio dropout.
+  //
+  // `order` is an array of indices into mExtraSlots (0..N-2), in the
+  // order they should run. `count` clamps to (kNumChainSlots - 1).
+  // Lock-free for the audio thread: writer fills a pending buffer +
+  // sets an atomic dirty flag; ProcessBlock drains atomically.
+  void SetChainOrder(const int* order, int count);
   void OnReset() override;
   void OnIdle() override;
 
@@ -399,6 +411,17 @@ private:
   // Guards re-entrant push-from-active-slot → SetParameterValue →
   // OnParamChange → push-back loops.
   bool mInActiveSlotPush = false;
+
+  // Chain-order indirection (2026-05-25). Audio thread reads
+  // mChainOrder[]; UI thread writes mPendingChainOrder[] + sets
+  // mChainOrderDirty. The pending buffer is drained at the top of
+  // the chain section in ProcessBlock. Default identity order.
+  static constexpr int kNumExtraSlots = kNumChainSlots - 1;
+  int mChainOrder[kNumExtraSlots]        = {0, 1, 2, 3};
+  int mChainOrderLen                     = kNumExtraSlots;
+  int mPendingChainOrder[kNumExtraSlots] = {0, 1, 2, 3};
+  int mPendingChainOrderLen              = kNumExtraSlots;
+  std::atomic<bool> mChainOrderDirty{false};
 
   // Helpers — see NeuralAmpModeler.cpp.
   void  _ApplyEqToSlot(int slot);

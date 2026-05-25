@@ -59,6 +59,10 @@ public:
   std::function<void()>                   onSaveAs;
   std::function<void()>                   onMoreMenu;
   std::function<void(const std::string&)> onSearchChanged;
+  // Polish 3c — fired when a preset row is right-clicked. Parent
+  // typically opens a popup menu (Rename / Delete) at the row.
+  std::function<void(int64_t /*id*/, const std::string& /*name*/)>
+                                          onRowContextMenu;
 
   void Draw(IGraphics& g) override;
   void OnMouseDown(float x, float y, const IMouseMod& mod) override;

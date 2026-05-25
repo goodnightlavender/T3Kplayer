@@ -13,6 +13,8 @@
 // Child controls + views.
 #include "controls/T3kAccountMenu.h"
 #include "controls/T3kClickBackdrop.h"
+#include "controls/T3kDownloadsPill.h"
+#include "controls/T3kDownloadsPopover.h"
 #include "controls/T3kLogo.h"
 #include "controls/T3kLooseGlyph.h"
 #include "controls/T3kPresetOverlay.h"
@@ -54,6 +56,9 @@ constexpr float kAvatarW        = 28.f;
 constexpr float kPresetGap      = 10.f;  // between preset pill and avatar
 constexpr float kPresetOverlayW = 280.f;
 constexpr float kPresetOverlayH = 210.f;
+constexpr float kDownloadsPillW = 60.f;
+constexpr float kDownloadsPopoverW = 320.f;
+constexpr float kDownloadsPopoverH = 260.f;
 
 // Phase 5 — account menu sized to comfortably hold the header + 3 rows.
 constexpr float kAccountMenuW = 220.f;
@@ -112,11 +117,18 @@ void ToneRoot::OnResize()
                           headerPad.MH() - kPresetPillH * 0.5f,
                           rx,
                           headerPad.MH() + kPresetPillH * 0.5f);
+  // Downloads pill — sits immediately to the LEFT of the preset pill,
+  // separated by kS2.
+  rx = mPresetPillRect.L - t3k::theme::kS2;
+  mDownloadsPillRect = IRECT(rx - kDownloadsPillW,
+                             headerPad.MH() - kPresetPillH * 0.5f,
+                             rx,
+                             headerPad.MH() + kPresetPillH * 0.5f);
 
   // Center cluster: tab bar fills the space between the loose-glyphs and
-  // the preset pill, but the T3kTabBar centers its own labels inside.
+  // the downloads pill, but the T3kTabBar centers its own labels inside.
   const float tabL = mRedoRect.R + t3k::theme::kS3;
-  const float tabR = mPresetPillRect.L - t3k::theme::kS3;
+  const float tabR = mDownloadsPillRect.L - t3k::theme::kS3;
   mTabStripRect = IRECT(tabL, headerPad.T, tabR, headerPad.B);
 
   // Resize header children if they already exist.
@@ -124,6 +136,7 @@ void ToneRoot::OnResize()
   if (mUndoGlyph)  mUndoGlyph->SetTargetAndDrawRECTs(mUndoRect);
   if (mRedoGlyph)  mRedoGlyph->SetTargetAndDrawRECTs(mRedoRect);
   if (mTabBar)     mTabBar->SetTargetAndDrawRECTs(mTabStripRect);
+  if (mDownloadsPill) mDownloadsPill->SetTargetAndDrawRECTs(mDownloadsPillRect);
   if (mPresetPill) mPresetPill->SetTargetAndDrawRECTs(mPresetPillRect);
   // Sign-in pill occupies the avatar slot when signed-out. It's wider
   // than the avatar circle, so center-on-avatar would push the pill
@@ -159,6 +172,17 @@ void ToneRoot::OnResize()
   // own footprint reaches it.
   if (mPresetBackdrop) mPresetBackdrop->SetTargetAndDrawRECTs(mRECT);
 
+  // Downloads popover — anchored under the downloads pill's left edge,
+  // expanding to the right. (Stays left-aligned with the pill since
+  // the pill itself is narrower than the popover.)
+  if (mDownloadsPopover) {
+    const float top  = mDownloadsPillRect.B + t3k::theme::kS2;
+    const float left = mDownloadsPillRect.L;
+    mDownloadsPopover->SetTargetAndDrawRECTs(
+        IRECT(left, top, left + kDownloadsPopoverW, top + kDownloadsPopoverH));
+  }
+  if (mDownloadsBackdrop) mDownloadsBackdrop->SetTargetAndDrawRECTs(mRECT);
+
   // Legacy overlays — hidden; bounded to avoid 0-sized rects.
   if (mDownloadsView) mDownloadsView->SetTargetAndDrawRECTs(IRECT(0.f, 0.f, 1.f, 1.f));
   if (mSettingsView)  mSettingsView->SetTargetAndDrawRECTs(IRECT(0.f, 0.f, 1.f, 1.f));
@@ -189,10 +213,10 @@ void ToneRoot::OnAttached()
   // those code points so they rendered as tofu — see ICON_UNDO_FN /
   // ICON_REDO_FN SVG icons instead.
   mUndoGlyph = new T3kLooseGlyph(mUndoRect, ICON_UNDO_FN,
-                                 /*onClick*/ []() {},
-                                 /*disabled*/ false);
+                                 /*onClick*/ [this]() { this->undo(); },
+                                 /*disabled*/ true);
   mRedoGlyph = new T3kLooseGlyph(mRedoRect, ICON_REDO_FN,
-                                 /*onClick*/ []() {},
+                                 /*onClick*/ [this]() { this->redo(); },
                                  /*disabled*/ true);
   g->AttachControl(mUndoGlyph);
   g->AttachControl(mRedoGlyph);
@@ -204,6 +228,14 @@ void ToneRoot::OnAttached()
       /*onChanged*/ [this](int idx) { this->switchTab(static_cast<Tab>(idx)); },
       /*initial*/ static_cast<int>(Tab::Tone));
   g->AttachControl(mTabBar);
+
+  // Downloads pill — toggles the popover below. Attached BEFORE the
+  // preset pill in the control list so the preset pill stays last in
+  // the right-cluster z-order (consistent with the existing pattern).
+  mDownloadsPill = new T3kDownloadsPill(
+      mDownloadsPillRect,
+      /*onToggleOverlay*/ [this] { this->toggleDownloadsPopover(); });
+  g->AttachControl(mDownloadsPill);
 
   // Preset pill — toggles the overlay below.
   mPresetPill = new T3kPresetPill(
@@ -236,12 +268,17 @@ void ToneRoot::OnAttached()
   mLibraryView = new LibraryView(mBodyRect,
       [this](const std::string& toneId, const std::string& modelId) {
         if (!mToneView) return;
+        // Snapshot the chain BEFORE the load so the user can undo it
+        // (Polish 3c). commitUndo writes the "after" half once the
+        // mutation lands.
+        this->pushUndo();
         // -1 → ToneView::loadModelIntoSlot picks the first free pedal
         // slot. The user can still drop the model into a specific
         // slot by selecting that slot first (Phase 3.5 wiring).
         mToneView->loadModelIntoSlot(-1, toneId, modelId);
         switchTab(Tab::Tone);
         if (mPresetPill) mPresetPill->setDirty(true);
+        this->commitUndo();
       });
   mCloudView   = new CloudView(mBodyRect);
   g->AttachControl(mToneView);
@@ -307,6 +344,26 @@ void ToneRoot::OnAttached()
   // ── Preset overlay — created hidden, must be attached last ────
   attachPresetOverlay(/*startVisible*/ false,
                       /*activeId*/ ::t3k::library::PresetStore::instance().activeId());
+
+  // ── Downloads popover — backdrop + panel, attached AFTER preset
+  //    overlay so the popover sits above strip tiles / cards. Same
+  //    "recreate on top" dance applies when toggling visible.
+  mDownloadsBackdrop = new T3kClickBackdrop(mRECT,
+      /*onClick*/ [this] {
+        if (mDownloadsPopover && !mDownloadsPopover->IsHidden())
+          toggleDownloadsPopover();
+      });
+  g->AttachControl(mDownloadsBackdrop);
+  mDownloadsBackdrop->Hide(true);
+
+  mDownloadsPopover = new T3kDownloadsPopover(
+      IRECT(0.f, 0.f, 1.f, 1.f),
+      /*provider*/ [this]() {
+        return mDownloadsPill ? mDownloadsPill->snapshotRows()
+                              : std::vector<T3kDownloadsPill::Row>{};
+      });
+  g->AttachControl(mDownloadsPopover);
+  mDownloadsPopover->Hide(true);
 
   // ── Phase 5: account menu — attached AFTER preset overlay so it
   //    sits at the top of the z-order (clicking the avatar after the
@@ -561,35 +618,58 @@ void ToneRoot::attachPresetOverlay(bool startVisible, int64_t activeId)
   };
   mPresetOverlay->onSave     = [this]() { this->saveCurrentPreset(); };
   mPresetOverlay->onSaveAs   = [this]() {
-    // The overlay doesn't (yet) own an inline name-entry surface, so
-    // prompt via iPlug2's CreateTextEntry. The completion handler on
-    // ToneRoot is plumbed through the preset overlay's own
-    // OnTextEntryCompletion, which routes to a fresh saveAs.
+    // Inline name-entry via iPlug2's CreateTextEntry; the completion
+    // handler routes through ToneRoot::OnTextEntryCompletion (the
+    // overlay forwards its own completion to ToneRoot).
     if (auto* ui = GetUI()) {
       namespace th = ::t3k::theme;
-      // Dark text-entry bg/fg so the system field doesn't flash white.
       const IText t = IText(th::kTypeBody, th::kText, th::kFontBody,
                             EAlign::Near, EVAlign::Middle)
                           .WithTEColors(th::kBgSurface, th::kText);
-      // Anchor the prompt over the overlay center so it has a known
-      // location regardless of overlay size.
       const IRECT prompt(mPresetPillRect.L,
                          mPresetPillRect.B + t3k::theme::kS2,
                          mPresetPillRect.R,
                          mPresetPillRect.B + t3k::theme::kS2 + 28.f);
+      mPendingTextEntry = PendingTextEntry::SaveAs;
       ui->CreateTextEntry(*this, t, prompt, "New preset");
     }
   };
+  // Per-row right-click → Rename/Delete popup. The overlay calls this
+  // whenever the user right-clicks a preset row; we stash the row id
+  // + name and open iPlug2's CreatePopupMenu. OnPopupMenuSelection
+  // (overridden below) routes the choice back to PresetStore.
+  mPresetOverlay->onRowContextMenu = [this](int64_t id, const std::string& name) {
+    if (auto* ui = GetUI()) {
+      mPendingPresetMenuId = id;
+      mPendingPresetMenuName = name;
+      mPendingMenuKind = PendingMenuKind::PresetRowAction;
+      // Single static menu; reused. iPlug2 owns its lifetime via the
+      // CreatePopupMenu call's reference.
+      static iplug::igraphics::IPopupMenu rowMenu;
+      rowMenu.Clear();
+      rowMenu.AddItem("Rename\xE2\x80\xA6");
+      rowMenu.AddItem("Delete\xE2\x80\xA6");
+      const IRECT anchor(mPresetPillRect.L, mPresetPillRect.B,
+                         mPresetPillRect.R, mPresetPillRect.B + 4.f);
+      ui->CreatePopupMenu(*this, rowMenu, anchor);
+    }
+  };
   mPresetOverlay->onMoreMenu = [this]() {
-    // Phase 3 ships a minimal More menu: Rename + Delete the active
-    // preset. The pop-up uses iPlug2's CreatePopupMenu, and the
-    // selection is handled in ToneRoot::OnPopupMenuSelection (not yet
-    // overridden — see TODO). For Phase 3 we leave this as a stub and
-    // surface a comment so the test plan can catch it.
-    //
-    // TODO(Phase 3.5): wire ToneRoot::OnPopupMenuSelection to call
-    // PresetStore::rename / remove.
-    (void)this;
+    // The overflow "⋯" button on the action row now opens the
+    // active-preset's context menu (Rename / Delete) — same as
+    // right-clicking the active row directly. Pulls active id from
+    // PresetStore so a stale overlay state doesn't operate on the
+    // wrong row.
+    const int64_t active = ::t3k::library::PresetStore::instance().activeId();
+    if (active <= 0) return;
+    // Resolve name from the current list.
+    std::string activeName;
+    for (const auto& r : ::t3k::library::PresetStore::instance().list()) {
+      if (r.id == active) { activeName = r.name; break; }
+    }
+    if (mPresetOverlay && mPresetOverlay->onRowContextMenu) {
+      mPresetOverlay->onRowContextMenu(active, activeName);
+    }
   };
   g->AttachControl(mPresetOverlay);
   mPresetOverlay->Hide(!startVisible);
@@ -642,10 +722,16 @@ void ToneRoot::loadPreset(int64_t presetId)
   if (presetId <= 0 || !mToneView) return;
   auto state = ::t3k::library::PresetStore::instance().load(presetId);
   if (!state.has_value()) return;
+  // Snapshot BEFORE the apply so undo can roll back to the prior
+  // chain. mUndoApplyInProgress suppresses pushUndo during undo()'s
+  // own apply (which calls this path indirectly via setActiveId
+  // checks — defensive).
+  this->pushUndo();
   ::t3k::library::PresetStore::instance().setActiveId(presetId);
   mToneView->applyPresetState(*state);
   if (mPresetPill) mPresetPill->setDirty(false);
   refreshPresetList();
+  this->commitUndo();
 }
 
 void ToneRoot::syncPillToActivePreset()
@@ -662,12 +748,40 @@ void ToneRoot::syncPillToActivePreset()
 
 void ToneRoot::OnTextEntryCompletion(const char* str, int /*valIdx*/)
 {
-  // Phase 3: only the Save-As… overlay routes through here. Empty /
-  // null str → cancelled.
+  // Polish 3c: two text-entry paths converge here — Save-As… (the
+  // overlay's primary "create a new preset" flow) and Rename (the
+  // per-row context-menu action). mPendingTextEntry tells us which.
+  const PendingTextEntry kind = mPendingTextEntry;
+  mPendingTextEntry = PendingTextEntry::None;
+
   if (!str) return;
   const std::string name(str);
   if (name.empty()) return;
-  saveAsPreset(name);
+
+  switch (kind) {
+    case PendingTextEntry::SaveAs:
+      saveAsPreset(name);
+      // Save-As reattaches the overlay-on-top so the new entry shows
+      // even if the strip rebuilt during the operation.
+      if (mPresetOverlay && !mPresetOverlay->IsHidden()) {
+        recreatePresetOverlayOnTop();
+      }
+      break;
+    case PendingTextEntry::RenamePreset:
+      if (mPendingPresetMenuId > 0) {
+        ::t3k::library::PresetStore::instance().rename(mPendingPresetMenuId, name);
+        mPendingPresetMenuId = 0;
+        mPendingPresetMenuName.clear();
+        refreshPresetList();
+      }
+      break;
+    case PendingTextEntry::None:
+      // No active flow — treat as Save-As for backwards-compat with
+      // the original PresetOverlay::onSaveAs path that didn't set the
+      // pending flag.
+      saveAsPreset(name);
+      break;
+  }
 }
 
 void ToneRoot::recreateSettingsModalOnTop()
@@ -866,6 +980,182 @@ void ToneRoot::setSignInStatus(const std::string& msg, int durationMs)
   // SetDirty(false) — safe to call from any thread per iPlug2's
   // tolerance for the dirty flag. The next paint cycle picks it up.
   SetDirty(false);
+}
+
+// ── Polish 3c: downloads popover ────────────────────────────────
+
+void ToneRoot::toggleDownloadsPopover()
+{
+  if (!mDownloadsPopover) return;
+  const bool willShow = mDownloadsPopover->IsHidden();
+  if (willShow) {
+    // Same z-order discipline as the preset overlay — push the
+    // backdrop+popover to the end of mControls so cards/tiles don't
+    // bury them.
+    IGraphics* g = GetUI();
+    if (g) {
+      if (mDownloadsBackdrop) {
+        g->RemoveControl(mDownloadsBackdrop);
+        mDownloadsBackdrop = nullptr;
+      }
+      g->RemoveControl(mDownloadsPopover);
+      mDownloadsPopover = nullptr;
+
+      mDownloadsBackdrop = new T3kClickBackdrop(mRECT,
+          /*onClick*/ [this] {
+            if (mDownloadsPopover && !mDownloadsPopover->IsHidden())
+              toggleDownloadsPopover();
+          });
+      g->AttachControl(mDownloadsBackdrop);
+      mDownloadsBackdrop->Hide(false);
+
+      mDownloadsPopover = new T3kDownloadsPopover(
+          IRECT(0.f, 0.f, 1.f, 1.f),
+          [this]() {
+            return mDownloadsPill ? mDownloadsPill->snapshotRows()
+                                  : std::vector<T3kDownloadsPill::Row>{};
+          });
+      g->AttachControl(mDownloadsPopover);
+      // Size to anchored rect.
+      const float top  = mDownloadsPillRect.B + t3k::theme::kS2;
+      const float left = mDownloadsPillRect.L;
+      mDownloadsPopover->SetTargetAndDrawRECTs(
+          IRECT(left, top, left + kDownloadsPopoverW, top + kDownloadsPopoverH));
+      mDownloadsPopover->Hide(false);
+    }
+  } else {
+    if (mDownloadsBackdrop) mDownloadsBackdrop->Hide(true);
+    if (mDownloadsPopover)  mDownloadsPopover->Hide(true);
+  }
+  SetDirty(false);
+}
+
+// ── Polish 3c: undo / redo ─────────────────────────────────────
+
+void ToneRoot::pushUndo()
+{
+  if (mUndoApplyInProgress) return;
+  if (!mToneView) return;
+  UndoEntry e;
+  e.before = mToneView->snapshotPresetState();
+  // "after" gets filled in commitUndo. If commit never runs (the
+  // mutation aborted), the partial entry still rolls back correctly
+  // because undo() only consumes `before`.
+  mUndoStack.push_back(std::move(e));
+  // A new branch invalidates any redo.
+  mRedoStack.clear();
+  updateUndoGlyphs();
+}
+
+void ToneRoot::commitUndo()
+{
+  if (mUndoApplyInProgress) return;
+  if (mUndoStack.empty() || !mToneView) return;
+  mUndoStack.back().after = mToneView->snapshotPresetState();
+  updateUndoGlyphs();
+}
+
+void ToneRoot::undo()
+{
+  if (mUndoStack.empty() || !mToneView) return;
+  UndoEntry e = std::move(mUndoStack.back());
+  mUndoStack.pop_back();
+  mUndoApplyInProgress = true;
+  mToneView->applyPresetState(e.before);
+  mUndoApplyInProgress = false;
+  mRedoStack.push_back(std::move(e));
+  if (mPresetPill) mPresetPill->setDirty(true);
+  updateUndoGlyphs();
+  SetDirty(false);
+}
+
+void ToneRoot::redo()
+{
+  if (mRedoStack.empty() || !mToneView) return;
+  UndoEntry e = std::move(mRedoStack.back());
+  mRedoStack.pop_back();
+  mUndoApplyInProgress = true;
+  mToneView->applyPresetState(e.after);
+  mUndoApplyInProgress = false;
+  mUndoStack.push_back(std::move(e));
+  if (mPresetPill) mPresetPill->setDirty(true);
+  updateUndoGlyphs();
+  SetDirty(false);
+}
+
+void ToneRoot::updateUndoGlyphs()
+{
+  if (mUndoGlyph) mUndoGlyph->setDisabled(mUndoStack.empty());
+  if (mRedoGlyph) mRedoGlyph->setDisabled(mRedoStack.empty());
+}
+
+// ── Polish 3c: popup menus from preset overlay ─────────────────
+
+void ToneRoot::OnPopupMenuSelection(iplug::igraphics::IPopupMenu* pSelectedMenu,
+                                    int /*valIdx*/)
+{
+  if (!pSelectedMenu) {
+    mPendingMenuKind = PendingMenuKind::None;
+    return;
+  }
+  iplug::igraphics::IPopupMenu::Item* item = pSelectedMenu->GetChosenItem();
+  if (!item) {
+    mPendingMenuKind = PendingMenuKind::None;
+    return;
+  }
+  const int idx = pSelectedMenu->GetChosenItemIdx();
+
+  switch (mPendingMenuKind) {
+    case PendingMenuKind::PresetRowAction: {
+      mPendingMenuKind = PendingMenuKind::None;
+      // 0 = Rename, 1 = Delete (matches the AddItem order in
+      // onRowContextMenu).
+      if (idx == 0) {
+        // Rename → prompt for new name.
+        if (auto* ui = GetUI()) {
+          namespace th = ::t3k::theme;
+          const IText t = IText(th::kTypeBody, th::kText, th::kFontBody,
+                                EAlign::Near, EVAlign::Middle)
+                              .WithTEColors(th::kBgSurface, th::kText);
+          const IRECT prompt(mPresetPillRect.L,
+                             mPresetPillRect.B + t3k::theme::kS2,
+                             mPresetPillRect.R,
+                             mPresetPillRect.B + t3k::theme::kS2 + 28.f);
+          mPendingTextEntry = PendingTextEntry::RenamePreset;
+          ui->CreateTextEntry(*this, t, prompt,
+                              mPendingPresetMenuName.c_str());
+        }
+      } else if (idx == 1) {
+        // Delete → confirm step. Open a second menu so the user gets
+        // a "Yes, delete X?" / "Cancel" prompt.
+        if (auto* ui = GetUI()) {
+          static iplug::igraphics::IPopupMenu confirmMenu;
+          confirmMenu.Clear();
+          const std::string yes = "Yes, delete \"" + mPendingPresetMenuName + "\"";
+          confirmMenu.AddItem(yes.c_str());
+          confirmMenu.AddItem("Cancel");
+          mPendingMenuKind = PendingMenuKind::PresetDeleteConfirm;
+          const IRECT anchor(mPresetPillRect.L, mPresetPillRect.B,
+                             mPresetPillRect.R, mPresetPillRect.B + 4.f);
+          ui->CreatePopupMenu(*this, confirmMenu, anchor);
+        }
+      }
+      break;
+    }
+    case PendingMenuKind::PresetDeleteConfirm: {
+      mPendingMenuKind = PendingMenuKind::None;
+      if (idx == 0 && mPendingPresetMenuId > 0) {
+        ::t3k::library::PresetStore::instance().remove(mPendingPresetMenuId);
+        mPendingPresetMenuId = 0;
+        mPendingPresetMenuName.clear();
+        refreshPresetList();
+      }
+      break;
+    }
+    case PendingMenuKind::None:
+    default:
+      break;
+  }
 }
 
 }  // namespace t3k::ui

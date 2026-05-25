@@ -232,9 +232,28 @@ void T3kPresetOverlay::Draw(IGraphics& g)
              "\xE2\x8B\xAF", more);  // U+22EF
 }
 
-void T3kPresetOverlay::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
+void T3kPresetOverlay::OnMouseDown(float x, float y, const IMouseMod& mod)
 {
   namespace th = ::t3k::theme;
+
+  // Right-click on a preset row → fire onRowContextMenu so the parent
+  // (ToneRoot) can open a Rename / Delete popup menu. We do this
+  // BEFORE the regular left-click row handling so a right-click
+  // doesn't also select the row.
+  if (mod.R) {
+    const auto rows = filteredRows();
+    for (size_t i = 0; i < rows.size(); ++i) {
+      if (listRowRect(static_cast<int>(i)).Contains(x, y)) {
+        if (onRowContextMenu) {
+          onRowContextMenu(rows[i]->id, rows[i]->name);
+        }
+        SetDirty(false);
+        return;
+      }
+    }
+    // Right-click outside any row — swallow without action.
+    return;
+  }
 
   // Search field → open text entry.
   if (searchRect().Contains(x, y)) {

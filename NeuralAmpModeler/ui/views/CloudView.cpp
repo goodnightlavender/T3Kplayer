@@ -437,15 +437,14 @@ void CloudView::Draw(IGraphics& g)
       mCards[cardIdx]->setDownloadState(kv.second.state, kv.second.label);
     }
 
-    // Top-of-body banner — expires after the TTL the listener set
-    // so a stale "Downloaded: …" doesn't linger forever.
-    if (!mDlStatusText.empty()) {
-      if (std::chrono::steady_clock::now() < mDlStatusExpiry) {
-        mErrorMessage = mDlStatusText;
-      } else {
-        mDlStatusText.clear();
-        mErrorMessage.clear();
-      }
+    // Polish 3c — the in-band "Saving: …" / "Downloaded: …" banner
+    // is retired in favor of the header-mounted downloads pill +
+    // popover. The per-card pill above keeps the per-tone status
+    // visible. We still drain mDlStatusText so the expiry clears
+    // gracefully, but we no longer push it into mErrorMessage.
+    if (!mDlStatusText.empty() &&
+        std::chrono::steady_clock::now() >= mDlStatusExpiry) {
+      mDlStatusText.clear();
     }
   }
 
