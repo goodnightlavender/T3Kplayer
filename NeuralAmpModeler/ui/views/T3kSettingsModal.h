@@ -52,15 +52,25 @@ class T3kSettingsModal : public iplug::igraphics::IControl {
   void pickToneRoot();
   void doSignOut();
   void doRescan();
+  // Apply a window-size preset ("small" / "medium" / "large") —
+  // updates Settings + persists + calls IGraphics::Resize.
+  void setWindowSize(const char* preset);
 
   iplug::igraphics::IRECT mCardRect;
   iplug::igraphics::IRECT mChangeRootBtnRect;
   iplug::igraphics::IRECT mRescanBtnRect;
   iplug::igraphics::IRECT mSignOutBtnRect;
   iplug::igraphics::IRECT mCloseBtnRect;
+  // Window-size preset row.
+  iplug::igraphics::IRECT mSmallBtnRect;
+  iplug::igraphics::IRECT mMediumBtnRect;
+  iplug::igraphics::IRECT mLargeBtnRect;
 
   OnClose mOnClose;
 
+  T3kButton* mSmallBtn      = nullptr;
+  T3kButton* mMediumBtn     = nullptr;
+  T3kButton* mLargeBtn      = nullptr;
   T3kButton* mChangeRootBtn = nullptr;
   T3kButton* mRescanBtn     = nullptr;
   T3kButton* mSignOutBtn    = nullptr;

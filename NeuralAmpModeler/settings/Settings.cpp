@@ -52,6 +52,9 @@ void ParseInto(const std::string& blob, Settings& s)
     if (j.contains("tone3000_root") && j["tone3000_root"].is_string()) {
       s.tone3000_root = j["tone3000_root"].get<std::string>();
     }
+    if (j.contains("window_size") && j["window_size"].is_string()) {
+      s.window_size = j["window_size"].get<std::string>();
+    }
   } catch (...) {
     // Malformed file → keep defaults so the next save() restores a
     // clean version. The first-run modal will run again.
@@ -107,6 +110,7 @@ void save()
   json j;
   j["schema_version"] = h.s.schema_version;
   j["tone3000_root"]  = h.s.tone3000_root;
+  j["window_size"]    = h.s.window_size;
 
   // Pretty-print so the file is readable when the user pokes at it.
   const std::string blob = j.dump(2);

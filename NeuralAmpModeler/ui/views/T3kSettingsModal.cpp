@@ -22,9 +22,11 @@ using namespace ::iplug::igraphics;
 namespace {
 
 constexpr float kCardW   = 640.f;
-constexpr float kCardH   = 340.f;
+constexpr float kCardH   = 400.f;    // bumped to fit the window-size row
 constexpr float kBtnH    = 32.f;
 constexpr float kRowH    = 56.f;     // each labeled row in the body
+constexpr float kSizeBtnW = 96.f;
+constexpr float kSizeBtnGap = 8.f;
 
 // Backdrop alpha — match T3kRestoreModal so the visual identity is
 // consistent across plug-in modals.
@@ -58,7 +60,22 @@ void T3kSettingsModal::OnResize()
   const float btnY1 = rowTop + (kRowH - kBtnH) * 0.5f;
   mChangeRootBtnRect = IRECT(rowR - bw, btnY1, rowR, btnY1 + kBtnH);
 
-  // Row 2: SIGN OUT (left-aligned). The old "Refresh Library" row was
+  // Row 2: WINDOW SIZE — three buttons (Small/Medium/Large) on the
+  // right; the row label is drawn by Draw() on the left.
+  rowTop += kRowH;
+  const float sizeBtnY = rowTop + (kRowH - kBtnH) * 0.5f;
+  const float totalSizeW = 3 * kSizeBtnW + 2 * kSizeBtnGap;
+  const float sizeRowL   = rowR - totalSizeW;
+  mSmallBtnRect  = IRECT(sizeRowL,                    sizeBtnY,
+                         sizeRowL + kSizeBtnW,        sizeBtnY + kBtnH);
+  mMediumBtnRect = IRECT(mSmallBtnRect.R + kSizeBtnGap, sizeBtnY,
+                         mSmallBtnRect.R + kSizeBtnGap + kSizeBtnW,
+                         sizeBtnY + kBtnH);
+  mLargeBtnRect  = IRECT(mMediumBtnRect.R + kSizeBtnGap, sizeBtnY,
+                         mMediumBtnRect.R + kSizeBtnGap + kSizeBtnW,
+                         sizeBtnY + kBtnH);
+
+  // Row 3: SIGN OUT (left-aligned). The old "Refresh Library" row was
   // dropped in the 2026-05-25 polish round 3 — the local LibraryView
   // already exposes a RESCAN button in its header, so the duplicate
   // here was just visual noise.
@@ -73,6 +90,9 @@ void T3kSettingsModal::OnResize()
                         mCardRect.R - th::kS5,             closeBtnY + kBtnH);
 
   if (mChangeRootBtn) mChangeRootBtn->SetTargetAndDrawRECTs(mChangeRootBtnRect);
+  if (mSmallBtn)      mSmallBtn     ->SetTargetAndDrawRECTs(mSmallBtnRect);
+  if (mMediumBtn)     mMediumBtn    ->SetTargetAndDrawRECTs(mMediumBtnRect);
+  if (mLargeBtn)      mLargeBtn     ->SetTargetAndDrawRECTs(mLargeBtnRect);
   if (mSignOutBtn)    mSignOutBtn   ->SetTargetAndDrawRECTs(mSignOutBtnRect);
   if (mCloseBtn)      mCloseBtn     ->SetTargetAndDrawRECTs(mCloseBtnRect);
 }
@@ -91,6 +111,32 @@ void T3kSettingsModal::OnAttached()
   // mRescanBtn intentionally left null — the REFRESH LIBRARY row was
   // dropped in polish round 3. Hide() cascade tolerates the nullptr.
 
+  // Window-size buttons. The currently-active preset gets the primary
+  // (filled) variant; the others render as outlined secondary. We
+  // re-create them on each show so the variant reflects the latest
+  // selection — done implicitly via detachAllChildren + the
+  // ToneRoot::recreateSettingsModalOnTop path.
+  const std::string ws = ::t3k::settings::instance().window_size;
+  auto sizeVariant = [&](const char* p) {
+    return (ws == p) ? T3kButton::Variant::Primary
+                     : T3kButton::Variant::Secondary;
+  };
+  mSmallBtn = new T3kButton(
+      mSmallBtnRect, "SMALL",
+      [this]() { this->setWindowSize("small"); },
+      sizeVariant("small"));
+  g->AttachControl(mSmallBtn);
+  mMediumBtn = new T3kButton(
+      mMediumBtnRect, "MEDIUM",
+      [this]() { this->setWindowSize("medium"); },
+      sizeVariant("medium"));
+  g->AttachControl(mMediumBtn);
+  mLargeBtn = new T3kButton(
+      mLargeBtnRect, "LARGE",
+      [this]() { this->setWindowSize("large"); },
+      sizeVariant("large"));
+  g->AttachControl(mLargeBtn);
+
   mSignOutBtn = new T3kButton(
       mSignOutBtnRect, "SIGN OUT",
       [this]() { this->doSignOut(); },
@@ -106,6 +152,9 @@ void T3kSettingsModal::OnAttached()
   // Inherit the parent control's hidden state on first attach.
   const bool startHidden = IsHidden();
   mChangeRootBtn->Hide(startHidden);
+  mSmallBtn     ->Hide(startHidden);
+  mMediumBtn    ->Hide(startHidden);
+  mLargeBtn     ->Hide(startHidden);
   mSignOutBtn   ->Hide(startHidden);
   mCloseBtn     ->Hide(startHidden);
 }
@@ -126,6 +175,9 @@ void T3kSettingsModal::detachAllChildren()
   if (!g) return;
   if (mChangeRootBtn) { g->RemoveControl(mChangeRootBtn); mChangeRootBtn = nullptr; }
   if (mRescanBtn)     { g->RemoveControl(mRescanBtn);     mRescanBtn     = nullptr; }
+  if (mSmallBtn)      { g->RemoveControl(mSmallBtn);      mSmallBtn      = nullptr; }
+  if (mMediumBtn)     { g->RemoveControl(mMediumBtn);     mMediumBtn     = nullptr; }
+  if (mLargeBtn)      { g->RemoveControl(mLargeBtn);      mLargeBtn      = nullptr; }
   if (mSignOutBtn)    { g->RemoveControl(mSignOutBtn);    mSignOutBtn    = nullptr; }
   if (mCloseBtn)      { g->RemoveControl(mCloseBtn);      mCloseBtn      = nullptr; }
 }
@@ -135,6 +187,9 @@ void T3kSettingsModal::Hide(bool hide)
   IControl::Hide(hide);
   if (mChangeRootBtn) mChangeRootBtn->Hide(hide);
   if (mRescanBtn)     mRescanBtn    ->Hide(hide);
+  if (mSmallBtn)      mSmallBtn     ->Hide(hide);
+  if (mMediumBtn)     mMediumBtn    ->Hide(hide);
+  if (mLargeBtn)      mLargeBtn     ->Hide(hide);
   if (mSignOutBtn)    mSignOutBtn   ->Hide(hide);
   if (mCloseBtn)      mCloseBtn     ->Hide(hide);
   if (!hide) refresh();
@@ -201,7 +256,20 @@ void T3kSettingsModal::Draw(IGraphics& g)
     rowTop += kRowH;
   }
 
-  // Row 2 — Account status (next to SIGN OUT). The intermediate
+  // Row 2 — Window size (left-aligned label, buttons on the right).
+  {
+    const IRECT labelR(rowL, rowTop, mSmallBtnRect.L - th::kS3, rowTop + 16.f);
+    g.DrawText(IText(th::kTypeSmall, th::kTextDim, th::kFontBodyMed,
+                     EAlign::Near, EVAlign::Top),
+               "WINDOW SIZE", labelR);
+    const IRECT hintR(labelR.L, labelR.B + 4.f, labelR.R, labelR.B + 4.f + 14.f);
+    g.DrawText(IText(th::kTypeSmall, th::kTextMuted, th::kFontBody,
+                     EAlign::Near, EVAlign::Top),
+               "Resize the plug-in window.", hintR);
+    rowTop += kRowH;
+  }
+
+  // Row 3 — Account status (next to SIGN OUT). The intermediate
   // "REFRESH LIBRARY" + "LIBRARY SYNC WORKER" rows were dropped in
   // polish round 3.
   {
@@ -261,6 +329,38 @@ void T3kSettingsModal::doRescan()
 void T3kSettingsModal::doSignOut()
 {
   ::t3k::cloud::Session::instance().signOut();
+  refresh();
+}
+
+namespace {
+
+// Resolve "small" / "medium" / "large" → (w, h, scale). Anything else
+// falls back to medium. The numbers are chosen so the medium preset
+// matches the polish-round-3 default window (1664x1040) and the
+// extremes stay inside the PLUG_MIN_/MAX_ bounds from config.h.
+struct WindowPreset { int w; int h; float scale; };
+
+WindowPreset PresetFor(const std::string& name)
+{
+  if (name == "small")  return { 1248,  780, 0.75f };
+  if (name == "large")  return { 2080, 1300, 1.25f };
+  return                       { 1664, 1040, 1.00f };  // medium
+}
+
+}  // namespace
+
+void T3kSettingsModal::setWindowSize(const char* preset)
+{
+  if (!preset) return;
+  ::t3k::settings::instance().window_size = preset;
+  ::t3k::settings::save();
+
+  if (IGraphics* g = GetUI()) {
+    const auto p = PresetFor(preset);
+    g->Resize(p.w, p.h, p.scale, /*needsPlatformResize*/ true);
+  }
+  // refresh() repaints — re-renders the buttons with the new
+  // primary/secondary variants matching the active preset.
   refresh();
 }
 

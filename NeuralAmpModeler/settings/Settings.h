@@ -22,7 +22,11 @@ namespace t3k::settings {
 
 struct Settings {
   int         schema_version = 1;
-  std::string tone3000_root;  // empty => first run
+  std::string tone3000_root;        // empty => first run
+  // Window-size preset (2026-05-25). "small" / "medium" / "large".
+  // Empty defaults to "medium" on load. Drives the editor resize on
+  // OnUIOpen + when the user picks a new preset in the settings modal.
+  std::string window_size = "medium";
 };
 
 // Returns the singleton settings struct. Mutable reference — callers

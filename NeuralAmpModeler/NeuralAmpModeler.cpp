@@ -22,6 +22,7 @@
 #include "cloud/LibrarySync.h"
 #include "cloud/Session.h"
 #include "crash/Minidump.h"
+#include "settings/Settings.h"
 #include "ui/ToneRoot.h"
 #include "ui/theme.h"
 
@@ -404,6 +405,17 @@ int NeuralAmpModeler::UnserializeState(const IByteChunk& chunk, int startPos)
 void NeuralAmpModeler::OnUIOpen()
 {
   Plugin::OnUIOpen();
+
+  // Restore the window-size preset from settings.json (2026-05-25).
+  // We do this here rather than in the constructor because IGraphics
+  // doesn't exist until the editor opens.
+  if (auto* g = GetUI()) {
+    const std::string& ws = ::t3k::settings::instance().window_size;
+    int w = 1664, h = 1040; float scale = 1.0f;
+    if      (ws == "small") { w = 1248; h =  780; scale = 0.75f; }
+    else if (ws == "large") { w = 2080; h = 1300; scale = 1.25f; }
+    g->Resize(w, h, scale, /*needsPlatformResize*/ true);
+  }
 
   if (mNAMPath.GetLength())
   {
