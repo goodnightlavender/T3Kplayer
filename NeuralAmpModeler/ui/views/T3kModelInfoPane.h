@@ -27,7 +27,10 @@ using ::iplug::igraphics::IGraphics;
 using ::iplug::igraphics::IRECT;
 
 struct ModelInfoSnapshot {
-  std::string imagePath;       // absolute path; empty => placeholder gradient
+  std::string imagePath;       // absolute path; preferred
+  std::string imageUrl;        // remote URL — resolved via
+                               // cloud::ThumbnailCache when imagePath
+                               // is empty.
   std::string displayName;     // e.g. "Klon '94 — original-circuit centaur clone"
   std::string creator;
   std::string format;          // "NAM" or "IR"
@@ -57,6 +60,14 @@ private:
   // the load succeeded (placeholder is rendered otherwise).
   IBitmap mImage;
   std::string mLoadedImagePath;  // empty if mImage was never loaded
+
+  // ThumbnailCache plumbing — when imagePath is empty but imageUrl is
+  // set, kick a cache fetch on first Draw and pick up the local path
+  // when the callback fires.
+  bool        mThumbRequested = false;
+  std::string mThumbForUrl;       // url we asked the cache for
+  std::string mThumbPath;         // local path returned by the cache
+  bool        mThumbLoadFailed = false;
 };
 
 }  // namespace t3k::ui

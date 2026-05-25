@@ -54,6 +54,8 @@ public:
   void OnResize() override;
   void OnAttached() override;
   void OnMouseDown(float x, float y, const iplug::igraphics::IMouseMod& mod) override;
+  void OnMouseDrag(float x, float y, float dX, float dY,
+                   const iplug::igraphics::IMouseMod& mod) override;
   void OnMouseWheel(float x, float y,
                     const iplug::igraphics::IMouseMod& mod, float d) override;
 

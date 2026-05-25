@@ -113,8 +113,12 @@ private:
   // player strip) given the current mRECT.
   void RecomputeRects();
 
-  // Player strip height (only drawn when mSelected).
-  static constexpr float kPlayerStripH = 28.f;
+  // Player strip height — collapsed to 0 in the 2026-05-25 polish
+  // round 3 so cloud cards no longer reserve an audio-preview strip
+  // when selected. Kept as a named constant rather than removed so
+  // RecomputeRects / Draw can stay structurally similar pending a
+  // future scrubber design.
+  static constexpr float kPlayerStripH = 0.f;
 
   CardData mData;
   std::function<void()> mOnSelect;

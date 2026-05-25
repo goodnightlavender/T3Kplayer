@@ -194,6 +194,11 @@ private:
   // top of the z-order (same pattern as the preset overlay).
   void attachAccountMenu(bool startVisible);
   void recreateAccountMenuOnTop();
+  // Rebuild the SettingsModal at the END of IGraphics' control list
+  // so it z-orders above tab-body content (cloud cards, library
+  // cards) which attach lazily after OnAttached. Same dance as
+  // recreatePresetOverlayOnTop.
+  void recreateSettingsModalOnTop();
   // Listen for cloud::Session state transitions and flip pill/avatar
   // visibility + repopulate the account-menu items.
   void onSessionEvent(const ::t3k::cloud::SessionEvent& ev);

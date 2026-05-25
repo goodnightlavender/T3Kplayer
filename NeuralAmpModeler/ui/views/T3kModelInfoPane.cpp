@@ -9,6 +9,8 @@
 
 #include "IGraphics.h"
 
+#include "../../cloud/ThumbnailCache.h"
+
 namespace t3k::ui {
 
 using namespace ::iplug::igraphics;
@@ -124,12 +126,17 @@ T3kModelInfoPane::T3kModelInfoPane(const IRECT& bounds)
 
 void T3kModelInfoPane::setSnapshot(ModelInfoSnapshot s)
 {
-  const bool imageChanged = (s.imagePath != mSnapshot.imagePath);
+  const bool imageChanged = (s.imagePath != mSnapshot.imagePath) ||
+                            (s.imageUrl  != mSnapshot.imageUrl);
   mSnapshot = std::move(s);
   mHasSnapshot = true;
   if (imageChanged) {
     mImage = IBitmap();
     mLoadedImagePath.clear();
+    mThumbRequested  = false;
+    mThumbForUrl.clear();
+    mThumbPath.clear();
+    mThumbLoadFailed = false;
   }
   SetDirty(false);
 }
@@ -140,6 +147,10 @@ void T3kModelInfoPane::clear()
   mHasSnapshot = false;
   mImage = IBitmap();
   mLoadedImagePath.clear();
+  mThumbRequested  = false;
+  mThumbForUrl.clear();
+  mThumbPath.clear();
+  mThumbLoadFailed = false;
   SetDirty(false);
 }
 
@@ -162,14 +173,36 @@ void T3kModelInfoPane::Draw(IGraphics& g)
   // ── Image column ──────────────────────────────────────────────────
   const IRECT imgRect(body.L, body.T, body.L + kImageSize, body.T + kImageSize);
 
-  // Lazy-load the bitmap on first Draw for the current imagePath. If the
-  // file is missing or the loader fails, IBitmap::IsValid() stays false and
-  // we fall back to the placeholder gradient — no crash.
-  if (!mSnapshot.imagePath.empty() && mLoadedImagePath != mSnapshot.imagePath) {
-    mImage = g.LoadBitmap(mSnapshot.imagePath.c_str(),
+  // When imagePath isn't set but a remote URL is, ask ThumbnailCache
+  // to fetch + cache it on first Draw. The callback drops the local
+  // path into mThumbPath and SetDirty's — we pick it up next paint.
+  if (mSnapshot.imagePath.empty()
+      && !mSnapshot.imageUrl.empty()
+      && !mThumbLoadFailed
+      && mThumbForUrl != mSnapshot.imageUrl) {
+    mThumbRequested = true;
+    mThumbForUrl    = mSnapshot.imageUrl;
+    ::t3k::cloud::ThumbnailCache::instance().fetch(
+        mSnapshot.imageUrl,
+        [this](const std::string& path, bool ok) {
+          if (ok && !path.empty()) mThumbPath = path;
+          else mThumbLoadFailed = true;
+          this->SetDirty(false);
+        });
+  }
+
+  const std::string effPath = !mSnapshot.imagePath.empty()
+                                ? mSnapshot.imagePath
+                                : mThumbPath;
+
+  // Lazy-load the bitmap on first Draw for the current effective path.
+  // If the file is missing or the loader fails, IBitmap::IsValid() stays
+  // false and we fall back to the placeholder gradient.
+  if (!effPath.empty() && mLoadedImagePath != effPath) {
+    mImage = g.LoadBitmap(effPath.c_str(),
                           /*nStates*/ 1, /*framesAreHorizontal*/ false,
                           /*targetScale*/ 0);
-    mLoadedImagePath = mSnapshot.imagePath;
+    mLoadedImagePath = effPath;
   }
 
   if (mImage.IsValid()) {

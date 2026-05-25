@@ -11,7 +11,6 @@
 #include "../theme.h"
 #include "../controls/T3kButton.h"
 #include "../../cloud/Session.h"
-#include "../../cloud/SyncConfig.h"
 #include "../../library/LibraryScanner.h"
 #include "../../settings/Settings.h"
 #include "../../config.h"  // PLUG_NAME, PLUG_VERSION_STR, PLUG_COPYRIGHT_STR
@@ -23,7 +22,7 @@ using namespace ::iplug::igraphics;
 namespace {
 
 constexpr float kCardW   = 640.f;
-constexpr float kCardH   = 420.f;
+constexpr float kCardH   = 340.f;
 constexpr float kBtnH    = 32.f;
 constexpr float kRowH    = 56.f;     // each labeled row in the body
 
@@ -59,12 +58,10 @@ void T3kSettingsModal::OnResize()
   const float btnY1 = rowTop + (kRowH - kBtnH) * 0.5f;
   mChangeRootBtnRect = IRECT(rowR - bw, btnY1, rowR, btnY1 + kBtnH);
 
-  // Row 2: REFRESH LIBRARY (left-aligned).
-  rowTop += kRowH;
-  const float btnY2 = rowTop + (kRowH - kBtnH) * 0.5f;
-  mRescanBtnRect = IRECT(rowL, btnY2, rowL + 180.f, btnY2 + kBtnH);
-
-  // Row 3: SIGN OUT (left-aligned).
+  // Row 2: SIGN OUT (left-aligned). The old "Refresh Library" row was
+  // dropped in the 2026-05-25 polish round 3 — the local LibraryView
+  // already exposes a RESCAN button in its header, so the duplicate
+  // here was just visual noise.
   rowTop += kRowH;
   const float btnY3 = rowTop + (kRowH - kBtnH) * 0.5f;
   mSignOutBtnRect = IRECT(rowL, btnY3, rowL + 180.f, btnY3 + kBtnH);
@@ -76,7 +73,6 @@ void T3kSettingsModal::OnResize()
                         mCardRect.R - th::kS5,             closeBtnY + kBtnH);
 
   if (mChangeRootBtn) mChangeRootBtn->SetTargetAndDrawRECTs(mChangeRootBtnRect);
-  if (mRescanBtn)     mRescanBtn    ->SetTargetAndDrawRECTs(mRescanBtnRect);
   if (mSignOutBtn)    mSignOutBtn   ->SetTargetAndDrawRECTs(mSignOutBtnRect);
   if (mCloseBtn)      mCloseBtn     ->SetTargetAndDrawRECTs(mCloseBtnRect);
 }
@@ -92,11 +88,8 @@ void T3kSettingsModal::OnAttached()
       T3kButton::Variant::Secondary);
   g->AttachControl(mChangeRootBtn);
 
-  mRescanBtn = new T3kButton(
-      mRescanBtnRect, "REFRESH LIBRARY",
-      [this]() { this->doRescan(); },
-      T3kButton::Variant::Secondary);
-  g->AttachControl(mRescanBtn);
+  // mRescanBtn intentionally left null — the REFRESH LIBRARY row was
+  // dropped in polish round 3. Hide() cascade tolerates the nullptr.
 
   mSignOutBtn = new T3kButton(
       mSignOutBtnRect, "SIGN OUT",
@@ -113,7 +106,6 @@ void T3kSettingsModal::OnAttached()
   // Inherit the parent control's hidden state on first attach.
   const bool startHidden = IsHidden();
   mChangeRootBtn->Hide(startHidden);
-  mRescanBtn    ->Hide(startHidden);
   mSignOutBtn   ->Hide(startHidden);
   mCloseBtn     ->Hide(startHidden);
 }
@@ -126,6 +118,16 @@ void T3kSettingsModal::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
   if (!mCardRect.Contains(x, y)) {
     if (mOnClose) mOnClose();
   }
+}
+
+void T3kSettingsModal::detachAllChildren()
+{
+  IGraphics* g = GetUI();
+  if (!g) return;
+  if (mChangeRootBtn) { g->RemoveControl(mChangeRootBtn); mChangeRootBtn = nullptr; }
+  if (mRescanBtn)     { g->RemoveControl(mRescanBtn);     mRescanBtn     = nullptr; }
+  if (mSignOutBtn)    { g->RemoveControl(mSignOutBtn);    mSignOutBtn    = nullptr; }
+  if (mCloseBtn)      { g->RemoveControl(mCloseBtn);      mCloseBtn      = nullptr; }
 }
 
 void T3kSettingsModal::Hide(bool hide)
@@ -144,11 +146,8 @@ void T3kSettingsModal::refresh()
   if (mRootPathLabel.empty()) {
     mRootPathLabel = "(not set — first-run modal will prompt on next launch)";
   }
-  if (::t3k::cloud::sync::isConfigured()) {
-    mWorkerUrlLabel = ::t3k::cloud::sync::kLibrarySyncUrl;
-  } else {
-    mWorkerUrlLabel = "(not configured — library sync disabled)";
-  }
+  // mWorkerUrlLabel is no longer rendered (polish round 3) — leave it
+  // untouched so the header member stays binary-compatible.
   mSignedIn = (::t3k::cloud::Session::instance().state() ==
                ::t3k::cloud::Session::State::SignedIn);
   if (mSignedIn) {
@@ -202,23 +201,9 @@ void T3kSettingsModal::Draw(IGraphics& g)
     rowTop += kRowH;
   }
 
-  // Row 2 — Library hint (next to REFRESH).
-  {
-    const IRECT labelR(mRescanBtnRect.R + th::kS3,
-                       rowTop + (kRowH - 32.f) * 0.5f,
-                       rowR,
-                       rowTop + (kRowH - 32.f) * 0.5f + 16.f);
-    g.DrawText(IText(th::kTypeSmall, th::kTextDim, th::kFontBodyMed,
-                     EAlign::Near, EVAlign::Top),
-               "LOCAL LIBRARY", labelR);
-    const IRECT hintR(labelR.L, labelR.B + 2.f, labelR.R, labelR.B + 2.f + 14.f);
-    g.DrawText(IText(th::kTypeSmall, th::kTextMuted, th::kFontBody,
-                     EAlign::Near, EVAlign::Top),
-               "Re-walk the TONE3000 folder for new .nam files.", hintR);
-    rowTop += kRowH;
-  }
-
-  // Row 3 — Account status (next to SIGN OUT).
+  // Row 2 — Account status (next to SIGN OUT). The intermediate
+  // "REFRESH LIBRARY" + "LIBRARY SYNC WORKER" rows were dropped in
+  // polish round 3.
   {
     const IRECT labelR(mSignOutBtnRect.R + th::kS3,
                        rowTop + (kRowH - 32.f) * 0.5f,
@@ -234,35 +219,19 @@ void T3kSettingsModal::Draw(IGraphics& g)
     rowTop += kRowH;
   }
 
-  // Row 4 — Worker URL (read-only).
-  {
-    const IRECT labelR(rowL, rowTop, rowR, rowTop + 16.f);
-    g.DrawText(IText(th::kTypeSmall, th::kTextDim, th::kFontBodyMed,
-                     EAlign::Near, EVAlign::Top),
-               "LIBRARY SYNC WORKER", labelR);
-    const IRECT valueR(rowL, labelR.B + 4.f, rowR, labelR.B + 4.f + 18.f);
-    g.DrawText(IText(th::kTypeSmall, th::kTextMuted, th::kFontBody,
-                     EAlign::Near, EVAlign::Top),
-               mWorkerUrlLabel.c_str(), valueR);
-  }
-
-  // About block — anchored above the CLOSE button. Three stacked lines
-  // (iPlug2's NanoVG DrawText doesn't honor '\n' as a line break).
-  const float aboutTop = mCloseBtnRect.T - th::kS5 - 56.f;
+  // About block — anchored above the CLOSE button. Two stacked lines
+  // (the build-date line was removed in polish round 3).
+  const float aboutTop = mCloseBtnRect.T - th::kS5 - 40.f;
   const float lineH = 16.f;
-  const IRECT a1(rowL, aboutTop,                 rowR, aboutTop + lineH);
-  const IRECT a2(rowL, aboutTop + lineH,         rowR, aboutTop + 2.f * lineH);
-  const IRECT a3(rowL, aboutTop + 2.f * lineH,   rowR, aboutTop + 3.f * lineH);
-  char vline[160], cline[200], dline[120];
+  const IRECT a1(rowL, aboutTop,         rowR, aboutTop + lineH);
+  const IRECT a2(rowL, aboutTop + lineH, rowR, aboutTop + 2.f * lineH);
+  char vline[160], cline[200];
   std::snprintf(vline, sizeof(vline), "%s %s", PLUG_NAME, PLUG_VERSION_STR);
   std::snprintf(cline, sizeof(cline), "%s", PLUG_COPYRIGHT_STR);
-  std::snprintf(dline, sizeof(dline), "Built %s", __DATE__);
   g.DrawText(IText(th::kTypeBody,  th::kText,      th::kFontBodyMed,
                    EAlign::Center, EVAlign::Middle), vline, a1);
   g.DrawText(IText(th::kTypeSmall, th::kTextMuted, th::kFontBody,
                    EAlign::Center, EVAlign::Middle), cline, a2);
-  g.DrawText(IText(th::kTypeSmall, th::kTextDim,   th::kFontBody,
-                   EAlign::Center, EVAlign::Middle), dline, a3);
 }
 
 void T3kSettingsModal::pickToneRoot()

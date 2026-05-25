@@ -57,8 +57,8 @@ constexpr float kDetailBtnH     = 30.f;
 constexpr float kDetailBtnGap   = 8.f;
 
 constexpr float kGridPad        = 16.f;
-constexpr float kCardW          = 144.f;
-constexpr float kCardH          = 168.f;
+constexpr float kCardW          = 168.f;
+constexpr float kCardH          = 220.f;
 constexpr float kCardGap        = 12.f;
 constexpr int   kCols           = 6;
 
@@ -92,11 +92,11 @@ std::string FormatSize(int64_t bytes)
 
 const char* GearLabelFor(const std::string& g)
 {
-  if (g == "amp")       return "Amp";
-  if (g == "cab")       return "Cab";
-  if (g == "outboard")  return "Outboard";
-  if (g == "full-rig")  return "Full rig";
+  if (g == "full-rig")  return "Full Rig / Combo";
+  if (g == "amp")       return "Amp Head";
+  if (g == "cab")       return "Cabinet";
   if (g == "pedal")     return "Pedal";
+  if (g == "outboard")  return "Outboard";
   return g.c_str();
 }
 
@@ -300,13 +300,19 @@ void LibraryView::OnAttached()
     g->AttachControl(mCreatorsAcc);
   }
 
-  mTechAcc = new T3kAccordion(placeholder,
-      "Technical",
-      []() { return 2 * kCheckboxRowH + 8.f; },
-      [this](const IRECT& r) { this->drawTechnicalAccordion(r); },
-      /*initiallyOpen*/ false);
-  wireToggle(mTechAcc);
-  g->AttachControl(mTechAcc);
+  // Technical (Format) accordion — hidden per the 2026-05-25 polish round
+  // 3. The .nam/.wav split is implicit in card meta, so the explicit
+  // filter row was redundant. Flip the toggle to re-enable.
+  constexpr bool kShowTechnicalFilter = false;
+  if constexpr (kShowTechnicalFilter) {
+    mTechAcc = new T3kAccordion(placeholder,
+        "Technical",
+        []() { return 2 * kCheckboxRowH + 8.f; },
+        [this](const IRECT& r) { this->drawTechnicalAccordion(r); },
+        /*initiallyOpen*/ false);
+    wireToggle(mTechAcc);
+    g->AttachControl(mTechAcc);
+  }
 
   // Rename overlay — full-window placeholder, repositioned by show().
   mRenameOverlay = new T3kRenameOverlay(IRECT(0.f, 0.f, 1.f, 1.f));
@@ -646,33 +652,39 @@ void LibraryView::showDetailFor(int64_t id)
     sub += std::to_string(vit->second.size()) + " variants";
   }
   d.subtitle = std::move(sub);
-  // Variants list (Makes-and-Models section in the reference).
+  // Variants list — render as PICK buttons so the user can load any
+  // specific version into the chain (the old single "LOAD INTO
+  // CHAIN" action picked the primary variant by default, which the
+  // user pointed out wasn't useful for multi-variant tones).
   if (vit != mVariantsByToneId.end()) {
     for (const auto& v : vit->second) {
-      std::string entry = v.model_name.empty()
+      std::string label = v.model_name.empty()
                             ? v.effectiveDisplayName()
                             : v.model_name;
       if (!v.kind.empty()) {
         std::string k = v.kind;
         for (char& c : k) c = static_cast<char>(std::toupper((unsigned char)c));
-        entry += "  \xC2\xB7  " + k;
+        label += "  \xC2\xB7  " + k;
       }
-      d.makesModels.push_back(std::move(entry));
+      // Capture each variant's t3k ids so we load the right one.
+      const std::string toneId  = v.t3k_tone_id;
+      const std::string modelId = v.t3k_model_id;
+      T3kDetailModal::PickableItem item;
+      item.label  = std::move(label);
+      item.onPick = [this, toneId, modelId]() {
+        if (mDetailModal) mDetailModal->Hide(true);
+        if (mOnModelClicked) mOnModelClicked(toneId, modelId);
+      };
+      d.pickables.push_back(std::move(item));
     }
   }
-  // Tags placeholder — local sidecars don't carry tags yet. When the
-  // sidecar schema gains them we'll plumb them through here.
+  // Tags placeholder — local sidecars don't carry tags yet.
 
-  // Library actions: Load / Rename / Show in Explorer / Remove. We
-  // capture the id rather than `this->mSelectedId` because the modal
-  // can outlive the current selection.
+  // Bottom action buttons — Rename / Show in Explorer / Remove apply
+  // to the WHOLE tone group (primary variant). The per-variant LOAD
+  // is handled via the Versions PICK buttons above.
   std::vector<T3kDetailModal::Action> actions = {
-    { "LOAD INTO CHAIN", /*primary*/ true, [this, id]() {
-        mSelectedId = id;
-        if (mDetailModal) mDetailModal->Hide(true);
-        loadSelected();
-      } },
-    { "RENAME",          false, [this, id]() {
+    { "RENAME",          true, [this, id]() {
         if (mDetailModal) mDetailModal->Hide(true);
         showRenameOverlay(id);
       } },
@@ -1002,7 +1014,7 @@ void LibraryView::drawGearAccordion(const IRECT& r)
   mGearRowRects.clear();
   auto* gfx = GetUI();
   if (!gfx) return;
-  const char* values[] = { "amp", "cab", "outboard", "full-rig", "pedal" };
+  const char* values[] = { "full-rig", "amp", "cab", "pedal", "outboard" };
   float y = r.T + 4.f;
   for (const char* v : values) {
     const IRECT row(r.L + 8.f, y, r.R - 8.f, y + kCheckboxRowH);

@@ -108,14 +108,14 @@ void T3kDetailModal::OnAttached()
 
 void T3kDetailModal::show(DetailData data, std::vector<Action> actions)
 {
-  // Detach previous action buttons.
+  // Detach previous action + pick buttons.
   IGraphics* g = GetUI();
   if (g) {
-    for (T3kButton* b : mActionBtns) {
-      if (b) g->RemoveControl(b);
-    }
+    for (T3kButton* b : mActionBtns) if (b) g->RemoveControl(b);
+    for (T3kButton* b : mPickBtns)   if (b) g->RemoveControl(b);
   }
   mActionBtns.clear();
+  mPickBtns.clear();
 
   mData = std::move(data);
   mActions = std::move(actions);
@@ -129,6 +129,20 @@ void T3kDetailModal::show(DetailData data, std::vector<Action> actions)
   mThumbLoadFailed  = false;
 
   rebuildActionButtons();
+  // Build one PICK button per pickable variant. The actual rects are
+  // computed during Draw (when we know the running y-cursor) — here
+  // we just attach with a placeholder rect so iPlug has them in the
+  // control list.
+  if (g) {
+    const IRECT placeholder(0.f, 0.f, 1.f, 1.f);
+    for (const auto& p : mData.pickables) {
+      auto* btn = new T3kButton(placeholder, "PICK",
+          p.onPick, T3kButton::Variant::Primary);
+      g->AttachControl(btn);
+      btn->Hide(IsHidden());
+      mPickBtns.push_back(btn);
+    }
+  }
   recomputeLayout();
   Hide(false);
   SetDirty(false);
@@ -165,6 +179,8 @@ void T3kDetailModal::detachAllChildren()
   if (!g) return;
   for (T3kButton* b : mActionBtns) if (b) g->RemoveControl(b);
   mActionBtns.clear();
+  for (T3kButton* b : mPickBtns)   if (b) g->RemoveControl(b);
+  mPickBtns.clear();
   if (mCloseBtn) {
     g->RemoveControl(mCloseBtn);
     mCloseBtn = nullptr;
@@ -176,6 +192,7 @@ void T3kDetailModal::Hide(bool hide)
   IControl::Hide(hide);
   if (mCloseBtn) mCloseBtn->Hide(hide);
   for (T3kButton* b : mActionBtns) if (b) b->Hide(hide);
+  for (T3kButton* b : mPickBtns)   if (b) b->Hide(hide);
 }
 
 std::vector<std::string>
@@ -347,8 +364,56 @@ void T3kDetailModal::Draw(IGraphics& g)
     ty += 10.f;
   }
 
-  // Makes and Models.
-  if (!mData.makesModels.empty()) {
+  // Versions list (Library) — replaces Makes-and-Models when present.
+  // Each row: variant label on the left, PICK button on the right.
+  if (!mData.pickables.empty()) {
+    const IRECT hdrR(tL, ty, tR, ty + 18.f);
+    g.DrawText(IText(14.f, th::kText, th::kFontBodyBold,
+                     EAlign::Near, EVAlign::Top),
+               "Versions", hdrR);
+    ty = hdrR.B + 6.f;
+
+    const float rowH      = 30.f;
+    const float pickBtnW  = 64.f;
+    const float pickBtnH  = 24.f;
+    const size_t maxItems = 6;
+    const size_t shown    = std::min(mData.pickables.size(), maxItems);
+    for (size_t i = 0; i < shown; ++i) {
+      const IRECT rowR(tL, ty, tR, ty + rowH);
+      // Label on the left, ellipsized if too long.
+      const IRECT labelR(rowR.L, rowR.T,
+                         rowR.R - pickBtnW - 8.f, rowR.B);
+      g.DrawText(IText(13.f, th::kTextMuted, th::kFontBody,
+                       EAlign::Near, EVAlign::Middle),
+                 mData.pickables[i].label.c_str(), labelR);
+      // PICK button — push it into the right edge of the row.
+      if (i < mPickBtns.size() && mPickBtns[i]) {
+        const float by = rowR.MH() - pickBtnH * 0.5f;
+        const IRECT btnR(rowR.R - pickBtnW, by,
+                         rowR.R,             by + pickBtnH);
+        mPickBtns[i]->SetTargetAndDrawRECTs(btnR);
+      }
+      ty += rowH;
+    }
+    // Hide any pick buttons beyond what we render this paint (shouldn't
+    // happen since mPickBtns.size() == pickables.size(), but defensive).
+    for (size_t i = shown; i < mPickBtns.size(); ++i) {
+      if (mPickBtns[i]) mPickBtns[i]->Hide(true);
+    }
+    if (mData.pickables.size() > maxItems) {
+      char hint[40];
+      std::snprintf(hint, sizeof(hint),
+                    "+%zu more\xE2\x80\xA6",
+                    mData.pickables.size() - maxItems);
+      const IRECT lineR(tL, ty, tR, ty + kBodyLineH);
+      g.DrawText(IText(13.f, th::kTextDim, th::kFontBody,
+                       EAlign::Near, EVAlign::Top),
+                 hint, lineR);
+      ty += kBodyLineH;
+    }
+    ty += 10.f;
+  } else if (!mData.makesModels.empty()) {
+    // Makes and Models — Cloud path (descriptive, not pickable).
     const IRECT hdrR(tL, ty, tR, ty + 18.f);
     g.DrawText(IText(14.f, th::kText, th::kFontBodyBold,
                      EAlign::Near, EVAlign::Top),
@@ -358,7 +423,7 @@ void T3kDetailModal::Draw(IGraphics& g)
     const size_t shown = std::min(mData.makesModels.size(), maxItems);
     for (size_t i = 0; i < shown; ++i) {
       const IRECT lineR(tL, ty, tR, ty + kBodyLineH);
-      g.DrawText(IText(13.f, th::kAccent, th::kFontBody,
+      g.DrawText(IText(13.f, th::kTextMuted, th::kFontBody,
                        EAlign::Near, EVAlign::Top),
                  mData.makesModels[i].c_str(), lineR);
       ty += kBodyLineH;

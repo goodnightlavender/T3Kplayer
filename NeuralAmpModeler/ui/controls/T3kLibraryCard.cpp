@@ -78,7 +78,12 @@ void T3kLibraryCard::OnResize()
 void T3kLibraryCard::RecomputeRects()
 {
   const IRECT r = mRECT.GetPadded(-kCardPad);
-  mHeroRect = IRECT(r.L, r.T, r.R, r.T + kHeroH);
+  // Hero is a square pinned to the top of the inner content rect. Width
+  // drives height so the hero stays a perfect square regardless of
+  // surrounding panel height (which is taller now to make room for the
+  // text rows below).
+  const float heroSide = r.W();
+  mHeroRect = IRECT(r.L, r.T, r.R, r.T + heroSide);
   mNameRect = IRECT(r.L, mHeroRect.B + 6.f,
                     r.R, mHeroRect.B + 6.f + kNameH);
   mMetaRect = IRECT(r.L, mNameRect.B + 2.f,
@@ -191,10 +196,19 @@ void T3kLibraryCard::Draw(IGraphics& g)
     }
   }
 
-  // Display name — single line, clipped by the card padding rect.
+  // Display name — single line. iPlug2's NanoVG DrawText doesn't truncate
+  // with ellipsis on overflow; it just keeps painting past the rect. So
+  // we approximate Inter-Medium @ 13pt at ~7 px/char and trim by hand.
+  auto truncate = [](const std::string& src, float widthPx, float pxPerChar) {
+    const int maxChars = std::max(1, static_cast<int>(widthPx / pxPerChar));
+    if (static_cast<int>(src.size()) <= maxChars) return src;
+    return src.substr(0, static_cast<size_t>(maxChars)) +
+           "\xE2\x80\xA6";  // U+2026 horizontal ellipsis
+  };
+  const std::string nameOut = truncate(mData.displayName, mNameRect.W(), 7.f);
   g.DrawText(IText(13.f, th::kText, th::kFontBodyMed,
                    EAlign::Near, EVAlign::Middle),
-             mData.displayName.c_str(), mNameRect);
+             nameOut.c_str(), mNameRect);
 
   // Meta: creator . format.
   std::string meta;
@@ -203,9 +217,10 @@ void T3kLibraryCard::Draw(IGraphics& g)
     if (!meta.empty()) meta += " \xC2\xB7 ";
     meta += mData.format;
   }
+  const std::string metaOut = truncate(meta, mMetaRect.W(), 6.f);
   g.DrawText(IText(th::kTypeSmall, th::kTextMuted, th::kFontBody,
                    EAlign::Near, EVAlign::Middle),
-             meta.c_str(), mMetaRect);
+             metaOut.c_str(), mMetaRect);
 }
 
 }  // namespace t3k::ui

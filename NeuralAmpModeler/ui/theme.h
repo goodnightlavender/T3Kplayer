@@ -42,19 +42,19 @@ constexpr const char* kFontBodySemi = "Inter-SemiBold";
 constexpr const char* kFontBodyBold = "Inter-Bold";
 
 // Sizes in logical pixels (scale automatically with iPlug2's DPI scaling).
-constexpr float kTypeH1    = 24.f;  // section headings (Anton)
-constexpr float kTypeH2    = 16.f;  // sub-headings
-constexpr float kTypeBody  = 13.f;  // default body
-constexpr float kTypeSmall = 11.f;  // stats, captions
-constexpr float kTypeLabel = 10.f;  // knob labels, tab labels
+constexpr float kTypeH1    = 31.f;  // section headings (Anton)
+constexpr float kTypeH2    = 21.f;  // sub-headings
+constexpr float kTypeBody  = 17.f;  // default body
+constexpr float kTypeSmall = 14.f;  // stats, captions
+constexpr float kTypeLabel = 13.f;  // knob labels, tab labels
 
 // ─── Spacing (4-pt grid) ───────────────────────────────────────────────────
-constexpr float kS1 = 4.f, kS2 = 8.f, kS3 = 12.f, kS4 = 16.f, kS5 = 24.f, kS6 = 32.f;
+constexpr float kS1 = 5.f, kS2 = 10.f, kS3 = 16.f, kS4 = 21.f, kS5 = 31.f, kS6 = 42.f;
 
 // ─── Radii ─────────────────────────────────────────────────────────────────
-constexpr float kRadiusSm   = 4.f;
-constexpr float kRadiusMd   = 8.f;
-constexpr float kRadiusLg   = 12.f;
+constexpr float kRadiusSm   = 5.f;
+constexpr float kRadiusMd   = 10.f;
+constexpr float kRadiusLg   = 16.f;
 // kRadiusPill is a SENTINEL — do NOT pass it directly to FillRoundRect /
 // DrawRoundRect. iPlug2's PathRoundRect builds its corners from four
 // PathArc calls with NO radius clamp, and NanoVG's nvgArc happily draws
@@ -72,11 +72,11 @@ constexpr int kAnimAccordionChevron = 150;
 constexpr int kAnimCardHover      = 120;
 
 // ─── Window dimensions ─────────────────────────────────────────────────────
-constexpr int kWindowMinW = 900;
-constexpr int kWindowMinH = 600;
-constexpr int kWindowMaxW = 1600;
-constexpr int kWindowMaxH = 1100;
-constexpr int kWindowDefW = 1280;
-constexpr int kWindowDefH = 800;
+constexpr int kWindowMinW = 1170;
+constexpr int kWindowMinH = 780;
+constexpr int kWindowMaxW = 2080;
+constexpr int kWindowMaxH = 1430;
+constexpr int kWindowDefW = 1664;
+constexpr int kWindowDefH = 1040;
 
 }  // namespace t3k::theme

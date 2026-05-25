@@ -670,6 +670,24 @@ void ToneRoot::OnTextEntryCompletion(const char* str, int /*valIdx*/)
   saveAsPreset(name);
 }
 
+void ToneRoot::recreateSettingsModalOnTop()
+{
+  IGraphics* g = GetUI();
+  if (!g) return;
+  if (mSettingsModal) {
+    mSettingsModal->detachAllChildren();
+    g->RemoveControl(mSettingsModal);
+    mSettingsModal = nullptr;
+  }
+  mSettingsModal = new T3kSettingsModal(mRECT,
+      [this]() {
+        if (mSettingsModal) mSettingsModal->Hide(true);
+        SetDirty(false);
+      });
+  g->AttachControl(mSettingsModal);
+  mSettingsModal->Hide(true);
+}
+
 void ToneRoot::recreatePresetOverlayOnTop()
 {
   IGraphics* g = GetUI();
@@ -726,6 +744,10 @@ void ToneRoot::attachAccountMenu(bool startVisible)
     // Phase 10 — real settings modal. Close the account menu first
     // so it doesn't paint above the modal's dim backdrop.
     if (mAccountMenu && !mAccountMenu->IsHidden()) toggleAccountMenu();
+    // Push to top of z-order — Cloud / Library cards attach lazily
+    // after OnAttached, so a modal attached during OnAttached gets
+    // buried beneath them and the user sees nothing.
+    recreateSettingsModalOnTop();
     if (mSettingsModal) {
       mSettingsModal->refresh();
       mSettingsModal->Hide(false);

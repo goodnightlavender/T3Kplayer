@@ -250,10 +250,11 @@ void ToneView::rebuildStrip()
         /*onRemove*/ [this](int slot) { onSlotRemoved(slot); },
         /*onAdd*/    {});
     tile->setSelected(idx == mChain.selectedIndex);
-    // Push the image source — Phase-10-polish (2026-05-25). The slot
-    // renders the bitmap fit-cover when available and falls back to
-    // the gear-type SVG otherwise.
-    tile->setImage(ls.imagePath, ls.imageUrl);
+    // Polish round 3 (2026-05-25): the strip tiles stay as gear-type
+    // SVG icons — the model's photo lives in the right-side info pane
+    // (T3kModelInfoPane) when the slot is selected. Don't push an
+    // imagePath/imageUrl down — the slot's image-render branch only
+    // fires when these are non-empty.
 
     // Only pedal / outboard tiles support drag-to-reorder. Amp / Cab /
     // FullRig live at fixed positions, so we leave their drag callbacks
@@ -710,6 +711,10 @@ void ToneView::loadModelIntoSlot(int slotIndex,
   // ThumbnailCache when the slot paints).
   if (row->t3k_image_path.has_value()) ls.imagePath = *row->t3k_image_path;
   ls.imageUrl            = row->t3k_image_url;
+  // The info pane on the right of the chain strip shows the same
+  // picture when this slot is selected.
+  ls.info.imagePath      = ls.imagePath;
+  ls.info.imageUrl       = ls.imageUrl;
 
   // Replace any existing entry at `dst`; otherwise append.
   bool replaced = false;

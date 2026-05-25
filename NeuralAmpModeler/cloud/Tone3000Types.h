@@ -161,13 +161,13 @@ inline const char* toWire(TonesSort s) {
 // locked while we tweak copy.
 inline const char* toLabel(Gear g) {
   switch (g) {
-    case Gear::Amp:      return "Amp";
-    case Gear::FullRig:  return "Full Rig";
+    case Gear::FullRig:  return "Full Rig / Combo";
+    case Gear::Amp:      return "Amp Head";
+    case Gear::Ir:       return "Cabinet";
     case Gear::Pedal:    return "Pedal";
     case Gear::Outboard: return "Outboard";
-    case Gear::Ir:       return "IR";
   }
-  return "Amp";
+  return "Amp Head";
 }
 
 inline const char* toLabel(Size sz) {

@@ -41,12 +41,23 @@ class T3kDetailModal : public iplug::igraphics::IControl {
  public:
   using OnClose = std::function<void()>;
 
+  // A row in the "Versions" / pickables list. Rendered as a label
+  // with a small PICK button on the right. Used by the Library
+  // detail page so the user can load a specific variant.
+  struct PickableItem {
+    std::string label;
+    std::function<void()> onPick;
+  };
+
   struct DetailData {
     std::string title;
     std::string subtitle;            // gear-type . variant count etc. (accent)
     std::string creator;
     std::string description;         // wrapped paragraph
-    std::vector<std::string> makesModels;  // bullet list
+    std::vector<std::string> makesModels;  // descriptive bullet list (Cloud)
+    std::vector<PickableItem> pickables;   // when non-empty, replaces
+                                           // the makesModels section
+                                           // with a list of PICK buttons.
     std::vector<std::string> tags;         // pill chips
     std::string imagePath;           // local FS path; preferred
     std::string imageUrl;            // remote URL (cloud); resolved via
@@ -100,6 +111,9 @@ class T3kDetailModal : public iplug::igraphics::IControl {
   // Action buttons — owned by IGraphics; we just hold raw pointers so
   // we can rebuild them when show() is called again.
   std::vector<T3kButton*> mActionBtns;
+  // Pickable variant buttons — one per DetailData::pickables entry.
+  // Rebuilt each show() like mActionBtns.
+  std::vector<T3kButton*> mPickBtns;
   T3kButton* mCloseBtn = nullptr;
 
   // Lazy bitmap cache for mData.imagePath (or the ThumbnailCache

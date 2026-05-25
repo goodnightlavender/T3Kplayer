@@ -448,63 +448,11 @@ void T3kCard::Draw(IGraphics& g)
                           mRightColRect.R, y + rowH_creator);
   g.DrawText(statT, creatorLine.c_str(), creatorRect);
 
-  // ── Player strip (only when selected) ──
-  if (mSelected) {
-    g.DrawLine(th::kBorder,
-               mPlayerStripRect.L, mPlayerStripRect.T,
-               mPlayerStripRect.R, mPlayerStripRect.T,
-               /*pBlend*/ nullptr, 1.f);
-
-    const float padX = th::kS3;
-    const float padY = th::kS1;
-    const IRECT stripInner = mPlayerStripRect.GetPadded(-padX, -padY,
-                                                         -padX, -padY);
-
-    // Play triangle at left.
-    const float triCY = stripInner.MH();
-    const float triCX = stripInner.L + 6.f;
-    const float triH  = 10.f;
-    g.PathClear();
-    g.PathMoveTo(triCX - 5.f, triCY - triH * 0.5f);
-    g.PathLineTo(triCX + 5.f, triCY);
-    g.PathLineTo(triCX - 5.f, triCY + triH * 0.5f);
-    g.PathClose();
-    g.PathFill(th::kText);
-
-    // "0:00" / "0:28" labels + rainbow track between them.
-    const IText timeT(th::kTypeLabel,
-                      th::kTextMuted,
-                      th::kFontBody,
-                      EAlign::Near,
-                      EVAlign::Middle);
-    const float timeStartX = triCX + 8.f + th::kS2;
-    const IRECT startTimeRect(timeStartX, stripInner.T,
-                              timeStartX + 30.f, stripInner.B);
-    g.DrawText(timeT, "0:00", startTimeRect);
-
-    const IText endTimeT(th::kTypeLabel,
-                         th::kTextMuted,
-                         th::kFontBody,
-                         EAlign::Far,
-                         EVAlign::Middle);
-    const IRECT endTimeRect(stripInner.R - 30.f, stripInner.T,
-                            stripInner.R, stripInner.B);
-    g.DrawText(endTimeT, "0:28", endTimeRect);
-
-    // FIXME(t3k): Phase 6 wires this to a real T3kRainbowScrubber + audio.
-    const IRECT track(startTimeRect.R + th::kS2, stripInner.MH() - 1.5f,
-                      endTimeRect.L - th::kS2, stripInner.MH() + 1.5f);
-    const IPattern rainbow = IPattern::CreateLinearGradient(
-        track.L, track.MH(), track.R, track.MH(),
-        {
-          IColorStop(th::kRainbowR, 0.0f),
-          IColorStop(th::kRainbowY, 0.5f),
-          IColorStop(th::kRainbowB, 1.0f),
-        });
-    g.PathClear();
-    g.PathRect(track);
-    g.PathFill(rainbow);
-  }
+  // ── Player strip ──
+  // Removed in polish round 3 — the in-card audio scrubber was never
+  // wired to real playback, and the empty strip was visually noisy on
+  // selected cards. Selection still shows via the accent border. The
+  // future T3kRainbowScrubber design will land in a separate phase.
 }
 
 void T3kCard::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
@@ -516,8 +464,8 @@ void T3kCard::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
     return;
   }
 
-  // Clicks on the player strip (when present) are no-ops in Phase 2.
-  if (mSelected && mPlayerStripRect.Contains(x, y)) return;
+  // (The old player-strip click-swallow lived here; removed in polish
+  // round 3 along with the strip itself.)
 
   if (mOnSelect) mOnSelect();
   SetDirty(false);

@@ -43,6 +43,11 @@ class T3kSettingsModal : public iplug::igraphics::IControl {
   // the labels reflect the latest Settings / Session state.
   void refresh();
 
+  // Remove flat-attached children (action buttons) from IGraphics.
+  // Call BEFORE RemoveControl(modal) so the buttons don't dangle.
+  // Used by ToneRoot's recreate-on-top z-order pattern.
+  void detachAllChildren();
+
  private:
   void pickToneRoot();
   void doSignOut();

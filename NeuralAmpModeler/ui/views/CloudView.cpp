@@ -546,6 +546,23 @@ void CloudView::OnMouseWheel(float /*x*/, float /*y*/,
   scrollBy(d);
 }
 
+void CloudView::OnMouseDrag(float x, float /*y*/,
+                            float /*dX*/, float dY,
+                            const IMouseMod& /*mod*/)
+{
+  // Drag-to-scroll inside the body — mirrors the touchpad-style "grab
+  // the list" interaction. dY pixels scale down (~0.05 wheel notches
+  // per pixel) so the feel matches the wheel handler. Sign matches the
+  // existing wheel convention so dragging DOWN scrolls the list DOWN
+  // (content moves UP) — same as a wheel-down gesture.
+  //
+  // x is checked rather than y so a drag that starts inside the body
+  // and rolls into the header still scrolls; iPlug2 keeps dispatching
+  // OnMouseDrag to the control that received OnMouseDown.
+  if (x < mBodyRect.L || x > mBodyRect.R) return;
+  scrollBy(dY * 0.05f);
+}
+
 void CloudView::scrollBy(float d)
 {
   if (mState != State::Loaded) return;
@@ -582,7 +599,10 @@ void CloudView::toggleGear(::t3k::cloud::Gear g)
     mSelectedGears.insert(g);
   else
     mSelectedGears.erase(it);
+  // startSearch resets page + cancels in-flight + repopulates
+  // mQuery.gears from mSelectedGears, then kicks the fetch.
   startSearch();
+  SetDirty(false);
 }
 
 void CloudView::toggleSize(::t3k::cloud::Size s)
@@ -592,12 +612,14 @@ void CloudView::toggleSize(::t3k::cloud::Size s)
   else
     mSelectedSizes.erase(it);
   startSearch();
+  SetDirty(false);
 }
 
 void CloudView::onSearchChanged(const std::string& q)
 {
   mQuery.query = q;
   startSearch();
+  SetDirty(false);
 }
 
 void CloudView::onSortClicked()
@@ -605,6 +627,7 @@ void CloudView::onSortClicked()
   mQuery.sort = nextSort(mQuery.sort);
   if (mSortBtn) mSortBtn->setLabel(::t3k::cloud::toLabel(mQuery.sort));
   startSearch();
+  SetDirty(false);
 }
 
 void CloudView::onSignInClicked()
@@ -837,9 +860,9 @@ void CloudView::drawGearAccordion(const IRECT& r)
   namespace th = ::t3k::theme;
   mGearRowRects.clear();
   const ::t3k::cloud::Gear all[] = {
-    ::t3k::cloud::Gear::Amp, ::t3k::cloud::Gear::FullRig,
-    ::t3k::cloud::Gear::Pedal, ::t3k::cloud::Gear::Outboard,
-    ::t3k::cloud::Gear::Ir,
+    ::t3k::cloud::Gear::FullRig, ::t3k::cloud::Gear::Amp,
+    ::t3k::cloud::Gear::Ir,      ::t3k::cloud::Gear::Pedal,
+    ::t3k::cloud::Gear::Outboard,
   };
   float y = r.T + 4.f;
   auto* gfx = GetUI();
