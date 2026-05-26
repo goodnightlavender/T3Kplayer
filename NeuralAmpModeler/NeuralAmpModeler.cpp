@@ -252,6 +252,13 @@ void NeuralAmpModeler::ProcessBlock(iplug::sample** inputs, iplug::sample** outp
     const int extraIdx = mChainOrder[orderIdx];
     if (extraIdx < 0 || extraIdx >= kNumExtraSlots) continue;
     auto& es = mExtraSlots[extraIdx];
+    if (es.bypassed)
+    {
+      // Pass-through: input -> output unchanged. currentPointers keeps
+      // pointing at the previous stage's output (the next iteration uses
+      // it as its input), which is correct identity behaviour.
+      continue;
+    }
     if (es.model == nullptr)
       continue;
     // Apply per-slot input gain into scratch.

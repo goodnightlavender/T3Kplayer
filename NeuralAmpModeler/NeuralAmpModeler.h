@@ -225,6 +225,11 @@ struct ExtraSlot
   double inGainDb = 0.0;   // -20..+20
   double outGainDb = 0.0;  // -40..+40
   WDL_String namPath;
+  // 2026-05-26 - bypass: when true, ProcessBlock passes signal through
+  // this slot unchanged (no model, no IR, no tone stack, no gains).
+  // Toggled from UI via T3kModelTile::OnMouseDblClick. Persists in
+  // PresetState (schema bump in Phase B).
+  bool bypassed = false;
 };
 
 class NeuralAmpModeler final : public iplug::Plugin
