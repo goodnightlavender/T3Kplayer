@@ -196,6 +196,19 @@ private:
   std::string                          mSignInStatus;
   std::chrono::steady_clock::time_point mSignInStatusExpiry;
 
+  // 2026-05-26 polish-pass — header avatar image. When the user is signed
+  // in and their TONE3000 profile carries an avatar_url, we resolve it
+  // through cloud::ThumbnailCache (disk-cached HTTP fetch) and paint
+  // the bitmap inside the avatar circle. Falls back to the initials
+  // glyph if the URL is empty or the fetch fails.
+  iplug::igraphics::IBitmap mAvatarBitmap;
+  bool                      mAvatarBitmapLoaded     = false;
+  bool                      mAvatarBitmapLoadFailed = false;
+  bool                      mAvatarThumbRequested   = false;
+  std::string               mAvatarThumbForUrl;
+  std::string               mAvatarThumbPath;
+  std::string               mAvatarLoadedPath;
+
   // Hide all three body views (used during tab switching).
   void hideAllBodies();
 

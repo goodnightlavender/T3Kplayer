@@ -35,6 +35,7 @@
 #include "../cloud/OAuthFlow.h"
 #include "../cloud/Session.h"
 #include "../cloud/SessionEvent.h"
+#include "../cloud/ThumbnailCache.h"
 #include "../library/LibraryScanner.h"
 #include "../library/PresetStore.h"
 #include "../library/PresetState.h"
@@ -61,7 +62,7 @@ constexpr float kLooseW         = 18.f;
 constexpr float kLooseGap       = 4.f;
 constexpr float kPresetPillW    = 160.f;
 constexpr float kPresetPillH    = 24.f;
-constexpr float kAvatarW        = 28.f;
+constexpr float kAvatarW        = 32.f;   // 2026-05-26 polish-pass: 28 → 32 to match pill heights at 1.35× scale
 constexpr float kPresetGap      = 10.f;  // between preset pill and avatar
 constexpr float kPresetOverlayW = 280.f;
 constexpr float kPresetOverlayH = 210.f;
@@ -519,22 +520,82 @@ void ToneRoot::Draw(IGraphics& g)
     const float cy = a.MH();
     const float r  = std::min(a.W(), a.H()) * 0.5f - 2.f;
 
-    g.FillCircle(th::kBgSurface, cx, cy, r);
-    g.DrawCircle(th::kBorder, cx, cy, r, nullptr, 1.f);
-
-    // Initials — first char of username (uppercased) when known.
-    // Defaults to "T" for the @testuser mock + the unknown-username
-    // signed-in state.
-    std::string initials = "T";
+    // 2026-05-26 polish-pass — try to paint the user's TONE3000 avatar.
+    // We fetch the image via cloud::ThumbnailCache (same disk-cached HTTP
+    // path the Cloud-tab cards use). The fetch is kicked on first Draw
+    // after sign-in; until it lands (or fails), we fall back to the
+    // initials glyph.
+    std::string avatarUrl;
     if (auto u = ::t3k::cloud::Session::instance().currentUser();
-        u.has_value() && !u->username.empty()) {
-      initials = std::string(1, static_cast<char>(std::toupper(
-          static_cast<unsigned char>(u->username[0]))));
+        u.has_value()) {
+      avatarUrl = u->avatar_url;
     }
-    g.DrawText(IText(th::kTypeSmall, th::kText,
-                     th::kFontBodyBold, EAlign::Center, EVAlign::Middle),
-               initials.c_str(),
-               IRECT(cx - r, cy - r, cx + r, cy + r));
+
+    if (!avatarUrl.empty()
+        && !mAvatarBitmapLoadFailed
+        && mAvatarThumbForUrl != avatarUrl)
+    {
+      mAvatarThumbRequested = true;
+      mAvatarThumbForUrl    = avatarUrl;
+      ::t3k::cloud::ThumbnailCache::instance().fetch(
+          avatarUrl,
+          [this](const std::string& path, bool ok) {
+            if (ok && !path.empty()) mAvatarThumbPath = path;
+            else mAvatarBitmapLoadFailed = true;
+            this->SetDirty(false);
+          });
+    }
+
+    const std::string& effPath = mAvatarThumbPath;
+    if (!effPath.empty() && !mAvatarBitmapLoaded
+        && !mAvatarBitmapLoadFailed
+        && mAvatarLoadedPath != effPath)
+    {
+      mAvatarBitmap = g.LoadBitmap(effPath.c_str());
+      mAvatarBitmapLoaded = mAvatarBitmap.IsValid();
+      if (!mAvatarBitmapLoaded) mAvatarBitmapLoadFailed = true;
+      mAvatarLoadedPath = effPath;
+    }
+
+    g.FillCircle(th::kBgSurface, cx, cy, r);
+
+    if (mAvatarBitmapLoaded)
+    {
+      // Cover-crop the avatar into the circle. iPlug2 has no
+      // "clip to circle" path on every backend; draw a fitted bitmap
+      // then paint a 2px ring on top to mask the corners visually.
+      const float bw = static_cast<float>(mAvatarBitmap.W());
+      const float bh = static_cast<float>(mAvatarBitmap.H());
+      if (bw > 0.f && bh > 0.f) {
+        const float diam = r * 2.f;
+        const float scale = std::max(diam / bw, diam / bh);
+        const float dstW = bw * scale;
+        const float dstH = bh * scale;
+        g.DrawFittedBitmap(mAvatarBitmap,
+                           IRECT(cx - dstW * 0.5f, cy - dstH * 0.5f,
+                                 cx + dstW * 0.5f, cy + dstH * 0.5f));
+      }
+    }
+    else
+    {
+      // Initials — first char of username (uppercased) when known.
+      // Defaults to "T" for the @testuser mock + the unknown-username
+      // signed-in state.
+      std::string initials = "T";
+      if (auto u = ::t3k::cloud::Session::instance().currentUser();
+          u.has_value() && !u->username.empty()) {
+        initials = std::string(1, static_cast<char>(std::toupper(
+            static_cast<unsigned char>(u->username[0]))));
+      }
+      g.DrawText(IText(th::kTypeSmall, th::kText,
+                       th::kFontBodyBold, EAlign::Center, EVAlign::Middle),
+                 initials.c_str(),
+                 IRECT(cx - r, cy - r, cx + r, cy + r));
+    }
+
+    // Outer ring (always drawn — both as the affordance border and to
+    // mask the bitmap corners on backends without circle-clipping).
+    g.DrawCircle(th::kBorder, cx, cy, r, nullptr, 1.5f);
   }
 
   // 1px separator below the header row.
@@ -966,6 +1027,15 @@ void ToneRoot::onSessionEvent(const ::t3k::cloud::SessionEvent& ev)
     case K::SignedIn:
       mSignedIn = true;
       if (mSignInPill) mSignInPill->Hide(true);
+      // Invalidate any cached avatar state so the next Draw fetches the
+      // newly-signed-in user's avatar URL.
+      mAvatarBitmap            = IBitmap();
+      mAvatarBitmapLoaded      = false;
+      mAvatarBitmapLoadFailed  = false;
+      mAvatarThumbRequested    = false;
+      mAvatarThumbForUrl.clear();
+      mAvatarThumbPath.clear();
+      mAvatarLoadedPath.clear();
       refreshAccountMenuItems();
       SetDirty(false);
       break;
@@ -973,6 +1043,13 @@ void ToneRoot::onSessionEvent(const ::t3k::cloud::SessionEvent& ev)
     case K::SessionExpired:
       mSignedIn = false;
       if (mSignInPill) mSignInPill->Hide(false);
+      mAvatarBitmap            = IBitmap();
+      mAvatarBitmapLoaded      = false;
+      mAvatarBitmapLoadFailed  = false;
+      mAvatarThumbRequested    = false;
+      mAvatarThumbForUrl.clear();
+      mAvatarThumbPath.clear();
+      mAvatarLoadedPath.clear();
       refreshAccountMenuItems();
       SetDirty(false);
       break;
