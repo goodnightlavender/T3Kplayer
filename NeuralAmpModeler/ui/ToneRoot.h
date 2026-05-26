@@ -44,6 +44,7 @@ class T3kPresetOverlay;
 class T3kClickBackdrop;
 class T3kDownloadsPill;
 class T3kDownloadsPopover;
+class T3kGateHeaderPill;
 class T3kFirstRunModal;
 class T3kRestoreModal;
 class T3kSettingsModal;
@@ -111,6 +112,7 @@ private:
   iplug::igraphics::IRECT mUndoRect;
   iplug::igraphics::IRECT mRedoRect;
   iplug::igraphics::IRECT mTabStripRect;
+  iplug::igraphics::IRECT mGatePillRect;       // 2026-05-26 — GATE pill, LEFT of mDownloadsPillRect
   iplug::igraphics::IRECT mDownloadsPillRect;
   iplug::igraphics::IRECT mPresetPillRect;
   iplug::igraphics::IRECT mAvatarRect;
@@ -126,6 +128,7 @@ private:
   T3kDownloadsPill*    mDownloadsPill     = nullptr;
   T3kDownloadsPopover* mDownloadsPopover  = nullptr;
   T3kClickBackdrop*    mDownloadsBackdrop = nullptr;
+  T3kGateHeaderPill*   mGatePill          = nullptr;  // 2026-05-26 — header GATE pill
   T3kPresetPill*   mPresetPill  = nullptr;
   // Phase 5 auth surface — pill OR avatar shows depending on Session
   // state; the account menu drops under the avatar/pill when clicked.

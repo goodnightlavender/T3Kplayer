@@ -15,6 +15,7 @@
 #include "controls/T3kClickBackdrop.h"
 #include "controls/T3kDownloadsPill.h"
 #include "controls/T3kDownloadsPopover.h"
+#include "controls/T3kGateHeaderPill.h"
 #include "controls/T3kLogo.h"
 #include "controls/T3kLooseGlyph.h"
 #include "controls/T3kPresetOverlay.h"
@@ -38,6 +39,9 @@
 #include "../library/PresetStore.h"
 #include "../library/PresetState.h"
 #include "../settings/Settings.h"
+
+// Plug-in header — exposes EParams (kNoiseGateThreshold) for the GATE pill.
+#include "../NeuralAmpModeler.h"
 
 namespace t3k::ui {
 
@@ -64,6 +68,8 @@ constexpr float kPresetOverlayH = 210.f;
 constexpr float kDownloadsPillW = 60.f;
 constexpr float kDownloadsPopoverW = 320.f;
 constexpr float kDownloadsPopoverH = 260.f;
+constexpr float kGatePillW         = 80.f;   // 2026-05-26 — GATE header pill
+constexpr float kGatePillGap       =  8.f;   // gap between GATE pill and downloads pill
 
 // Phase 5 — account menu sized to comfortably hold the header + 3 rows.
 constexpr float kAccountMenuW = 220.f;
@@ -129,11 +135,17 @@ void ToneRoot::OnResize()
                              headerPad.MH() - kPresetPillH * 0.5f,
                              rx,
                              headerPad.MH() + kPresetPillH * 0.5f);
+  // 2026-05-26 — GATE pill: LEFT of the downloads pill with an 8 px gap.
+  rx = mDownloadsPillRect.L - kGatePillGap;
+  mGatePillRect = IRECT(rx - kGatePillW,
+                        headerPad.MH() - kPresetPillH * 0.5f,
+                        rx,
+                        headerPad.MH() + kPresetPillH * 0.5f);
 
   // Center cluster: tab bar fills the space between the loose-glyphs and
-  // the downloads pill, but the T3kTabBar centers its own labels inside.
+  // the GATE pill, but the T3kTabBar centers its own labels inside.
   const float tabL = mRedoRect.R + t3k::theme::kS3;
-  const float tabR = mDownloadsPillRect.L - t3k::theme::kS3;
+  const float tabR = mGatePillRect.L - t3k::theme::kS3;
   mTabStripRect = IRECT(tabL, headerPad.T, tabR, headerPad.B);
 
   // Resize header children if they already exist.
@@ -141,6 +153,7 @@ void ToneRoot::OnResize()
   if (mUndoGlyph)  mUndoGlyph->SetTargetAndDrawRECTs(mUndoRect);
   if (mRedoGlyph)  mRedoGlyph->SetTargetAndDrawRECTs(mRedoRect);
   if (mTabBar)     mTabBar->SetTargetAndDrawRECTs(mTabStripRect);
+  if (mGatePill)      mGatePill->SetTargetAndDrawRECTs(mGatePillRect);
   if (mDownloadsPill) mDownloadsPill->SetTargetAndDrawRECTs(mDownloadsPillRect);
   if (mPresetPill) mPresetPill->SetTargetAndDrawRECTs(mPresetPillRect);
   // Sign-in pill occupies the avatar slot when signed-out. It's wider
@@ -236,6 +249,13 @@ void ToneRoot::OnAttached()
       /*onChanged*/ [this](int idx) { this->switchTab(static_cast<Tab>(idx)); },
       /*initial*/ static_cast<int>(Tab::Tone));
   g->AttachControl(mTabBar);
+
+  // 2026-05-26 — GATE pill, bound to ::kNoiseGateThreshold. Drag-vertical
+  // adjusts the threshold via the standard IKnobControlBase path. Attached
+  // here next to the downloads pill so the right-cluster z-order stays
+  // intact.
+  mGatePill = new T3kGateHeaderPill(mGatePillRect, ::kNoiseGateThreshold);
+  g->AttachControl(mGatePill);
 
   // Downloads pill — toggles the popover below. Attached BEFORE the
   // preset pill in the control list so the preset pill stays last in
