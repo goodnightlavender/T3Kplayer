@@ -387,6 +387,7 @@
     <ClInclude Include="..\ui\controls\T3kReadout.h" />
     <ClInclude Include="..\ui\controls\T3kVMeter.h" />
     <ClInclude Include="..\ui\controls\T3kSectionHeader.h" />
+    <ClInclude Include="..\ui\controls\T3kGlobalKnob.h" />
     <ClInclude Include="..\..\Dependencies\sqlite\sqlite3.h" />
     <ClInclude Include="..\library\Paths.h" />
     <ClInclude Include="..\library\Schema.h" />
@@ -546,6 +547,7 @@
     <ClCompile Include="..\ui\controls\T3kReadout.cpp" />
     <ClCompile Include="..\ui\controls\T3kVMeter.cpp" />
     <ClCompile Include="..\ui\controls\T3kSectionHeader.cpp" />
+    <ClCompile Include="..\ui\controls\T3kGlobalKnob.cpp" />
     <ClCompile Include="..\..\Dependencies\sqlite\sqlite3.c">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
