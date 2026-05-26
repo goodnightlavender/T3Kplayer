@@ -101,6 +101,7 @@ private:
       std::string imageUrl;   // Remote image URL (t3k_image_url), resolved
                               // via cloud::ThumbnailCache when imagePath is empty.
       int        dspSlot = -1; // 0..kNumChainSlots-1 once staged, -1 otherwise.
+      bool       bypassed = false;  // 2026-05-26 — UI shadow of ExtraSlot::bypassed
       ModelInfoSnapshot info;
     };
     std::vector<LoadedSlot> loaded;

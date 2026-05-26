@@ -603,6 +603,18 @@ void ToneView::seedDemoSnapshot()
   s.knobs.mid       = readParam(::kToneMid);
   s.knobs.treble    = readParam(::kToneTreble);
   s.knobs.output_db = readParam(::kOutputLevel);
+
+  // 2026-05-26 — new global + per-slot fields.
+  if (auto* p = mPlugin.GetParam(::kMasterOutput))
+    s.master_output_db = p->Value();
+  for (size_t i = 0; i < mChain.loaded.size() && i < s.slots.size(); ++i)
+  {
+    s.slots[i].bypassed = mChain.loaded[i].bypassed;
+    if (const auto* es = mPlugin.GetExtraSlot(mChain.loaded[i].dspSlot))
+      s.slots[i].dryWet = es->dryWet;
+    else
+      s.slots[i].dryWet = 1.0;
+  }
   return s;
 }
 
@@ -645,6 +657,7 @@ void ToneView::applyPresetState(const ::t3k::library::PresetState& s)
     else if (row->gear_type == "full-rig") ls.iconType = GearType::FullRig;
     else                                   ls.iconType = GearType::Pedal;
     ls.kind                = row->kind;  // 2026-05-26 — see loadModelIntoSlot.
+    ls.bypassed            = e.bypassed;
     // 2026-05-26 — also restore absPath + image fields so the audio
     // chain gets re-staged on the syncDspChain() call below. Without
     // this, applyPresetState was a UI-only snapshot — restoring a
@@ -670,6 +683,19 @@ void ToneView::applyPresetState(const ::t3k::library::PresetState& s)
 
   rebuildStrip();
   syncDspChain();
+
+  // 2026-05-26 — restore per-slot dry/wet + bypass to the DSP after staging.
+  for (size_t i = 0; i < mChain.loaded.size() && i < s.slots.size(); ++i)
+  {
+    if (auto* es = mPlugin.GetExtraSlot(mChain.loaded[i].dspSlot))
+    {
+      es->dryWet   = s.slots[i].dryWet;
+      es->bypassed = mChain.loaded[i].bypassed;
+    }
+  }
+  if (auto* p = mPlugin.GetParam(::kMasterOutput))
+    p->Set(s.master_output_db);
+
   if (mChain.selectedIndex >= 0) onSlotSelected(mChain.selectedIndex);
 }
 
