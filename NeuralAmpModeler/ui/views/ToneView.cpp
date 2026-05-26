@@ -136,10 +136,34 @@ void ToneView::OnAttached()
   }
 }
 
-void ToneView::Draw(IGraphics& /*g*/)
+void ToneView::Draw(IGraphics& g)
 {
-  // The strip + focused-slot panel paint themselves; ToneView is purely
-  // a layout shell with no chrome of its own.
+  namespace th = ::t3k::theme;
+
+  // 2026-05-26 polish-pass — category labels at the top of the chain strip
+  // (PEDALS / AMP / CABINET / OUTBOARD). The labels live in the top
+  // kStripLabelBandH band of mStripRect (carved out of the tile area in
+  // layoutStripTiles). Each label x is aligned with the left edge of the
+  // first tile in its group, matching the mockup's `.t3k-grouplbl`
+  // typography (uppercase, letter-spacing, mute-yellow accent).
+  if (!mTiles.empty() && static_cast<int>(mTiles.size()) == ::kNumChainSlots)
+  {
+    const IText labelT(11.f, th::kAccent, th::kFontBodyBold,
+                       EAlign::Near, EVAlign::Top);
+    const float labelY = mStripRect.T + 3.f;
+    const float labelH = kStripLabelBandH - 3.f;
+
+    auto drawLabel = [&](int startSlot, int endSlot, const char* text) {
+      if (!mTiles[startSlot] || !mTiles[endSlot]) return;
+      const float xL = mTiles[startSlot]->GetRECT().L;
+      const float xR = mTiles[endSlot]->GetRECT().R;
+      g.DrawText(labelT, text, IRECT(xL, labelY, xR, labelY + labelH));
+    };
+    drawLabel(kPedalSlotMin,    kPedalSlotMax,    "PEDALS");
+    drawLabel(kAmpSlot,         kAmpSlot,         "AMP");
+    drawLabel(kCabSlot,         kCabSlot,         "CABINET");
+    drawLabel(kOutboardSlotMin, kOutboardSlotMax, "OUTBOARD");
+  }
 }
 
 bool ToneView::IsDirty()
