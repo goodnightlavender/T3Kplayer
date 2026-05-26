@@ -17,10 +17,7 @@
 #include "IControl.h"
 #include "IGraphicsStructs.h"
 
-// We reuse the ModelInfoSnapshot struct already defined in T3kModelInfoPane.h
-// rather than re-defining a near-duplicate. Once T3kModelInfoPane is deleted
-// in cleanup (Phase X), the struct will migrate into this header.
-#include "T3kModelInfoPane.h"
+#include "../ModelInfoSnapshot.h"
 
 class NeuralAmpModeler;
 

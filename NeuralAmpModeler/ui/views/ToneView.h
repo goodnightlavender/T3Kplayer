@@ -29,9 +29,7 @@
 #include "../controls/T3kGearIcon.h"
 #include "../controls/T3kModelTile.h"
 #include "../controls/T3kGlobalKnob.h"
-// T3kModelInfoPane.h still ships ModelInfoSnapshot, used by ChainView and by
-// T3kFocusedSlot. The pane control itself is no longer mounted (Phase E2).
-#include "T3kModelInfoPane.h"
+#include "../ModelInfoSnapshot.h"
 #include "../../library/PresetState.h"
 
 class NeuralAmpModeler;  // forward-declare upstream plug-in
