@@ -1,8 +1,12 @@
-// T3kButton — pill-shaped button with Primary / Secondary variants.
+// T3kButton — pill-shaped button with Primary / Secondary / Invert variants.
 //
 // Primary  : solid kAccent fill, white text. Hover lightens fill ~10%.
 // Secondary: transparent fill, 1px kBorder outline, white text.
 //            Hover switches the outline to kBorderActive.
+// Invert   : solid white fill, black text. Used for high-affordance
+//            CTAs on top of the accent (since the accent is now yellow,
+//            white-on-accent is unreadable — Invert keeps the "loud
+//            primary" feel without the contrast collision).
 
 #pragma once
 
@@ -22,7 +26,7 @@ using ::iplug::igraphics::IMouseMod;
 class T3kButton : public IControl
 {
 public:
-  enum class Variant { Primary, Secondary };
+  enum class Variant { Primary, Secondary, Invert };
 
   T3kButton(const IRECT& bounds,
             const char* label,

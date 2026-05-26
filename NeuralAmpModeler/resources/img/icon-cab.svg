@@ -1,11 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 36" fill="none">
-  <rect x="4" y="4" width="48" height="28" rx="2" stroke="#cfcfcf" stroke-width="1.4"/>
-  <circle cx="17" cy="13" r="5" stroke="#cfcfcf" stroke-width="1"/>
-  <circle cx="17" cy="13" r="1.5" fill="#cfcfcf"/>
-  <circle cx="39" cy="13" r="5" stroke="#cfcfcf" stroke-width="1"/>
-  <circle cx="39" cy="13" r="1.5" fill="#cfcfcf"/>
-  <circle cx="17" cy="25" r="5" stroke="#cfcfcf" stroke-width="1"/>
-  <circle cx="17" cy="25" r="1.5" fill="#cfcfcf"/>
-  <circle cx="39" cy="25" r="5" stroke="#cfcfcf" stroke-width="1"/>
-  <circle cx="39" cy="25" r="1.5" fill="#cfcfcf"/>
-</svg>
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="24" height="24" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" class="" aria-label="Impulse Response"><g id="full rig 49" fill="none"><path id="Vector" d="M35 20H31.28C30.6245 19.9986 29.9865 20.212 29.4637 20.6075C28.9409 21.0029 28.562 21.5588 28.385 22.19L24.86 34.73C24.8373 34.8079 24.7899 34.8763 24.725 34.925C24.6601 34.9737 24.5811 35 24.5 35C24.4189 35 24.3399 34.9737 24.275 34.925C24.2101 34.8763 24.1627 34.8079 24.14 34.73L15.86 5.27C15.8373 5.19211 15.7899 5.12368 15.725 5.075C15.6601 5.02632 15.5811 5 15.5 5C15.4189 5 15.3399 5.02632 15.275 5.075C15.2101 5.12368 15.1627 5.19211 15.14 5.27L11.615 17.81C11.4387 18.4387 11.0621 18.9928 10.5423 19.388C10.0225 19.7833 9.38798 19.9981 8.735 20H5" stroke="#FFFFFF" stroke-width="3px" stroke-linecap="round" stroke-linejoin="round" fill="none"></path></g></svg>

@@ -20,8 +20,12 @@ void T3kLogo::Draw(IGraphics& g)
   if (!mSvg.has_value())
     mSvg.emplace(g.LoadSVG(TONE3000_LOGO_FN));
 
-  // Scale to fit while preserving the source 210x32 aspect ratio.
-  const float srcAspect = 210.f / 32.f;
+  // Scale to fit while preserving the source aspect ratio.
+  // 2026-05-25 — new logo SVG ships at 247x30 (aspect 8.233:1, vs
+  // the prior 210x32 ≈ 6.56:1). The logo bar in ToneRoot's header
+  // is wide-and-short, so the new flatter ratio renders fine without
+  // changing the host rect.
+  const float srcAspect = 247.f / 30.f;
   const float dstAspect = mRECT.W() / mRECT.H();
   IRECT dst = mRECT;
   if (dstAspect > srcAspect) {

@@ -83,6 +83,16 @@ public:
   void setSelected(bool s) { mSelected = s; SetDirty(false); }
   bool isSelected() const { return mSelected; }
 
+  // 2026-05-26 — refresh the display data on an existing card. Used by
+  // CloudView::rebuildCards() to push fresh tones into cards after a
+  // search/filter — without this, the cards keep showing the previous
+  // search's titles/images while their click handlers (which index into
+  // CloudView::mTones by position) silently resolve to the new tone.
+  // Resets the lazy thumbnail cache so the new tone's image is fetched
+  // instead of the previous tone's bitmap being painted under the new
+  // title.
+  void setData(CardData data);
+
   // Per-card download status (Phase 7 polish). The Cloud-tab status
   // banner was getting occluded by cards that extend past the visible
   // bottom — so we surface the state directly on the DOWNLOAD pill of

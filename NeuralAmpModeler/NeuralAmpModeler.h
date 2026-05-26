@@ -227,6 +227,19 @@ struct ExtraSlot
   double inGainDb = 0.0;   // -20..+20
   double outGainDb = 0.0;  // -40..+40
   WDL_String namPath;
+
+  // 2026-05-26 — per-slot IR support. A slot holds EITHER a NAM model
+  // OR a convolution IR — never both. ProcessBlock prefers `model`
+  // when both are populated (a defensive choice; UI should clear the
+  // other before staging). `ir` lifetime is managed identically to
+  // `model`: UI thread fills `stagedIR`, audio thread swaps in
+  // _ApplyDSPStaging. `irPath` stores the on-disk path for
+  // syncDspChain's stability check (mirror of namPath for IR slots).
+  std::unique_ptr<dsp::ImpulseResponse> ir;
+  std::unique_ptr<dsp::ImpulseResponse> stagedIR;
+  std::atomic<bool>                     shouldRemoveIR{false};
+  WDL_String irPath;
+
   // 2026-05-26 - bypass: when true, ProcessBlock passes signal through
   // this slot unchanged (no model, no IR, no tone stack, no gains).
   // Toggled from UI via T3kModelTile::OnMouseDblClick. Persists in
@@ -269,6 +282,13 @@ public:
   ExtraSlot*       GetExtraSlot(int slot)       { return _Extra(slot); }
   const ExtraSlot* GetExtraSlot(int slot) const { return _Extra(slot); }
 
+  // 2026-05-26 — per-slot IR API mirroring the NAM ones above. Stage a
+  // .wav IR file into slots 1..N-1 (slot 0 IR keeps using _StageIR
+  // for legacy compatibility). Returns "" on success, error otherwise.
+  std::string StageIRInSlot(int slot, const WDL_String& irPath);
+  const char* GetSlotIRPath(int slot) const;
+  bool        SlotHasIR(int slot) const;
+
   // ── Chain order indirection (2026-05-25, fixes pops on reorder) ─
   // ToneView pushes the desired processing order for the ExtraSlots
   // here. ProcessBlock walks the ExtraSlots in this order instead of
@@ -287,6 +307,13 @@ public:
   int UnserializeState(const iplug::IByteChunk& chunk, int startPos) override;
   void OnUIOpen() override;
   bool OnHostRequestingSupportedViewConfiguration(int width, int height) override { return true; }
+
+  // 2026-05-25 — handle host-driven resize (host drags a window edge,
+  // or honors our own corner-resizer's resizeView callback). We bring
+  // IGraphics' draw scale back into sync with the new parent window
+  // size while preserving the design aspect ratio, so the UI scales
+  // along with the window instead of getting cropped / letterboxed.
+  void OnParentWindowResize(int width, int height) override;
 
   void OnParamChange(int paramIdx) override;
   void OnParamChangeUI(int paramIdx, iplug::EParamSource source) override;

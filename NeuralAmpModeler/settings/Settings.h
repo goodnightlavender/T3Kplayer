@@ -21,12 +21,21 @@
 namespace t3k::settings {
 
 struct Settings {
-  int         schema_version = 1;
+  // 2026-05-25 — bumped to 4 alongside a small scale trim (1.4 ->
+  // 1.35) and the design canvas trim to 1024x640. Files saved at
+  // schema_version<4 get their window_scale forcibly reset to the
+  // new default on load so the user sees the new layout immediately
+  // on first launch after the upgrade. New saves write
+  // schema_version=4 going forward.
+  int         schema_version = 4;
   std::string tone3000_root;        // empty => first run
-  // Window-size preset (2026-05-25). "small" / "medium" / "large".
-  // Empty defaults to "medium" on load. Drives the editor resize on
-  // OnUIOpen + when the user picks a new preset in the settings modal.
-  std::string window_size = "medium";
+  // Window draw scale, applied to the fixed design canvas
+  // (PLUG_WIDTH x PLUG_HEIGHT = 1024x640). 1.35 = default on first
+  // launch and after Reset; window comes out at ~1382x864. The
+  // bottom-right corner resizer writes the live value here as the
+  // user drags; the next OnUIOpen reads it back so the editor
+  // reopens at the user's last size.
+  float window_scale = 1.35f;
 };
 
 // Returns the singleton settings struct. Mutable reference — callers

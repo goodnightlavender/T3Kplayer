@@ -52,25 +52,26 @@ class T3kSettingsModal : public iplug::igraphics::IControl {
   void pickToneRoot();
   void doSignOut();
   void doRescan();
-  // Apply a window-size preset ("small" / "medium" / "large") —
-  // updates Settings + persists + calls IGraphics::Resize.
-  void setWindowSize(const char* preset);
+  // Reset the editor to the default window scale (0.9 — the previous
+  // "small" preset, ~1498x936 host pixels). Updates Settings,
+  // persists, and calls IGraphics::Resize. Same effect as the
+  // Ctrl+Shift+0 global hotkey.
+  void resetWindowSize();
 
   iplug::igraphics::IRECT mCardRect;
   iplug::igraphics::IRECT mChangeRootBtnRect;
   iplug::igraphics::IRECT mRescanBtnRect;
   iplug::igraphics::IRECT mSignOutBtnRect;
   iplug::igraphics::IRECT mCloseBtnRect;
-  // Window-size preset row.
-  iplug::igraphics::IRECT mSmallBtnRect;
-  iplug::igraphics::IRECT mMediumBtnRect;
-  iplug::igraphics::IRECT mLargeBtnRect;
+  // Reset-window-size button — recovery for when the corner resizer
+  // drags the editor to an unusable size. (2026-05-25: replaces the
+  // earlier Small/Medium/Large preset row; resizing is now done
+  // freely via the bottom-right corner drag.)
+  iplug::igraphics::IRECT mResetBtnRect;
 
   OnClose mOnClose;
 
-  T3kButton* mSmallBtn      = nullptr;
-  T3kButton* mMediumBtn     = nullptr;
-  T3kButton* mLargeBtn      = nullptr;
+  T3kButton* mResetBtn      = nullptr;
   T3kButton* mChangeRootBtn = nullptr;
   T3kButton* mRescanBtn     = nullptr;
   T3kButton* mSignOutBtn    = nullptr;

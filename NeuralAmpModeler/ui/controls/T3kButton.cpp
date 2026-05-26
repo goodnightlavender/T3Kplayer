@@ -52,10 +52,23 @@ void T3kButton::Draw(IGraphics& g)
   // would otherwise blow iPlug2's PathRoundRect into screen-spanning
   // arcs (see theme.h diagnosis).
   const float pr = th::pillRadius(mRECT.H());
+  // 2026-05-26 — Invert variant: white fill + black text. Used for the
+  // PICK/LOAD and DOWNLOAD CTAs which used to be Primary (yellow fill +
+  // white text — unreadable since the accent went to #FFFF00).
+  IColor textColor = th::kText;
   if (mVariant == Variant::Primary)
   {
     const IColor fill = hover ? LightenTowardWhite(th::kAccent, 0.10f) : th::kAccent;
     g.FillRoundRect(fill, mRECT, pr);
+  }
+  else if (mVariant == Variant::Invert)
+  {
+    // White fill (very slightly dimmed on hover for feedback); text in
+    // theme-black so the affordance contrasts cleanly.
+    const IColor white(255, 255, 255, 255);
+    const IColor hoverWhite(255, 232, 232, 232);
+    g.FillRoundRect(hover ? hoverWhite : white, mRECT, pr);
+    textColor = IColor(255, 0, 0, 0);
   }
   else  // Secondary
   {
@@ -65,7 +78,7 @@ void T3kButton::Draw(IGraphics& g)
   }
 
   const IText label(th::kTypeBody,
-                    th::kText,
+                    textColor,
                     th::kFontBodyMed,
                     EAlign::Center,
                     EVAlign::Middle);

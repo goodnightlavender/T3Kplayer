@@ -15,8 +15,8 @@ inline const IColor kBgBase       {255,   0,   0,   0};   // pure black
 inline const IColor kBgSurface    {255,   5,   5,   5};   // cards / elevated surfaces
 inline const IColor kBgElevated   {255,  10,  10,  10};   // hovered / pressed
 inline const IColor kBorder       {255,  22,  22,  22};   // 1px borders
-inline const IColor kBorderActive {255,  26,  26, 255};   // focus / selection outline (royal blue)
-inline const IColor kAccent       {255,  26,  26, 255};   // #1a1aff — primary CTA
+inline const IColor kBorderActive {255, 255, 255,   0};   // focus / selection outline (yellow)
+inline const IColor kAccent       {255, 255, 255,   0};   // #FFFF00 — primary CTA
 inline const IColor kText         {255, 255, 255, 255};
 inline const IColor kTextMuted    {255, 136, 136, 136};
 inline const IColor kTextDim      {255,  85,  85,  85};
@@ -72,11 +72,13 @@ constexpr int kAnimAccordionChevron = 150;
 constexpr int kAnimCardHover      = 120;
 
 // ─── Window dimensions ─────────────────────────────────────────────────────
-constexpr int kWindowMinW = 1170;
-constexpr int kWindowMinH = 780;
-constexpr int kWindowMaxW = 2080;
-constexpr int kWindowMaxH = 1430;
-constexpr int kWindowDefW = 1664;
-constexpr int kWindowDefH = 1040;
+// 2026-05-25 — design canvas trimmed further to 1024x640. Window at
+// default scale (1.4) = 1434x896. Mirror of PLUG_* in config.h.
+constexpr int kWindowMinW = 716;
+constexpr int kWindowMinH = 448;
+constexpr int kWindowMaxW = 2048;
+constexpr int kWindowMaxH = 1280;
+constexpr int kWindowDefW = 1024;
+constexpr int kWindowDefH = 640;
 
 }  // namespace t3k::theme

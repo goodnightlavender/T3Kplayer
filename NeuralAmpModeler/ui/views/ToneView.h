@@ -88,9 +88,14 @@ private:
     struct LoadedSlot {
       int        slotIndex;   // 0..11 — chain UI index (visual slot)
       GearType   iconType;
+      // 2026-05-26 — file kind, mirrors LibraryDb's `kind` column.
+      // "nam" → routes through StageModelInSlot. "ir" → routes through
+      // StageIRInSlot. Empty defaults to NAM for backwards-compat
+      // with PresetState entries written before this field existed.
+      std::string kind;
       std::string toneId;
       std::string modelId;
-      std::string absPath;    // Absolute .nam path resolved from LibraryDb.uri,
+      std::string absPath;    // Absolute file path resolved from LibraryDb.uri,
                               // cached here so syncDspChain doesn't re-query.
       std::string imagePath;  // Local sibling image (t3k_image_path).
       std::string imageUrl;   // Remote image URL (t3k_image_url), resolved

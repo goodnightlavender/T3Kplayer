@@ -1,13 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 32" fill="none">
-  <rect x="3" y="10" width="50" height="14" rx="1.5" stroke="#cfcfcf" stroke-width="1.4"/>
-  <rect x="3" y="12" width="3" height="10" fill="#cfcfcf"/>
-  <rect x="50" y="12" width="3" height="10" fill="#cfcfcf"/>
-  <circle cx="14" cy="17" r="2" stroke="#cfcfcf" stroke-width="0.9"/>
-  <line x1="14" y1="15" x2="14" y2="17" stroke="#cfcfcf" stroke-width="0.8"/>
-  <circle cx="22" cy="17" r="2" stroke="#cfcfcf" stroke-width="0.9"/>
-  <line x1="22" y1="15" x2="22" y2="17" stroke="#cfcfcf" stroke-width="0.8"/>
-  <circle cx="30" cy="17" r="2" stroke="#cfcfcf" stroke-width="0.9"/>
-  <line x1="30" y1="15" x2="30" y2="17" stroke="#cfcfcf" stroke-width="0.8"/>
-  <circle cx="40" cy="17" r="1" fill="#cfcfcf"/>
-  <circle cx="44" cy="17" r="1" fill="#cfcfcf"/>
-</svg>
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="24" height="24" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" class="" aria-label="Outboard"><path fill-rule="evenodd" clip-rule="evenodd" d="M5.6 15.3999C4.93722 15.3999 4.4 15.9372 4.4 16.5999V23.7999C4.4 24.4626 4.93726 24.9999 5.6 24.9999H34.4C35.0627 24.9999 35.6 24.4626 35.6 23.7999V16.5999C35.6 15.9372 35.0628 15.3999 34.4 15.3999H5.6ZM2 16.5999C2 14.6117 3.61174 12.9999 5.6 12.9999H34.4C36.3883 12.9999 38 14.6117 38 16.5999V23.7999C38 25.788 36.3883 27.3999 34.4 27.3999H5.6C3.6117 27.3999 2 25.788 2 23.7999V16.5999Z" fill="#FFFFFF"></path><path d="M9.19932 22.6007C10.5248 22.6007 11.5993 21.5262 11.5993 20.2007C11.5993 18.8752 10.5248 17.8007 9.19932 17.8007C7.87383 17.8007 6.79932 18.8752 6.79932 20.2007C6.79932 21.5262 7.87383 22.6007 9.19932 22.6007Z" fill="#FFFFFF"></path><path d="M16.3994 22.6007C17.7249 22.6007 18.7994 21.5262 18.7994 20.2007C18.7994 18.8752 17.7249 17.8007 16.3994 17.8007C15.0739 17.8007 13.9994 18.8752 13.9994 20.2007C13.9994 21.5262 15.0739 22.6007 16.3994 22.6007Z" fill="#FFFFFF"></path><path d="M30.7994 17.8007H24.7994C23.4739 17.8007 22.3994 18.8752 22.3994 20.2007C22.3994 21.5262 23.4739 22.6007 24.7994 22.6007H30.7994C32.1249 22.6007 33.1994 21.5262 33.1994 20.2007C33.1994 18.8752 32.1249 17.8007 30.7994 17.8007Z" fill="#FFFFFF"></path></svg>

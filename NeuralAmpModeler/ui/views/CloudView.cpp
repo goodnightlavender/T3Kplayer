@@ -583,11 +583,21 @@ void CloudView::scrollBy(float d)
 
 bool CloudView::handleSidebarClick(float x, float y)
 {
-  for (const auto& pair : mGearRowRects) {
-    if (pair.second.Contains(x, y)) { toggleGear(pair.first); return true; }
+  // 2026-05-26 — gate hit-tests on the accordion being open. The
+  // mGearRowRects / mSizeRowRects vectors persist across collapses
+  // (they're only cleared and re-populated each time the accordion's
+  // drawContent callback runs, which is skipped when collapsed), so
+  // without this gate the user could still toggle filters on collapsed
+  // panels by clicking where the rows used to be.
+  if (mGearAcc && mGearAcc->isOpen()) {
+    for (const auto& pair : mGearRowRects) {
+      if (pair.second.Contains(x, y)) { toggleGear(pair.first); return true; }
+    }
   }
-  for (const auto& pair : mSizeRowRects) {
-    if (pair.second.Contains(x, y)) { toggleSize(pair.first); return true; }
+  if (mTechAcc && mTechAcc->isOpen()) {
+    for (const auto& pair : mSizeRowRects) {
+      if (pair.second.Contains(x, y)) { toggleSize(pair.first); return true; }
+    }
   }
   return false;
 }
@@ -719,6 +729,15 @@ void CloudView::onCardDetail(int toneIndex)
 void CloudView::startSearch()
 {
   if (mState == State::SignedOut) return;
+  // 2026-05-26 — Bump generation FIRST, then cancel. The old ordering
+  // (cancel→bump) had a race: cancelling could trigger the old worker
+  // to fire its callback synchronously (or near-synchronously) BEFORE
+  // we bumped mSearchSeq, so the cancelled callback's seq check passed
+  // and a "canceled" result was written to mPendingResult, blanking
+  // the UI. Bumping first ensures any subsequent callback comparing
+  // its captured seq finds a mismatch and exits.
+  const std::uint64_t mySeq =
+      mSearchSeq.fetch_add(1, std::memory_order_acq_rel) + 1;
   mPendingToken.cancel();
   mNextPage = 1;
   mQuery.page = 1;
@@ -732,8 +751,18 @@ void CloudView::startSearch()
 
   mPendingToken = ::t3k::cloud::Tone3000Client::instance().searchTones(
       mQuery,
-      [this](::t3k::cloud::ToneSearchResult r) {
+      [this, mySeq](::t3k::cloud::ToneSearchResult r) {
+        // Belt-and-suspenders: drop any response that arrives after a
+        // newer search has been dispatched (mySeq mismatch), AND drop
+        // any response that came back with the "canceled" sentinel.
+        // The latter catches the case where a callback fires AFTER
+        // we've cancelled but BEFORE the next search even starts —
+        // without this, the canceled error would still get written
+        // and surface as a stuck Error overlay.
+        if (mySeq != mSearchSeq.load(std::memory_order_acquire)) return;
+        if (!r.success && r.error_message == "canceled") return;
         std::lock_guard<std::mutex> lk(mResultMtx);
+        if (mySeq != mSearchSeq.load(std::memory_order_acquire)) return;
         mPendingResult = std::move(r);
         mPendingResultIsAppend = false;
         mResultReady.store(true, std::memory_order_release);
@@ -746,13 +775,20 @@ void CloudView::fetchNextPage()
   if (mState == State::Loading) return;
   ::t3k::cloud::SearchTonesParams p = mQuery;
   p.page = mNextPage;
+  // Pagination is part of the current search generation — don't bump
+  // mSearchSeq here, just snapshot it. Any new startSearch() will bump
+  // it and invalidate this fetch's callback.
+  const std::uint64_t mySeq = mSearchSeq.load(std::memory_order_acquire);
   mState = State::Loading;
   SetDirty(false);
 
   mPendingToken = ::t3k::cloud::Tone3000Client::instance().searchTones(
       p,
-      [this](::t3k::cloud::ToneSearchResult r) {
+      [this, mySeq](::t3k::cloud::ToneSearchResult r) {
+        if (mySeq != mSearchSeq.load(std::memory_order_acquire)) return;
+        if (!r.success && r.error_message == "canceled") return;
         std::lock_guard<std::mutex> lk(mResultMtx);
+        if (mySeq != mSearchSeq.load(std::memory_order_acquire)) return;
         mPendingResult = std::move(r);
         mPendingResultIsAppend = true;
         mResultReady.store(true, std::memory_order_release);
@@ -779,6 +815,20 @@ void CloudView::rebuildCards()
     c->setOnDetail([this, idx]() { this->onCardDetail(idx); });
     g->AttachControl(c);
     mCards.push_back(c);
+  }
+
+  // 2026-05-26 — Push fresh display data into EVERY card that maps to
+  // a tone, not just the newly-created ones. The previous code only
+  // populated CardData at construction; after a filter/search the
+  // existing cards kept their old titles + images while the click
+  // handlers (which look up mTones[idx] live) silently routed to the
+  // new tone. Symptom: cards looked unchanged but clicking opened
+  // the correct (new) tone — exactly what the user reported.
+  for (std::size_t i = 0; i < mTones.size(); ++i) {
+    if (mCards[i]) {
+      mCards[i]->setData(makeCardData(mTones[i]));
+      mCards[i]->Hide(false);
+    }
   }
 
   // If mTones shrunk, hide the surplus IControls but keep them around —

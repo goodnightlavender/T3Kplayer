@@ -644,6 +644,16 @@ void ToneView::applyPresetState(const ::t3k::library::PresetState& s)
     else if (row->gear_type == "outboard") ls.iconType = GearType::Outboard;
     else if (row->gear_type == "full-rig") ls.iconType = GearType::FullRig;
     else                                   ls.iconType = GearType::Pedal;
+    ls.kind                = row->kind;  // 2026-05-26 — see loadModelIntoSlot.
+    // 2026-05-26 — also restore absPath + image fields so the audio
+    // chain gets re-staged on the syncDspChain() call below. Without
+    // this, applyPresetState was a UI-only snapshot — restoring a
+    // preset showed the slot strip correctly but produced silence.
+    ls.absPath             = row->uri;
+    if (row->t3k_image_path.has_value()) ls.imagePath = *row->t3k_image_path;
+    ls.imageUrl            = row->t3k_image_url;
+    ls.info.imagePath      = ls.imagePath;
+    ls.info.imageUrl       = ls.imageUrl;
     ls.info.displayName    = row->effectiveDisplayName();
     ls.info.creator        = row->t3k_creator;
     ls.info.format         = (row->kind == "ir") ? "IR" : "NAM";
@@ -696,6 +706,7 @@ void ToneView::loadModelIntoSlot(int slotIndex,
   else if (row->gear_type == "outboard") ls.iconType = GearType::Outboard;
   else if (row->gear_type == "full-rig") ls.iconType = GearType::FullRig;
   else                                   ls.iconType = GearType::Pedal;
+  ls.kind                = row->kind;  // "nam" / "ir" — drives syncDspChain routing.
   ls.info.displayName    = row->effectiveDisplayName();
   ls.info.creator        = row->t3k_creator;
   ls.info.format         = (row->kind == "ir") ? "IR" : "NAM";
@@ -760,11 +771,21 @@ void ToneView::syncDspChain()
   //    on the plugin side (rare; happens after a state-chunk restore).
   //    Mark any extra slots no longer claimed by a loaded entry as
   //    "free" so step 3 can reuse them.
+  // 2026-05-26 — compare against the kind-appropriate path getter
+  //   (GetSlotIRPath for IR entries, GetSlotNamPath for NAM). Without
+  //   this an IR entry's path would never match GetSlotNamPath and we'd
+  //   restage it on every syncDspChain — audio dropout on every UI
+  //   resize / preset apply.
   bool slotInUse[kNumChainSlots] = { false };
+  auto pathForSlot = [this](const ChainView::LoadedSlot* ls) -> std::string {
+    return (ls->kind == "ir")
+             ? std::string(mPlugin.GetSlotIRPath(ls->dspSlot))
+             : std::string(mPlugin.GetSlotNamPath(ls->dspSlot));
+  };
   for (auto* ls : ordered) {
     if (ls->dspSlot >= 1 && ls->dspSlot < kNumChainSlots
         && !ls->absPath.empty()
-        && std::string(mPlugin.GetSlotNamPath(ls->dspSlot)) == ls->absPath) {
+        && pathForSlot(ls) == ls->absPath) {
       slotInUse[ls->dspSlot] = true;
     } else {
       ls->dspSlot = -1;  // needs (re)staging into a free slot
@@ -772,9 +793,7 @@ void ToneView::syncDspChain()
   }
 
   // 3. Assign unstaged entries to the first free DSP slot. Stage them
-  //    into the plugin — this is the ONLY path that triggers a
-  //    NeuralAmpModeler::StageModelInSlot now, and it only fires for
-  //    genuinely new models.
+  //    into the plugin via the appropriate API for the file kind.
   for (auto* ls : ordered) {
     if (ls->absPath.empty()) {
       ls->dspSlot = -1;
@@ -791,15 +810,25 @@ void ToneView::syncDspChain()
         continue;
       }
       WDL_String wp(ls->absPath.c_str());
-      mPlugin.StageModelInSlot(free, wp);
+      // 2026-05-26 — route IRs through StageIRInSlot. Pre-this, every
+      // file got fed to StageModelInSlot which then early-rejected
+      // anything not ending in .nam → IRs were silent. Now IRs land
+      // in the slot's ImpulseResponse and process audio in the chain.
+      if (ls->kind == "ir") {
+        mPlugin.StageIRInSlot(free, wp);
+      } else {
+        mPlugin.StageModelInSlot(free, wp);
+      }
       ls->dspSlot     = free;
       slotInUse[free] = true;
     }
   }
 
   // 4. Free any DSP slots that no longer correspond to a loaded entry.
+  //    Check both NAM and IR occupancy — either is enough to require
+  //    an unload.
   for (int i = 1; i < kNumChainSlots; ++i) {
-    if (!slotInUse[i] && mPlugin.SlotHasModel(i)) {
+    if (!slotInUse[i] && (mPlugin.SlotHasModel(i) || mPlugin.SlotHasIR(i))) {
       mPlugin.UnloadSlot(i);
     }
   }

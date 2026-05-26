@@ -52,8 +52,41 @@ void ParseInto(const std::string& blob, Settings& s)
     if (j.contains("tone3000_root") && j["tone3000_root"].is_string()) {
       s.tone3000_root = j["tone3000_root"].get<std::string>();
     }
-    if (j.contains("window_size") && j["window_size"].is_string()) {
-      s.window_size = j["window_size"].get<std::string>();
+    // 2026-05-25 — replaced the "window_size" string preset with a
+    // float "window_scale". Read the new field if present.
+    if (j.contains("window_scale") && j["window_scale"].is_number()) {
+      s.window_scale = j["window_scale"].get<float>();
+    }
+    // Legacy migration: translate the old preset string to the new
+    // float so users who saved with the previous schema land on a
+    // sensible scale on first load. The next save() will write
+    // window_scale and stop emitting window_size.
+    else if (j.contains("window_size") && j["window_size"].is_string()) {
+      const std::string ws = j["window_size"].get<std::string>();
+      if      (ws == "medium") s.window_scale = 0.7f;
+      else if (ws == "large")  s.window_scale = 0.875f;
+      else                     s.window_scale = 1.35f;  // small or unknown
+    }
+    // Sanity-clamp out-of-range values (corrupted file, manual edit).
+    if (s.window_scale < 0.4f || s.window_scale > 2.0f) {
+      s.window_scale = 1.35f;
+    }
+
+    // 2026-05-25 — schema_version=4 migration: the design canvas was
+    // trimmed (1100x688 -> 1024x640) and the default scale trimmed
+    // (1.4 -> 1.35). Any file written under an earlier schema gets
+    // its window_scale unconditionally reset to the new default so
+    // the user sees the new layout immediately. The next save()
+    // writes schema_version=4 (the Settings struct already
+    // initializes it to 4), making the migration one-shot — schema-
+    // 4 files honor whatever window_scale the user (or the corner-
+    // resizer) wrote.
+    const int loadedSchema =
+        (j.contains("schema_version") && j["schema_version"].is_number_integer())
+        ? j["schema_version"].get<int>()
+        : 0;
+    if (loadedSchema < 4) {
+      s.window_scale = 1.35f;
     }
   } catch (...) {
     // Malformed file → keep defaults so the next save() restores a
@@ -110,7 +143,7 @@ void save()
   json j;
   j["schema_version"] = h.s.schema_version;
   j["tone3000_root"]  = h.s.tone3000_root;
-  j["window_size"]    = h.s.window_size;
+  j["window_scale"]   = h.s.window_scale;
 
   // Pretty-print so the file is readable when the user pokes at it.
   const std::string blob = j.dump(2);

@@ -30,15 +30,30 @@
 // Window bounds mirror t3k::theme::kWindowDefW/H, kWindowMinW/H, kWindowMaxW/H.
 // (Macros live here because iPlug2 reads them at compile-time for the
 // VST3/AAX/AU descriptors before any C++ namespace is in scope.)
-#define PLUG_WIDTH 1664
-#define PLUG_HEIGHT 1040
+// 2026-05-25 — design canvas trimmed further (1100x688 -> 1024x640)
+// so the host window at the default scale (1.4) lands at ~1434x896,
+// down from ~1540x963. Aspect 1.6:1 preserved. The detail modal's
+// kCardW shrank in lockstep so it still has comfortable margins on
+// either side. theme.h's kWindowDefW/H mirror these values.
+#define PLUG_WIDTH 1024
+#define PLUG_HEIGHT 640
 #define PLUG_FPS 60
 #define PLUG_SHARED_RESOURCES 0
-#define PLUG_HOST_RESIZE 0
-#define PLUG_MIN_WIDTH 1170
-#define PLUG_MIN_HEIGHT 780
-#define PLUG_MAX_WIDTH 2080
-#define PLUG_MAX_HEIGHT 1430
+// 2026-05-25 — enabled to support the bottom-right corner resizer.
+// iPlug2's VST3 canResize() honors the resize only when this is 1; with
+// 0 the host refuses the plugin's resizeView callback so dragging the
+// corner would update the IGraphics state without resizing the actual
+// host window. Min/max bounds (PLUG_MIN_*/PLUG_MAX_*) still gate the
+// allowed range.
+#define PLUG_HOST_RESIZE 1
+// 2026-05-25 — bounds rebased on the new 1024x640 design canvas:
+//   MIN = canvas * 0.7  -> 716x448   (lower drag floor)
+//   MAX = canvas * 2.0  -> 2048x1280 (upper drag ceiling)
+// theme.h mirrors these numbers.
+#define PLUG_MIN_WIDTH 716
+#define PLUG_MIN_HEIGHT 448
+#define PLUG_MAX_WIDTH 2048
+#define PLUG_MAX_HEIGHT 1280
 
 #define AUV2_ENTRY NeuralAmpModeler_Entry
 #define AUV2_ENTRY_STR "NeuralAmpModeler_Entry"

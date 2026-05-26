@@ -176,13 +176,15 @@ void T3kLibraryCard::Draw(IGraphics& g)
     if (!mBitmapLoaded) mBitmapLoadFailed = true;
   }
   if (mBitmapLoaded) {
-    // Fit-cover the hero rect (preserve aspect, crop overflow). We do
-    // a simple uniform-scale that fills the smaller dimension and
-    // centre-crops; iPlug2's IBlend with EBlend::Default + the
-    // implicit per-control scissor handles the clip.
+    // 2026-05-26 — Fit-CONTAIN the hero rect (preserve aspect, letterbox
+    // overflow). We previously used cover (std::max) but iPlug2 doesn't
+    // apply a per-control scissor on DrawFittedBitmap, so taller-than-
+    // wide source bitmaps spilled vertically over the card chrome —
+    // pictures looked bigger than others. std::min keeps the rendered
+    // image fully inside mHeroRect with consistent visual scale.
     const float bw = static_cast<float>(mBitmap.W());
     const float bh = static_cast<float>(mBitmap.H());
-    const float scale = std::max(mHeroRect.W() / bw, mHeroRect.H() / bh);
+    const float scale = std::min(mHeroRect.W() / bw, mHeroRect.H() / bh);
     const float dstW = bw * scale;
     const float dstH = bh * scale;
     const float dstL = mHeroRect.MW() - dstW * 0.5f;

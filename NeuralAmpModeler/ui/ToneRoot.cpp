@@ -47,7 +47,12 @@ namespace {
 
 // Layout constants — single 44px header row (Phase 2b v6).
 constexpr float kHeaderH        = 44.f;
-constexpr float kLogoW          = 110.f;
+// 2026-05-26 — logo width bumped from 110 → 160 to give the new SVG
+// wordmark more visual presence in the top bar. T3kLogo letterboxes
+// internally to preserve the 247×30 aspect, so heavier widths just
+// produce a taller-rendered glyph (the header itself is still capped
+// by mHeaderRect's height).
+constexpr float kLogoW          = 160.f;
 constexpr float kLooseW         = 18.f;
 constexpr float kLooseGap       = 4.f;
 constexpr float kPresetPillW    = 160.f;
@@ -172,12 +177,15 @@ void ToneRoot::OnResize()
   // own footprint reaches it.
   if (mPresetBackdrop) mPresetBackdrop->SetTargetAndDrawRECTs(mRECT);
 
-  // Downloads popover — anchored under the downloads pill's left edge,
-  // expanding to the right. (Stays left-aligned with the pill since
-  // the pill itself is narrower than the popover.)
+  // Downloads popover — anchored under the downloads pill's RIGHT edge,
+  // expanding LEFT. The pill sits at the top-right corner of the UI and
+  // the popover is wider than the pill, so anchoring to the left would
+  // push the popover past the window edge and clip it. Right-align so
+  // the popover stays inside the window.
+  // 2026-05-25 — Polish round 4 fix.
   if (mDownloadsPopover) {
     const float top  = mDownloadsPillRect.B + t3k::theme::kS2;
-    const float left = mDownloadsPillRect.L;
+    const float left = mDownloadsPillRect.R - kDownloadsPopoverW;
     mDownloadsPopover->SetTargetAndDrawRECTs(
         IRECT(left, top, left + kDownloadsPopoverW, top + kDownloadsPopoverH));
   }
@@ -854,20 +862,9 @@ void ToneRoot::attachAccountMenu(bool startVisible)
   mAccountBackdrop->Hide(!startVisible);
 
   mAccountMenu = new T3kAccountMenu(accountMenuRect());
-  mAccountMenu->onSettings = [this]() {
-    // Phase 10 — real settings modal. Close the account menu first
-    // so it doesn't paint above the modal's dim backdrop.
-    if (mAccountMenu && !mAccountMenu->IsHidden()) toggleAccountMenu();
-    // Push to top of z-order — Cloud / Library cards attach lazily
-    // after OnAttached, so a modal attached during OnAttached gets
-    // buried beneath them and the user sees nothing.
-    recreateSettingsModalOnTop();
-    if (mSettingsModal) {
-      mSettingsModal->refresh();
-      mSettingsModal->Hide(false);
-      SetDirty(false);
-    }
-  };
+  // Same target as the Ctrl+Shift+S global hotkey — shared body lives
+  // in openSettings() below.
+  mAccountMenu->onSettings = [this]() { this->openSettings(); };
   mAccountMenu->onMockSignIn = [this]() {
     ::t3k::cloud::Session::instance().mockSignIn();
     if (mAccountMenu && !mAccountMenu->IsHidden()) toggleAccountMenu();
@@ -1016,9 +1013,10 @@ void ToneRoot::toggleDownloadsPopover()
                                   : std::vector<T3kDownloadsPill::Row>{};
           });
       g->AttachControl(mDownloadsPopover);
-      // Size to anchored rect.
+      // Size to anchored rect — right-aligned with pill so the popover
+      // (which is wider than the pill) stays inside the window edge.
       const float top  = mDownloadsPillRect.B + t3k::theme::kS2;
-      const float left = mDownloadsPillRect.L;
+      const float left = mDownloadsPillRect.R - kDownloadsPopoverW;
       mDownloadsPopover->SetTargetAndDrawRECTs(
           IRECT(left, top, left + kDownloadsPopoverW, top + kDownloadsPopoverH));
       mDownloadsPopover->Hide(false);
@@ -1126,19 +1124,19 @@ void ToneRoot::OnPopupMenuSelection(iplug::igraphics::IPopupMenu* pSelectedMenu,
                               mPendingPresetMenuName.c_str());
         }
       } else if (idx == 1) {
-        // Delete → confirm step. Open a second menu so the user gets
-        // a "Yes, delete X?" / "Cancel" prompt.
-        if (auto* ui = GetUI()) {
-          static iplug::igraphics::IPopupMenu confirmMenu;
-          confirmMenu.Clear();
-          const std::string yes = "Yes, delete \"" + mPendingPresetMenuName + "\"";
-          confirmMenu.AddItem(yes.c_str());
-          confirmMenu.AddItem("Cancel");
-          mPendingMenuKind = PendingMenuKind::PresetDeleteConfirm;
-          const IRECT anchor(mPresetPillRect.L, mPresetPillRect.B,
-                             mPresetPillRect.R, mPresetPillRect.B + 4.f);
-          ui->CreatePopupMenu(*this, confirmMenu, anchor);
-        }
+        // Delete → confirm step. We need to open a second popup, but
+        // doing so directly here is unsafe: iPlug2's
+        // SetControlValueAfterPopupMenu reads mInPopupMenu BOTH at
+        // entry AND again after dispatching this handler; a nested
+        // CreatePopupMenu sets mInPopupMenu=nullptr on its way out
+        // and the outer frame then dereferences null -> host crash
+        // (observed in Ableton). Defer the confirm-popup creation
+        // to the next idle tick so the outer popup-menu callback
+        // chain has fully unwound before we open a new menu. The
+        // preset id + name are already in mPendingPresetMenuId/Name
+        // and stay populated until the deferred handler consumes
+        // them.
+        mPendingDeferredAction = DeferredAction::OpenDeleteConfirm;
       }
       break;
     }
@@ -1155,6 +1153,50 @@ void ToneRoot::OnPopupMenuSelection(iplug::igraphics::IPopupMenu* pSelectedMenu,
     case PendingMenuKind::None:
     default:
       break;
+  }
+}
+
+void ToneRoot::openSettings()
+{
+  // Phase 10 — real settings modal. Close the account menu first so
+  // it doesn't paint above the modal's dim backdrop.
+  if (mAccountMenu && !mAccountMenu->IsHidden()) toggleAccountMenu();
+  // Push to top of z-order — Cloud / Library cards attach lazily
+  // after OnAttached, so a modal attached during OnAttached gets
+  // buried beneath them and the user sees nothing.
+  recreateSettingsModalOnTop();
+  if (mSettingsModal) {
+    mSettingsModal->refresh();
+    mSettingsModal->Hide(false);
+    SetDirty(false);
+  }
+}
+
+void ToneRoot::OnGUIIdle()
+{
+  // 2026-05-25 — drain the deferred-action queue. See the comment on
+  // DeferredAction in ToneRoot.h for why opening a nested popup
+  // directly from OnPopupMenuSelection crashes the host. iPlug2
+  // calls OnGUIIdle when the editor has been quiet for ~10 frames,
+  // which is plenty of time for the outer popup-menu callback chain
+  // to have fully unwound.
+  if (mPendingDeferredAction == DeferredAction::OpenDeleteConfirm) {
+    mPendingDeferredAction = DeferredAction::None;
+
+    if (mPendingPresetMenuId > 0) {
+      if (auto* ui = GetUI()) {
+        static iplug::igraphics::IPopupMenu confirmMenu;
+        confirmMenu.Clear();
+        const std::string yes =
+            "Yes, delete \"" + mPendingPresetMenuName + "\"";
+        confirmMenu.AddItem(yes.c_str());
+        confirmMenu.AddItem("Cancel");
+        mPendingMenuKind = PendingMenuKind::PresetDeleteConfirm;
+        const IRECT anchor(mPresetPillRect.L, mPresetPillRect.B,
+                           mPresetPillRect.R, mPresetPillRect.B + 4.f);
+        ui->CreatePopupMenu(*this, confirmMenu, anchor);
+      }
+    }
   }
 }
 

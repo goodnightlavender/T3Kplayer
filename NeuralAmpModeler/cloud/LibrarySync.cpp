@@ -239,6 +239,29 @@ void LibrarySync::pullLibrary(PullCompletion onDone)
             const std::string model_id = s(e, "model_id");
             if (tone_id.empty() || model_id.empty()) continue;
 
+            // 2026-05-25 — guard against clobbering on-disk records.
+            // upsertModel's ON CONFLICT clause overwrites the URI to
+            // the supplied value AND resets missing=0; we then call
+            // markMissing(true) right after. For a row the
+            // LibraryScanner has already discovered on disk (its
+            // `uri` is a real file path, e.g.
+            // `C:\...\<toneId>\<modelId>.nam`), this would replace
+            // its URI with a `sync://` stub and flip it to missing=1
+            // — making the LibraryView act as if the user has nothing
+            // downloaded AND making the restore-library modal pop up
+            // every launch (countLocalMissing() returns the entire
+            // server library). Skip those rows entirely; only upsert
+            // genuinely-missing (server-known, not-on-disk) entries.
+            if (auto existing =
+                    ::t3k::library::LibraryDb::instance()
+                        .findByToneAndModelId(tone_id, model_id);
+                existing.has_value()
+                && !existing->uri.empty()
+                && existing->uri.rfind("sync://", 0) != 0) {
+              // Already on disk — nothing for the pull to do.
+              continue;
+            }
+
             // Upsert into LibraryDb as a "known-from-server-but-not-
             // on-disk-yet" row. We synthesize a `uri = sync://<…>`
             // stub so it doesn't collide with real disk paths;

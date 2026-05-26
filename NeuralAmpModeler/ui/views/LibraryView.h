@@ -12,7 +12,7 @@
 //   | Technical |   [card] [card] [card] [card] [card] [card]     |
 //   +-----------+- Detail strip (selected card) ------------------+
 //   |           | [icon] Name . Creator . NAM 12.3 MB             |
-//   |           | [LOAD INTO CHAIN] [RENAME] [SHOW] [REMOVE]      |
+//   |           |           [RENAME] [SHOW] [REMOVE]              |
 //   +-----------+--------------------------------------------------+
 //
 // Sidebar: five filter accordions mirroring CloudView's set (Gear, Tags,
@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <set>
@@ -113,7 +114,10 @@ class LibraryView : public iplug::igraphics::IControl {
   void recreateRenameOverlayOnTop();
   void removeSelected();
   void revealSelected();
-  void loadSelected();
+  // 2026-05-25 — loadSelected() was retired alongside the LOAD-INTO-
+  // CHAIN button on the detail strip. The only entry point for
+  // loading a model into the chain is now the per-variant LOAD button
+  // on the detail modal (double-click a card to open it).
   void renameSelected();
   void updateDetailButtons();
 
@@ -142,8 +146,9 @@ class LibraryView : public iplug::igraphics::IControl {
   iplug::igraphics::IRECT mGridRect;
   iplug::igraphics::IRECT mDetailRect;
 
-  // Detail-strip button rects.
-  iplug::igraphics::IRECT mLoadBtnRect;
+  // Detail-strip button rects. (mLoadBtnRect retired 2026-05-25 — the
+  // grid no longer hosts a LOAD-INTO-CHAIN button; loading happens
+  // via the detail modal's LOAD per-variant button.)
   iplug::igraphics::IRECT mRenameBtnRect;
   iplug::igraphics::IRECT mRevealBtnRect;
   iplug::igraphics::IRECT mRemoveBtnRect;
@@ -167,8 +172,7 @@ class LibraryView : public iplug::igraphics::IControl {
   T3kDetailModal*   mDetailModal   = nullptr;
   // Grid cards. Owned by IGraphics; we only hold raw pointers.
   std::vector<T3kLibraryCard*> mCards;
-  // Detail-strip action buttons.
-  T3kButton*       mLoadBtn      = nullptr;
+  // Detail-strip action buttons. (mLoadBtn retired 2026-05-25.)
   T3kButton*       mRenameBtn    = nullptr;
   T3kButton*       mRevealBtn    = nullptr;
   T3kButton*       mRemoveBtn    = nullptr;
@@ -198,6 +202,21 @@ class LibraryView : public iplug::igraphics::IControl {
 
   // EventBus subscription token (so we can unsubscribe in dtor).
   int mBusToken = 0;
+
+  // 2026-05-25 — EventBus::post() fires listeners SYNCHRONOUSLY on the
+  // posting thread. LibraryScanner::walk() runs on a std::thread and
+  // posts ModelAdded per file, so a direct refresh() call from the
+  // listener mutates mAllRows / mRows / mVariantsByToneId on the
+  // scanner thread while the GUI thread is reading them in Draw() /
+  // OnMouseDown — a data race that produced deterministic heap
+  // corruption (vector<ModelRow>::_Tidy() crashed dereferencing a
+  // .data pointer that had been smashed with arbitrary bytes).
+  //
+  // We now marshal refresh() onto the GUI thread: the listener flips
+  // this atomic flag + SetDirty(false), and Draw() drains it before
+  // touching any of the racy containers. All accesses to mAllRows,
+  // mRows, mVariantsByToneId now happen exclusively on the GUI thread.
+  std::atomic<bool> mNeedsRefresh{false};
 
   // Selection state — the currently-focused card. 0 = nothing selected.
   int64_t mSelectedId = 0;

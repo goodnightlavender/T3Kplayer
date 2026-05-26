@@ -81,6 +81,19 @@ class T3kDetailModal : public iplug::igraphics::IControl {
   void OnResize() override;
   void OnAttached() override;
   void OnMouseDown(float x, float y, const iplug::igraphics::IMouseMod& mod) override;
+  // 2026-05-25 — mouse-wheel scroll for the Versions list. Previously
+  // the list was capped at 6 visible variants with a "+N more..."
+  // hint and the rest were unreachable. Now the list scrolls.
+  void OnMouseWheel(float x, float y,
+                    const iplug::igraphics::IMouseMod& mod,
+                    float d) override;
+  // 2026-05-25 — drag the scrollbar thumb to scroll the Versions
+  // list. OnMouseDown starts a drag when the thumb is clicked; this
+  // updates the offset as the mouse moves; OnMouseUp ends the drag.
+  void OnMouseDrag(float x, float y, float dX, float dY,
+                   const iplug::igraphics::IMouseMod& mod) override;
+  void OnMouseUp(float x, float y,
+                 const iplug::igraphics::IMouseMod& mod) override;
   void Hide(bool hide) override;
 
   // Remove flat-attached children (close button, action buttons) from
@@ -124,6 +137,34 @@ class T3kDetailModal : public iplug::igraphics::IControl {
   bool        mThumbRequested  = false;
   std::string mThumbPath;
   bool        mThumbLoadFailed = false;
+
+  // 2026-05-25 — scroll state for the Versions / pickables list.
+  // mPickablesScrollOffset is the pixel offset (>= 0) of the top of
+  // the displayed area into the virtual stack of variants. The area
+  // rect and content height are recomputed each Draw and re-used by
+  // OnMouseWheel to bound the offset.
+  float                   mPickablesScrollOffset = 0.f;
+  iplug::igraphics::IRECT mPickablesAreaRect;
+  float                   mPickablesContentHeight = 0.f;
+
+  // 2026-05-25 — scrollbar drag state. mScrollbarThumbRect is the
+  // thumb's screen-space rect computed each Draw (used by mouse hit-
+  // tests); mScrollbarDragging tracks whether the user is currently
+  // pressing-and-dragging the thumb; mScrollbarDragGrabY records the
+  // y-offset between the mouse-down position and the thumb's top so
+  // the drag feels anchored (the thumb doesn't snap-jump to the
+  // cursor on first move).
+  iplug::igraphics::IRECT mScrollbarThumbRect;
+  bool                    mScrollbarDragging = false;
+  float                   mScrollbarDragGrabY = 0.f;
+
+  // 2026-05-26 — content-drag state. When the user mouse-downs inside
+  // the variants area but NOT on the scrollbar thumb/track (and not on
+  // a PICK button — those are children and iPlug2 routes their clicks
+  // separately), they enter a "drag the content" mode: dragging up
+  // scrolls down (increases offset), dragging down scrolls up. Mirrors
+  // touch-scroll UX. Cleared on OnMouseUp.
+  bool                    mContentDragging = false;
 };
 
 }  // namespace t3k::ui

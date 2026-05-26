@@ -1,9 +1,20 @@
 #include <algorithm> // std::clamp, std::min
+#include <cctype>    // std::tolower (used by StageModelInSlot extension check)
 #include <cmath> // pow
+#include <cstring>   // std::strlen
 #include <filesystem>
 #include <iostream>
 #include <utility>
 #include <vector>
+
+#if defined(_WIN32)
+  // For StripResizeChrome below. The host's floating wrapper window is
+  // a top-level Win32 HWND; we mutate its style to disable the OS
+  // resize chrome (edges/corners + Aero Snap maximize) so only our
+  // own bottom-right ICornerResizerControl drives resizing.
+  #define WIN32_LEAN_AND_MEAN
+  #include <windows.h>
+#endif
 
 #include "nlohmann/json.hpp"
 
@@ -28,6 +39,56 @@
 
 using namespace iplug;
 using namespace igraphics;
+
+namespace {
+
+#if defined(_WIN32)
+// 2026-05-25 — locks down the host's floating plugin-wrapper window so
+// only our plugin-internal bottom-right corner resizer can resize the
+// editor. We strip:
+//   * WS_THICKFRAME   — kills the OS-level resize cursors that show up
+//                       on every edge / non-BR corner of the wrapper.
+//                       SetWindowPos still works for our own
+//                       plugFrame->resizeView calls (style only
+//                       gates *user* interaction).
+//   * WS_MAXIMIZEBOX  — disables Aero Snap's drag-to-top maximize on
+//                       Windows 11 (and the maximize button if any).
+//
+// We only mutate the wrapper if it's a true top-level window AND it
+// currently has resize chrome. Hosts that embed the plugin inside a
+// non-resizable pane (REAPER's FX dialog, etc.) lack these styles, so
+// the call becomes a no-op and we leave the host alone.
+void StripResizeChrome(IGraphics* g)
+{
+  if (!g) return;
+  HWND hwnd = static_cast<HWND>(g->GetWindow());
+  if (!hwnd) return;
+  HWND parent = ::GetParent(hwnd);  // host's wrapper
+  if (!parent) return;
+  // Only touch true top-level windows. If the wrapper itself has a
+  // parent, it's embedded inside the host's UI and not the floating
+  // window the user can snap-maximize.
+  if (::GetParent(parent) != nullptr) return;
+
+  LONG style = ::GetWindowLongW(parent, GWL_STYLE);
+  const LONG kStripMask = WS_THICKFRAME | WS_MAXIMIZEBOX;
+  if ((style & kStripMask) == 0) return;  // already stripped
+
+  style &= ~kStripMask;
+  ::SetWindowLongW(parent, GWL_STYLE, style);
+  // Force the non-client area to repaint without the resize gripper
+  // and maximize button. SWP_FRAMECHANGED tells Windows the style
+  // changed so the WM_NCCALCSIZE machinery runs.
+  ::SetWindowPos(parent, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                 SWP_NOOWNERZORDER | SWP_NOACTIVATE |
+                 SWP_FRAMECHANGED);
+}
+#else
+inline void StripResizeChrome(IGraphics*) {}
+#endif
+
+}  // namespace
 
 const double kDCBlockerFrequency = 5.0;
 
@@ -122,15 +183,28 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
 
   mLayoutFunc = [&](IGraphics* pGraphics) {
     // Global IGraphics config.
-    // Note: AttachCornerResizer was removed in Phase 3 polish — its
-    // EUIResizerMode::Scale handle drew faint diagonal stripes across
-    // the entire window (the "lines all over the UI" the user reported).
-    // Window resize via the corner isn't a 0.1 priority; users can resize
-    // via the host DAW's plug-in window chrome.
     pGraphics->AttachTextEntryControl();   // needed by T3kSearchBar
     pGraphics->EnableMouseOver(true);
     pGraphics->EnableTooltips(true);
     pGraphics->EnableMultiTouch(true);
+
+    // 2026-05-25 — bottom-right corner resizer (re-enabled).
+    // EUIResizerMode::Scale: dragging only changes the IGraphics draw
+    // scale, leaving Width()/Height() (= the design canvas) fixed.
+    // That matches the rest of our preset handling and keeps ToneRoot's
+    // mRECT valid during the drag (see OnUIOpen for the rationale).
+    // The previous attach was removed because COLOR_TRANSLUCENT (alpha
+    // 10) left a faint triangle visible across the UI; COLOR_TRANSPARENT
+    // (alpha 0) is fully invisible until mouse-over. The cursor still
+    // flips to SIZENWSE so users discover the handle. PLUG_HOST_RESIZE
+    // must be 1 for the resulting resizeView callback to be honored —
+    // see config.h.
+    pGraphics->AttachCornerResizer(EUIResizerMode::Scale,
+                                   /*layoutOnResize*/ false,
+                                   /*idle      */ COLOR_TRANSPARENT,
+                                   /*mouseOver */ COLOR_TRANSLUCENT,
+                                   /*drag      */ COLOR_BLACK,
+                                   /*size px   */ 20.f);
 
     // Pure-black panel background (TONE3000 brand).
     pGraphics->AttachPanelBackground(t3k::theme::kBgBase);
@@ -146,7 +220,46 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
 
     // The whole UI is one root that owns everything (header, tabs, body,
     // knob row, overlays). See ui/ToneRoot.{h,cpp}.
-    pGraphics->AttachControl(new t3k::ui::ToneRoot(pGraphics->GetBounds(), *this));
+    auto* toneRoot = new t3k::ui::ToneRoot(pGraphics->GetBounds(), *this);
+    pGraphics->AttachControl(toneRoot);
+
+    // Global hotkeys (2026-05-25):
+    //   Ctrl+Shift+0 — reset window size to the default (small).
+    //                  Recovery path when the editor ends up off-screen
+    //                  or unreadably small (host DPI mishap, stale
+    //                  corner-drag scale, etc.). Matches the "RESET
+    //                  WINDOW SIZE" button on the settings modal.
+    //   Ctrl+Shift+S — open the Settings modal (same target as the
+    //                  account menu's "Settings…" item).
+    //
+    // Both require three modifiers + a non-letter/digit so they stay
+    // out of normal text-entry traffic. Reset preset must mirror
+    // OnUIOpen() / T3kSettingsModal::PresetFor() (logical canvas =
+    // design size, scale-only varies — see OnUIOpen for rationale).
+    pGraphics->SetKeyHandlerFunc(
+        [pGraphics, toneRoot](const IKeyPress& key, bool isUp) -> bool {
+          if (isUp) return false;
+          // IKeyPress.S/.C/.A are SHIFT/CTRL(CMD on Mac)/ALT.
+          if (!key.C || !key.S) return false;
+
+          // Ctrl+Shift+0 — VK_0 = 0x30. Reset window scale to the
+          // default (1.35 over the 1024x640 design canvas =
+          // ~1382x864 physical pixels). Matches the "RESET WINDOW
+          // SIZE" button on the settings modal.
+          if (key.VK == 0x30) {
+            ::t3k::settings::instance().window_scale = 1.35f;
+            ::t3k::settings::save();
+            pGraphics->Resize(PLUG_WIDTH, PLUG_HEIGHT, 1.35f,
+                              /*needsPlatformResize*/ true);
+            return true;
+          }
+          // Ctrl+Shift+S — VK_S = 0x53.
+          if (key.VK == 0x53) {
+            if (toneRoot) toneRoot->openSettings();
+            return true;
+          }
+          return false;
+        });
   };
 
   // Force-init the cloud Session singleton so its constructor (which
@@ -261,18 +374,32 @@ void NeuralAmpModeler::ProcessBlock(iplug::sample** inputs, iplug::sample** outp
       // it as its input), which is correct identity behaviour.
       continue;
     }
-    if (es.model == nullptr)
+    // 2026-05-26 — slots can hold a NAM model OR an IR. Skip silent
+    // (neither) slots; prefer model if both somehow coexist.
+    if (es.model == nullptr && es.ir == nullptr)
       continue;
     // Apply per-slot input gain into scratch.
     const double inGain = DBToAmp(es.inGainDb);
     for (size_t s = 0; s < numFrames; ++s)
       chainScratch[s] = inGain * currentPointers[0][s];
-    // Process the slot's NAM model — writes into mOutputPointers.
-    es.model->process(chainScratchPtr.data(), mOutputPointers, (int)nFrames);
-    // Slot's own tone stack (when its eqActive flag is set).
+
+    sample** processed = nullptr;
+    if (es.model != nullptr)
+    {
+      // Process the slot's NAM model — writes into mOutputPointers.
+      es.model->process(chainScratchPtr.data(), mOutputPointers, (int)nFrames);
+      processed = mOutputPointers;
+    }
+    else
+    {
+      // IR convolution — Process() returns its internal output buffer.
+      processed = es.ir->Process(chainScratchPtr.data(), numChannelsInternal, numFrames);
+    }
+    // Slot's own tone stack (when its eqActive flag is set). For IR
+    // slots the tone stack is still applied — useful as a post-IR EQ.
     sample** afterEq = (es.eqActive && es.toneStack)
-                         ? es.toneStack->Process(mOutputPointers, numChannelsInternal, nFrames)
-                         : mOutputPointers;
+                         ? es.toneStack->Process(processed, numChannelsInternal, nFrames)
+                         : processed;
     // Apply slot's output gain back into mOutputArray. afterEq may
     // alias mOutputPointers (eqActive==false) or the tone stack's
     // internal buffer — copy back unconditionally so subsequent stages
@@ -448,15 +575,32 @@ void NeuralAmpModeler::OnUIOpen()
 {
   Plugin::OnUIOpen();
 
-  // Restore the window-size preset from settings.json (2026-05-25).
-  // We do this here rather than in the constructor because IGraphics
-  // doesn't exist until the editor opens.
+  // Restore the persisted window scale from settings.json. The user's
+  // last corner-drag size is replayed here so the editor reopens at
+  // their preferred zoom.
+  //
+  // iPlug2 semantics: Resize(w, h, scale) sets the LOGICAL canvas
+  // (mWidth/mHeight = w/h) and the draw scale; the host window then
+  // becomes w * scale physical pixels. ToneRoot's mRECT is fixed at
+  // the design canvas (1664x1040) at construction and iPlug2 doesn't
+  // auto-rewrite child mRECTs on Resize, so the logical canvas MUST
+  // stay at the design size — otherwise ToneRoot lays out for
+  // 1664x1040 but the canvas is smaller and the bottom-right (knob
+  // row + part of info pane) clips off the edge. We vary ONLY the
+  // scale, never w/h. The corner resizer (EUIResizerMode::Scale)
+  // does the same.
+  //
+  // Default scale = 0.9 (the previous "small" preset, ~1498x936
+  // physical pixels). Both this default and the Ctrl+Shift+0 reset
+  // path snap back to it.
   if (auto* g = GetUI()) {
-    const std::string& ws = ::t3k::settings::instance().window_size;
-    int w = 1664, h = 1040; float scale = 1.0f;
-    if      (ws == "small") { w = 1248; h =  780; scale = 0.75f; }
-    else if (ws == "large") { w = 2080; h = 1300; scale = 1.25f; }
-    g->Resize(w, h, scale, /*needsPlatformResize*/ true);
+    const float scale = ::t3k::settings::instance().window_scale;
+    g->Resize(PLUG_WIDTH, PLUG_HEIGHT, scale, /*needsPlatformResize*/ true);
+    // Lock down the host wrapper's resize chrome (Win32 only — no-op
+    // elsewhere). Done AFTER the initial Resize so the wrapper exists
+    // and any size-driven style refresh the host might do has already
+    // settled. See StripResizeChrome's comment for the rationale.
+    StripResizeChrome(g);
   }
 
   if (mNAMPath.GetLength())
@@ -479,6 +623,54 @@ void NeuralAmpModeler::OnUIOpen()
   {
     _UpdateControlsFromModel();
   }
+}
+
+void NeuralAmpModeler::OnParentWindowResize(int width, int height)
+{
+  // The VST3 host (via IPlugVST3_View::onSize) routes here whenever
+  // the host's wrapper window changes size — either because the user
+  // dragged its edges OR because we asked it to via the corner-
+  // resizer drag (IGraphics::Resize -> mView->Resize ->
+  // plugFrame->resizeView -> host accepts -> host calls onSize back).
+  //
+  // We mirror that new pixel size into IGraphics by recomputing the
+  // draw scale against the fixed design canvas, picking the SMALLER
+  // axis ratio so the design's aspect ratio is preserved and nothing
+  // clips. Calling Resize with needsPlatformResize=false closes the
+  // loop locally — we do NOT round-trip back to the host (that's the
+  // call that produced this notification in the first place).
+  //
+  // Net effect:
+  //   - Corner resizer drag: plugin -> host -> back here -> in-sync.
+  //   - Host-driven edge drag: host -> back here -> proportional fit
+  //     (effectively only diagonal resize works; one-axis drags get
+  //     fitted to the smaller dimension).
+  //   - Either path persists the new scale so the next OnUIOpen
+  //     restores it.
+  auto* g = GetUI();
+  if (!g) return;
+  if (width <= 0 || height <= 0) return;
+
+  const float sx = static_cast<float>(width)  / static_cast<float>(PLUG_WIDTH);
+  const float sy = static_cast<float>(height) / static_cast<float>(PLUG_HEIGHT);
+  const float scale = std::min(sx, sy);
+
+  // Skip no-ops to avoid spurious redraws + persistent settings churn
+  // when the host echoes our own size back unchanged.
+  if (std::abs(scale - g->GetDrawScale()) < 0.001f) return;
+
+  g->Resize(PLUG_WIDTH, PLUG_HEIGHT, scale, /*needsPlatformResize*/ false);
+
+  // Defensive — some hosts may re-apply default styles on certain
+  // resize transitions (e.g. when entering/exiting Aero Snap). Re-
+  // strip here so the user can't accidentally end up with maximize-
+  // chrome restored mid-session. Idempotent: the helper early-outs
+  // when the styles are already absent.
+  StripResizeChrome(g);
+
+  // Persist the live scale so the user's resize survives a reload.
+  ::t3k::settings::instance().window_scale = scale;
+  ::t3k::settings::save();
 }
 
 void NeuralAmpModeler::OnParamChange(int paramIdx)
@@ -691,6 +883,19 @@ void NeuralAmpModeler::_ApplyDSPStaging()
       es.stagedModel = nullptr;
       extrasChanged = true;
     }
+    // 2026-05-26 — per-slot IR staging mirror.
+    if (es.shouldRemoveIR)
+    {
+      es.ir = nullptr;
+      es.shouldRemoveIR = false;
+      extrasChanged = true;
+    }
+    if (es.stagedIR != nullptr)
+    {
+      es.ir = std::move(es.stagedIR);
+      es.stagedIR = nullptr;
+      extrasChanged = true;
+    }
   }
   if (extrasChanged)
     _UpdateLatency();
@@ -768,6 +973,28 @@ void NeuralAmpModeler::_ResetModelAndIR(const double sampleRate, const int maxBl
     }
     if (es.toneStack)
       es.toneStack->Reset(sampleRate, maxBlockSize);
+
+    // 2026-05-26 — per-slot IR sample-rate handling. Mirrors the
+    // single-IR logic above: if the live (or staged) IR was loaded at
+    // a different sample rate, rebuild it at the host's current SR by
+    // re-feeding its raw data into a fresh ImpulseResponse — same
+    // pattern dsp::ImpulseResponse uses for resampling.
+    if (es.stagedIR != nullptr)
+    {
+      if (es.stagedIR->GetSampleRate() != sampleRate)
+      {
+        const auto irData = es.stagedIR->GetData();
+        es.stagedIR = std::make_unique<dsp::ImpulseResponse>(irData, sampleRate);
+      }
+    }
+    else if (es.ir != nullptr)
+    {
+      if (es.ir->GetSampleRate() != sampleRate)
+      {
+        const auto irData = es.ir->GetData();
+        es.stagedIR = std::make_unique<dsp::ImpulseResponse>(irData, sampleRate);
+      }
+    }
   }
 }
 
@@ -855,7 +1082,12 @@ std::string NeuralAmpModeler::_StageModel(const WDL_String& modelPath)
     mNAMPath = modelPath;
     SendControlMsgFromDelegate(kCtrlTagModelFileBrowser, kMsgTagLoadedModel, mNAMPath.GetLength(), mNAMPath.Get());
   }
-  catch (std::runtime_error& e)
+  // 2026-05-26 — widened from std::runtime_error to std::exception (and
+  // a defensive catch(...)) because the NAM loader throws other types
+  // too — most importantly nlohmann::json::parse_error when a non-NAM
+  // file (e.g. a .wav IR mistakenly routed here from the Library) is
+  // fed to nam::get_dsp. Letting any throw escape kills the host.
+  catch (const std::exception& e)
   {
     SendControlMsgFromDelegate(kCtrlTagModelFileBrowser, kMsgTagLoadFailed);
 
@@ -867,6 +1099,14 @@ std::string NeuralAmpModeler::_StageModel(const WDL_String& modelPath)
     std::cerr << "Failed to read DSP module" << std::endl;
     std::cerr << e.what() << std::endl;
     return e.what();
+  }
+  catch (...)
+  {
+    SendControlMsgFromDelegate(kCtrlTagModelFileBrowser, kMsgTagLoadFailed);
+    if (mStagedModel != nullptr) mStagedModel = nullptr;
+    mNAMPath = previousNAMPath;
+    std::cerr << "Failed to read DSP module (unknown exception)" << std::endl;
+    return "unknown error loading NAM model";
   }
   return "";
 }
@@ -884,11 +1124,20 @@ dsp::wav::LoadReturnCode NeuralAmpModeler::_StageIR(const WDL_String& irPath)
     mStagedIR = std::make_unique<dsp::ImpulseResponse>(irPathU8.string().c_str(), sampleRate);
     wavState = mStagedIR->GetWavState();
   }
-  catch (std::runtime_error& e)
+  // 2026-05-26 — widened, same reasoning as _StageModel above. The IR
+  // loader (dsp::ImpulseResponse) can throw std::ios_base::failure for
+  // missing files and other std::exception subclasses for corrupt WAV
+  // headers; the previous narrower catch let those escape the plugin.
+  catch (const std::exception& e)
   {
     wavState = dsp::wav::LoadReturnCode::ERROR_OTHER;
     std::cerr << "Caught unhandled exception while attempting to load IR:" << std::endl;
     std::cerr << e.what() << std::endl;
+  }
+  catch (...)
+  {
+    wavState = dsp::wav::LoadReturnCode::ERROR_OTHER;
+    std::cerr << "Caught unknown exception while attempting to load IR" << std::endl;
   }
 
   if (wavState == dsp::wav::LoadReturnCode::SUCCESS)
@@ -950,6 +1199,33 @@ std::string NeuralAmpModeler::StageModelInSlot(int slot, const WDL_String& namPa
   ExtraSlot* es = _Extra(slot);
   if (!es)
     return "invalid slot";
+
+  // 2026-05-26 — early-reject non-NAM file extensions. Without this,
+  // routing a .wav IR file through here (which the Library does for any
+  // tone with kind=="ir" until a slot-aware IR path is built) hits
+  // nam::get_dsp(<wav>) which throws nlohmann::json::parse_error and —
+  // before this change — escaped the catch below and killed the host.
+  // Until the chain learns IRs natively this is a clean no-op: the UI
+  // slot stays visible, audio stays untouched.
+  {
+    const char* p = namPath.Get();
+    const std::size_t n = std::strlen(p);
+    auto endsWith = [&](const char* sfx) {
+      const std::size_t m = std::strlen(sfx);
+      if (n < m) return false;
+      for (std::size_t i = 0; i < m; ++i) {
+        const char a = static_cast<char>(std::tolower(static_cast<unsigned char>(p[n - m + i])));
+        if (a != sfx[i]) return false;
+      }
+      return true;
+    };
+    if (!endsWith(".nam"))
+    {
+      es->stagedModel = nullptr;
+      return "non-NAM file (IR or unknown extension); chain stage skipped";
+    }
+  }
+
   try
   {
     auto dspPath = std::filesystem::u8path(namPath.Get());
@@ -961,10 +1237,19 @@ std::string NeuralAmpModeler::StageModelInSlot(int slot, const WDL_String& namPa
     es->stagedModel = std::move(temp);
     es->namPath = namPath;
   }
-  catch (std::runtime_error& e)
+  // 2026-05-26 — widened from std::runtime_error to std::exception (+
+  // catch-all) so json::parse_error / ifstream::failure / etc. can't
+  // escape and crash the host. See _StageModel above for the full
+  // diagnosis.
+  catch (const std::exception& e)
   {
     es->stagedModel = nullptr;
     return e.what();
+  }
+  catch (...)
+  {
+    es->stagedModel = nullptr;
+    return "unknown error loading NAM model";
   }
   return "";
 }
@@ -988,8 +1273,13 @@ void NeuralAmpModeler::UnloadSlot(int slot)
   }
   if (ExtraSlot* es = _Extra(slot))
   {
-    es->shouldRemove = true;
+    // 2026-05-26 — also arm IR removal so a slot transitioning from
+    // an IR back to empty (or to a NAM after the user re-loads) ends
+    // up genuinely empty on the audio side.
+    es->shouldRemove   = true;
+    es->shouldRemoveIR = true;
     es->namPath.Set("");
+    es->irPath.Set("");
   }
 }
 
@@ -1040,6 +1330,71 @@ bool NeuralAmpModeler::SlotHasModel(int slot) const
     return mModel != nullptr;
   if (const ExtraSlot* es = _Extra(slot))
     return es->model != nullptr;
+  return false;
+}
+
+// 2026-05-26 — per-slot IR API. Stages a .wav into mExtraSlots[slot-1].
+// Slot 0 IRs continue to use the legacy _StageIR path. ToneView's
+// syncDspChain calls this when the library row's kind == "ir".
+std::string NeuralAmpModeler::StageIRInSlot(int slot, const WDL_String& irPath)
+{
+  if (slot < 0 || slot >= kNumChainSlots)
+    return "invalid slot";
+  if (slot == 0)
+  {
+    // Slot 0 uses the legacy single-IR path. Translate the return so
+    // callers see the same string convention as the extra slots.
+    const dsp::wav::LoadReturnCode rc = _StageIR(irPath);
+    return rc == dsp::wav::LoadReturnCode::SUCCESS ? "" : "IR load failed";
+  }
+  ExtraSlot* es = _Extra(slot);
+  if (!es)
+    return "invalid slot";
+  try
+  {
+    auto irPathU8 = std::filesystem::u8path(irPath.Get());
+    const double sr = GetSampleRate();
+    auto temp = std::make_unique<dsp::ImpulseResponse>(irPathU8.string().c_str(), sr);
+    if (temp->GetWavState() != dsp::wav::LoadReturnCode::SUCCESS)
+    {
+      return "IR file rejected by loader";
+    }
+    es->stagedIR = std::move(temp);
+    // 2026-05-26 — clear any NAM on this slot. A slot can hold ONE
+    // file; staging an IR over a NAM evicts the model on the next
+    // audio tick.
+    es->shouldRemove = true;
+    es->irPath       = irPath;
+    es->namPath.Set("");
+  }
+  catch (const std::exception& e)
+  {
+    es->stagedIR = nullptr;
+    return e.what();
+  }
+  catch (...)
+  {
+    es->stagedIR = nullptr;
+    return "unknown error loading IR";
+  }
+  return "";
+}
+
+const char* NeuralAmpModeler::GetSlotIRPath(int slot) const
+{
+  if (slot == 0)
+    return mIRPath.Get();
+  if (const ExtraSlot* es = _Extra(slot))
+    return es->irPath.Get();
+  return "";
+}
+
+bool NeuralAmpModeler::SlotHasIR(int slot) const
+{
+  if (slot == 0)
+    return mIR != nullptr;
+  if (const ExtraSlot* es = _Extra(slot))
+    return es->ir != nullptr;
   return false;
 }
 

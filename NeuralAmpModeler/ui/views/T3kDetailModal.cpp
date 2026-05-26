@@ -18,8 +18,11 @@ using namespace ::iplug::igraphics;
 
 namespace {
 
-constexpr float kCardW       = 980.f;
-constexpr float kCardH       = 620.f;
+// 2026-05-25 — shrunk to fit the trimmed 1024x640 design canvas
+// (was 980x620 on the previous 1100x688 canvas). Leaves ~52px
+// horizontal margin and ~30px vertical margin inside the canvas.
+constexpr float kCardW       = 920.f;
+constexpr float kCardH       = 580.f;
 constexpr float kCardPad     = 28.f;
 constexpr float kImageW      = 320.f;
 constexpr float kImageH      = 320.f;
@@ -127,6 +130,9 @@ void T3kDetailModal::show(DetailData data, std::vector<Action> actions)
   mThumbRequested   = false;
   mThumbPath.clear();
   mThumbLoadFailed  = false;
+  // 2026-05-25 — every show() starts the Versions list scrolled to the
+  // top so the user always sees variant 1 first.
+  mPickablesScrollOffset = 0.f;
 
   rebuildActionButtons();
   // Build one PICK button per pickable variant. The actual rects are
@@ -136,8 +142,17 @@ void T3kDetailModal::show(DetailData data, std::vector<Action> actions)
   if (g) {
     const IRECT placeholder(0.f, 0.f, 1.f, 1.f);
     for (const auto& p : mData.pickables) {
-      auto* btn = new T3kButton(placeholder, "PICK",
-          p.onPick, T3kButton::Variant::Primary);
+      // 2026-05-25 — relabelled from "PICK" to "LOAD" to match the
+      // rest of the UI's language (the LOAD-INTO-CHAIN button on the
+      // LibraryView's grid was removed in the same change; the detail
+      // modal is now the single entry point for loading a library
+      // model into the chain).
+      // 2026-05-26 — Invert variant (white fill, black text) instead of
+      // Primary. The Primary variant fills with kAccent (now #FFFF00 +
+      // white label = unreadable). Invert keeps the loud-CTA energy on
+      // a yellow background without the contrast collision.
+      auto* btn = new T3kButton(placeholder, "LOAD",
+          p.onPick, T3kButton::Variant::Invert);
       g->AttachControl(btn);
       btn->Hide(IsHidden());
       mPickBtns.push_back(btn);
@@ -156,9 +171,12 @@ void T3kDetailModal::rebuildActionButtons()
   // them up immediately after.
   const IRECT placeholder(0.f, 0.f, 1.f, 1.f);
   for (const auto& a : mActions) {
+    // 2026-05-26 — primary actions (e.g. Cloud DOWNLOAD) use the
+    // Invert variant for the same reason as the LOAD buttons above:
+    // kAccent is yellow now, and Primary's white label vanishes on it.
     auto* btn = new T3kButton(placeholder, a.label.c_str(),
         a.onClick,
-        a.primary ? T3kButton::Variant::Primary
+        a.primary ? T3kButton::Variant::Invert
                   : T3kButton::Variant::Secondary);
     g->AttachControl(btn);
     btn->Hide(IsHidden());
@@ -168,9 +186,128 @@ void T3kDetailModal::rebuildActionButtons()
 
 void T3kDetailModal::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
 {
+  // 2026-05-25 — scrollbar thumb drag. Check first so a thumb click
+  // doesn't fall through to the dismiss check below. Track-click-
+  // outside-thumb jump-scrolls the thumb's centre to that y position.
+  if (mScrollbarThumbRect.W() > 0.f && mScrollbarThumbRect.H() > 0.f) {
+    // Thumb hit: start drag, remembering where on the thumb the user
+    // grabbed so the thumb doesn't jump under the cursor on first
+    // OnMouseDrag.
+    if (mScrollbarThumbRect.Contains(x, y)) {
+      mScrollbarDragging  = true;
+      mScrollbarDragGrabY = y - mScrollbarThumbRect.T;
+      SetDirty(false);
+      return;
+    }
+    // Track hit (same x range, inside the variants area vertically
+    // but not on the thumb): jump-scroll so the thumb centres on y.
+    if (x >= mScrollbarThumbRect.L && x <= mScrollbarThumbRect.R
+        && y >= mPickablesAreaRect.T && y <= mPickablesAreaRect.B) {
+      const float thumbH    = mScrollbarThumbRect.H();
+      const float trackTop  = mPickablesAreaRect.T;
+      const float trackH    = mPickablesAreaRect.H();
+      const float maxOffset =
+          std::max(1.f, mPickablesContentHeight - trackH);
+      const float frac =
+          std::clamp((y - trackTop - thumbH * 0.5f)
+                       / std::max(1.f, trackH - thumbH),
+                     0.f, 1.f);
+      mPickablesScrollOffset = frac * maxOffset;
+      mScrollbarDragging  = true;
+      mScrollbarDragGrabY = thumbH * 0.5f;
+      SetDirty(false);
+      return;
+    }
+  }
+
+  // 2026-05-26 — content drag. Mouse-down anywhere inside the
+  // variants area that isn't a PICK button (children intercept their
+  // own clicks before we see them) and isn't the scrollbar (checked
+  // above) starts a drag-the-content scroll. The actual offset update
+  // happens in OnMouseDrag from dY.
+  if (mPickablesAreaRect.W() > 0.f && mPickablesAreaRect.Contains(x, y)
+      && mPickablesContentHeight > mPickablesAreaRect.H() + 1.f) {
+    mContentDragging = true;
+    SetDirty(false);
+    return;
+  }
+
   if (!mCardRect.Contains(x, y)) {
     if (mOnClose) mOnClose();
   }
+}
+
+void T3kDetailModal::OnMouseDrag(float /*x*/, float y,
+                                 float /*dX*/, float dY,
+                                 const IMouseMod& /*mod*/)
+{
+  if (mScrollbarDragging) {
+    // Convert the cursor's y position (minus the grab offset) into a
+    // scroll offset by mapping along the track. The mapping mirrors
+    // the Draw-time thumbY computation so a dragged thumb tracks the
+    // cursor exactly.
+    const float thumbH    = mScrollbarThumbRect.H();
+    const float trackTop  = mPickablesAreaRect.T;
+    const float trackH    = mPickablesAreaRect.H();
+    if (thumbH <= 0.f || trackH <= 0.f) return;
+    const float maxOffset =
+        std::max(1.f, mPickablesContentHeight - trackH);
+    const float frac =
+        std::clamp((y - mScrollbarDragGrabY - trackTop)
+                     / std::max(1.f, trackH - thumbH),
+                   0.f, 1.f);
+    mPickablesScrollOffset = frac * maxOffset;
+    SetDirty(false);
+    return;
+  }
+
+  if (mContentDragging) {
+    // Touch-scroll mapping: dragging the cursor DOWN moves the
+    // content down (offset decreases — like grabbing the page). dY
+    // is delta-y from last position, positive = mouse moved down.
+    mPickablesScrollOffset -= dY;
+    const float maxOffset =
+        std::max(0.f, mPickablesContentHeight - mPickablesAreaRect.H());
+    if (mPickablesScrollOffset > maxOffset) mPickablesScrollOffset = maxOffset;
+    if (mPickablesScrollOffset < 0.f)       mPickablesScrollOffset = 0.f;
+    SetDirty(false);
+    return;
+  }
+}
+
+void T3kDetailModal::OnMouseUp(float /*x*/, float /*y*/,
+                               const IMouseMod& /*mod*/)
+{
+  if (mScrollbarDragging || mContentDragging) {
+    mScrollbarDragging = false;
+    mContentDragging   = false;
+    SetDirty(false);
+  }
+}
+
+void T3kDetailModal::OnMouseWheel(float x, float y,
+                                  const IMouseMod& /*mod*/, float d)
+{
+  // Only scroll when the cursor is over the Versions list. Outside
+  // that region (over the image, the description, the action-button
+  // row, or the backdrop) we ignore the wheel so the host can route
+  // it to whatever's underneath. The area rect is recomputed each
+  // Draw — if the modal hasn't drawn yet (zero area), do nothing.
+  if (mPickablesAreaRect.W() <= 0.f || mPickablesAreaRect.H() <= 0.f) return;
+  if (!mPickablesAreaRect.Contains(x, y)) return;
+
+  // Wheel tick = a bit more than one row so a normal flick advances
+  // by ~2 entries. d > 0 = wheel-up (scroll list up, smaller offset);
+  // d < 0 = wheel-down (scroll list down, larger offset).
+  constexpr float kStep = 45.f;
+  mPickablesScrollOffset -= d * kStep;
+
+  const float maxOffset =
+      std::max(0.f, mPickablesContentHeight - mPickablesAreaRect.H());
+  if (mPickablesScrollOffset > maxOffset) mPickablesScrollOffset = maxOffset;
+  if (mPickablesScrollOffset < 0.f)       mPickablesScrollOffset = 0.f;
+
+  SetDirty(false);
 }
 
 void T3kDetailModal::detachAllChildren()
@@ -297,12 +434,33 @@ void T3kDetailModal::Draw(IGraphics& g)
   const float tR = mTextRect.R;
   float ty = mTextRect.T;
 
-  // Title.
-  const IRECT titleR(tL, ty, tR, ty + 40.f);
-  g.DrawText(IText(28.f, th::kText, th::kFontBodyBold,
-                   EAlign::Near, EVAlign::Top),
-             mData.title.empty() ? "(no title)" : mData.title.c_str(),
-             titleR);
+  // Title — 2026-05-25: wrap to at most 2 lines so long Cloud-tab
+  // titles (~50+ chars) stay inside the text rect instead of spilling
+  // past the right edge of the card. The 14 px/char estimate matches
+  // 28pt bold Inter; if the title still doesn't fit in 2 lines, the
+  // second line gets ellipsized.
+  constexpr float kTitleLineH       = 32.f;
+  constexpr size_t kTitleMaxLines    = 2;
+  constexpr float kTitlePxPerChar   = 14.f;
+  const std::string titleSrc =
+      mData.title.empty() ? std::string("(no title)") : mData.title;
+  std::vector<std::string> titleLines =
+      wrapText(titleSrc, tR - tL, kTitlePxPerChar);
+  if (titleLines.size() > kTitleMaxLines) {
+    titleLines.resize(kTitleMaxLines);
+    if (!titleLines.back().empty()) titleLines.back() += "\xE2\x80\xA6";
+  }
+  if (titleLines.empty()) titleLines.push_back(titleSrc);
+  const float titleBlockH =
+      static_cast<float>(titleLines.size()) * kTitleLineH;
+  const IRECT titleR(tL, ty, tR, ty + titleBlockH);
+  for (size_t li = 0; li < titleLines.size(); ++li) {
+    const IRECT lineR(tL, ty + li * kTitleLineH,
+                      tR, ty + (li + 1) * kTitleLineH);
+    g.DrawText(IText(28.f, th::kText, th::kFontBodyBold,
+                     EAlign::Near, EVAlign::Top),
+               titleLines[li].c_str(), lineR);
+  }
   ty = titleR.B + 4.f;
 
   // Subtitle (accent).
@@ -373,45 +531,101 @@ void T3kDetailModal::Draw(IGraphics& g)
                "Versions", hdrR);
     ty = hdrR.B + 6.f;
 
-    const float rowH      = 30.f;
-    const float pickBtnW  = 64.f;
-    const float pickBtnH  = 24.f;
-    const size_t maxItems = 6;
-    const size_t shown    = std::min(mData.pickables.size(), maxItems);
-    for (size_t i = 0; i < shown; ++i) {
-      const IRECT rowR(tL, ty, tR, ty + rowH);
-      // Label on the left, ellipsized if too long.
-      const IRECT labelR(rowR.L, rowR.T,
+    // 2026-05-25 — scrollable Versions list. The previous version
+    // showed only the first 6 pickables and surfaced a "+N more..."
+    // text that wasn't actionable — so variants 7+ were unreachable.
+    // Now: render ALL pickables in a virtual stack, scrolled by
+    // mPickablesScrollOffset; only rows whose full row-rect lies
+    // inside the area get drawn (and their PICK button shown). The
+    // mouse wheel adjusts the offset (see OnMouseWheel below).
+    const float rowH       = 30.f;
+    const float pickBtnW   = 64.f;
+    const float pickBtnH   = 24.f;
+    const size_t count     = mData.pickables.size();
+
+    // The pickables area spans from the current ty cursor down to
+    // the bottom of mTextRect (which already excludes the action-
+    // button row at the very bottom). Saved in members so the
+    // OnMouseWheel handler can hit-test and bound the offset.
+    mPickablesAreaRect      = IRECT(tL, ty, tR, mTextRect.B);
+    mPickablesContentHeight = static_cast<float>(count) * rowH;
+
+    // Re-clamp the persisted offset in case the area shrank or the
+    // pickable set changed since the last wheel event.
+    const float maxOffset =
+        std::max(0.f, mPickablesContentHeight - mPickablesAreaRect.H());
+    if (mPickablesScrollOffset > maxOffset) mPickablesScrollOffset = maxOffset;
+    if (mPickablesScrollOffset < 0.f)       mPickablesScrollOffset = 0.f;
+
+    const float areaTop    = mPickablesAreaRect.T;
+    const float areaBottom = mPickablesAreaRect.B;
+
+    for (size_t i = 0; i < count; ++i) {
+      const float rowTop    = areaTop + static_cast<float>(i) * rowH
+                              - mPickablesScrollOffset;
+      const float rowBottom = rowTop + rowH;
+      const bool fullyInside =
+          rowTop >= areaTop - 0.5f && rowBottom <= areaBottom + 0.5f;
+      if (!fullyInside) {
+        // Off-screen row — hide the PICK button so it can't be
+        // clicked outside the visible area.
+        if (i < mPickBtns.size() && mPickBtns[i]) mPickBtns[i]->Hide(true);
+        continue;
+      }
+      // 2026-05-26 — leave a 14px left gutter so labels don't sit on
+      // top of the (now-left-aligned) scrollbar. 14 = 4 track + 2 left
+      // padding + 8 visual breathing.
+      const IRECT rowR(tL, rowTop, tR, rowBottom);
+      const IRECT labelR(rowR.L + 14.f, rowR.T,
                          rowR.R - pickBtnW - 8.f, rowR.B);
       g.DrawText(IText(13.f, th::kTextMuted, th::kFontBody,
                        EAlign::Near, EVAlign::Middle),
                  mData.pickables[i].label.c_str(), labelR);
-      // PICK button — push it into the right edge of the row.
       if (i < mPickBtns.size() && mPickBtns[i]) {
+        mPickBtns[i]->Hide(false);
         const float by = rowR.MH() - pickBtnH * 0.5f;
         const IRECT btnR(rowR.R - pickBtnW, by,
                          rowR.R,             by + pickBtnH);
         mPickBtns[i]->SetTargetAndDrawRECTs(btnR);
       }
-      ty += rowH;
     }
-    // Hide any pick buttons beyond what we render this paint (shouldn't
-    // happen since mPickBtns.size() == pickables.size(), but defensive).
-    for (size_t i = shown; i < mPickBtns.size(); ++i) {
-      if (mPickBtns[i]) mPickBtns[i]->Hide(true);
+
+    // Sleek scrollbar — a thin 4px track on the LEFT edge of the
+    // variants area (2026-05-26: was on the right; it overlapped the
+    // PICK buttons there). Rounded thumb height = viewport fraction
+    // of total content. Visible only when there's overflow.
+    if (mPickablesContentHeight > mPickablesAreaRect.H() + 1.f) {
+      constexpr float kTrackW   = 4.f;
+      constexpr float kThumbMin = 24.f;
+      const float trackX = mPickablesAreaRect.L + 2.f;
+      const IRECT trackR(trackX, areaTop,
+                         trackX + kTrackW, areaBottom);
+      const float visibleFrac =
+          std::min(1.f, mPickablesAreaRect.H() / mPickablesContentHeight);
+      const float thumbH =
+          std::max(kThumbMin, trackR.H() * visibleFrac);
+      const float maxOffset2 =
+          std::max(1.f, mPickablesContentHeight - mPickablesAreaRect.H());
+      const float scrollFrac =
+          std::clamp(mPickablesScrollOffset / maxOffset2, 0.f, 1.f);
+      const float thumbY =
+          trackR.T + (trackR.H() - thumbH) * scrollFrac;
+      mScrollbarThumbRect = IRECT(trackR.L, thumbY,
+                                  trackR.R, thumbY + thumbH);
+
+      // Subtle, theme-aware visuals — track translucent dim,
+      // thumb slightly brighter (or muted-text on hover/drag-soon).
+      const IColor trackColor = th::kBorder;
+      const IColor thumbColor =
+          mScrollbarDragging ? th::kText : th::kTextMuted;
+      g.FillRoundRect(trackColor, trackR, kTrackW * 0.5f);
+      g.FillRoundRect(thumbColor, mScrollbarThumbRect, kTrackW * 0.5f);
+    } else {
+      // No overflow — clear thumb rect so hit tests miss it.
+      mScrollbarThumbRect = IRECT();
     }
-    if (mData.pickables.size() > maxItems) {
-      char hint[40];
-      std::snprintf(hint, sizeof(hint),
-                    "+%zu more\xE2\x80\xA6",
-                    mData.pickables.size() - maxItems);
-      const IRECT lineR(tL, ty, tR, ty + kBodyLineH);
-      g.DrawText(IText(13.f, th::kTextDim, th::kFontBody,
-                       EAlign::Near, EVAlign::Top),
-                 hint, lineR);
-      ty += kBodyLineH;
-    }
-    ty += 10.f;
+
+    ty = areaBottom + 10.f;
   } else if (!mData.makesModels.empty()) {
     // Makes and Models — Cloud path (descriptive, not pickable).
     const IRECT hdrR(tL, ty, tR, ty + 18.f);

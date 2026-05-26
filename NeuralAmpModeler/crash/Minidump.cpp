@@ -157,8 +157,21 @@ LONG WINAPI CrashFilter(EXCEPTION_POINTERS* eptrs)
         mei.ExceptionPointers = eptrs;
         mei.ClientPointers    = FALSE;
 
+        // 2026-05-25 — upgraded from MiniDumpNormal+ThreadInfo to also
+        // capture enough memory for a usable backtrace on the next
+        // crash. WithIndirectlyReferencedMemory walks the thread stack
+        // and pulls in any memory pages pointed to by registers/stack
+        // values; ScanMemory + UnloadedModules pad out the picture.
+        // The resulting files are still small (~1-3 MB) but a debugger
+        // can now reconstruct frames past the topmost — the previous
+        // setting only recorded the faulting RIP, leaving the call
+        // stack invisible and forcing static-only diagnosis.
         const MINIDUMP_TYPE type = static_cast<MINIDUMP_TYPE>(
-            MiniDumpNormal | MiniDumpWithThreadInfo);
+            MiniDumpNormal
+            | MiniDumpWithThreadInfo
+            | MiniDumpWithIndirectlyReferencedMemory
+            | MiniDumpScanMemory
+            | MiniDumpWithUnloadedModules);
 
         MiniDumpWriteDump(GetCurrentProcess(),
                           GetCurrentProcessId(),

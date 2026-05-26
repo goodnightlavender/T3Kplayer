@@ -57,10 +57,21 @@ constexpr float kDetailBtnH     = 30.f;
 constexpr float kDetailBtnGap   = 8.f;
 
 constexpr float kGridPad        = 16.f;
-constexpr float kCardW          = 168.f;
-constexpr float kCardH          = 220.f;
+// 2026-05-25 — card width shrunk 168 -> 144 so 5 columns fit inside
+// the 1024 design canvas alongside the 220 sidebar.
+// 2026-05-26 — kCardH 220 -> 196 so two rows fit in the visible grid
+// without scrolling. The card's hero is pinned to kCardW (square),
+// so reducing the overall height only trims the bottom whitespace
+// under the meta text (hero 144 + 6 gap + name 18 + 2 gap + meta 14
+// = 184, leaving 12 px of breathing room). Math: mGridRect.H ≈ 452,
+// minus 2 × kGridPad(16) = 420 usable, fits 2 × 196 + 12 gap = 404.
+constexpr float kCardW          = 144.f;
+constexpr float kCardH          = 196.f;
 constexpr float kCardGap        = 12.f;
-constexpr int   kCols           = 6;
+// 2026-05-25 — five columns. Cards narrowed (kCardW 168 -> 144) so
+// the 5*144 + 4*12 + 2*16 + 220-sidebar = 1004 fits inside the 1024
+// design canvas with a few px to spare.
+constexpr int   kCols           = 5;
 
 enum PopupCmd {
   kCmdNone           = 0,
@@ -139,7 +150,6 @@ void LibraryView::Hide(bool hide)
   if (mRenameOverlay) mRenameOverlay->Hide(true);  // always hidden between sessions
   if (mDetailModal)   mDetailModal  ->Hide(true);  // ditto
   if (hide) {
-    if (mLoadBtn)   mLoadBtn  ->Hide(true);
     if (mRenameBtn) mRenameBtn->Hide(true);
     if (mRevealBtn) mRevealBtn->Hide(true);
     if (mRemoveBtn) mRemoveBtn->Hide(true);
@@ -182,20 +192,19 @@ void LibraryView::OnResize()
 
   layoutSidebar();
 
-  // Detail-strip buttons — right-aligned row.
+  // Detail-strip buttons — right-aligned row. 2026-05-25: LOAD INTO
+  // CHAIN was removed; the per-variant LOAD button on the detail
+  // modal is the single load entry point now. 2026-05-26: SHOW IN
+  // EXPLORER also removed (mRevealBtn never instantiated, but parks
+  // its rect off-screen so any stale references stay harmless).
   const float by = mDetailRect.MH() - kDetailBtnH * 0.5f;
   float bx = mDetailRect.R - kDetailPad - kDetailBtnW;
   mRemoveBtnRect = IRECT(bx, by, bx + kDetailBtnW, by + kDetailBtnH);
   bx -= kDetailBtnW + kDetailBtnGap;
-  mRevealBtnRect = IRECT(bx, by, bx + kDetailBtnW, by + kDetailBtnH);
-  bx -= kDetailBtnW + kDetailBtnGap;
   mRenameBtnRect = IRECT(bx, by, bx + kDetailBtnW, by + kDetailBtnH);
-  bx -= kDetailBtnW + kDetailBtnGap;
-  mLoadBtnRect   = IRECT(bx, by, bx + kDetailBtnW, by + kDetailBtnH);
+  mRevealBtnRect = IRECT(-1.f, -1.f, 0.f, 0.f);  // unused — keep off-screen
 
-  if (mLoadBtn)   mLoadBtn  ->SetTargetAndDrawRECTs(mLoadBtnRect);
   if (mRenameBtn) mRenameBtn->SetTargetAndDrawRECTs(mRenameBtnRect);
-  if (mRevealBtn) mRevealBtn->SetTargetAndDrawRECTs(mRevealBtnRect);
   if (mRemoveBtn) mRemoveBtn->SetTargetAndDrawRECTs(mRemoveBtnRect);
 
   layoutCards();
@@ -328,16 +337,16 @@ void LibraryView::OnAttached()
   g->AttachControl(mRenameOverlay);
 
   // Detail-strip buttons — created hidden; updateDetailButtons() reveals
-  // them when a card is selected.
-  mLoadBtn = new T3kButton(mLoadBtnRect, "LOAD INTO CHAIN",
-      [this]() { this->loadSelected(); },
-      T3kButton::Variant::Primary);
+  // them when a card is selected. 2026-05-25: LOAD INTO CHAIN was
+  // removed (loading is now exclusively via the detail modal's per-
+  // variant LOAD button — double-click a card to open it).
   mRenameBtn = new T3kButton(mRenameBtnRect, "RENAME",
       [this]() { this->renameSelected(); },
       T3kButton::Variant::Secondary);
-  mRevealBtn = new T3kButton(mRevealBtnRect, "SHOW IN EXPLORER",
-      [this]() { this->revealSelected(); },
-      T3kButton::Variant::Secondary);
+  // 2026-05-26 — SHOW IN EXPLORER button removed. revealSelected() is
+  // kept around as dead-but-reachable code in case we re-add it via a
+  // context menu later. mRevealBtn stays nullptr so all guarded
+  // {Hide, SetTargetAndDrawRECTs}-style calls become no-ops.
   mRemoveBtn = new T3kButton(mRemoveBtnRect, "REMOVE",
       [this]() {
         if (mSelectedId <= 0) return;
@@ -351,9 +360,7 @@ void LibraryView::OnAttached()
                             mRemoveBtnRect.MW(), mRemoveBtnRect.T);
       },
       T3kButton::Variant::Secondary);
-  g->AttachControl(mLoadBtn);
   g->AttachControl(mRenameBtn);
-  g->AttachControl(mRevealBtn);
   g->AttachControl(mRemoveBtn);
   updateDetailButtons();
 
@@ -370,6 +377,23 @@ void LibraryView::OnAttached()
   mDetailModal->Hide(true);
 
   // Subscribe to scanner events.
+  //
+  // 2026-05-25 — EventBus::post() invokes listeners synchronously on
+  // the posting thread. LibraryScanner::walk() runs on a worker
+  // std::thread and posts ModelAdded per file (and LibrarySync's pull
+  // listener also posts from an HTTP worker thread). Calling refresh()
+  // directly from here mutates mAllRows/mRows/mVariantsByToneId on the
+  // worker thread while the GUI thread reads them in Draw()/OnMouseDown
+  // — a data race that produced a deterministic heap-corruption crash
+  // (vector<ModelRow>::_Tidy() dereferenced a smashed .data pointer
+  // and crashed inside std::string::~string() with non-canonical this).
+  //
+  // The fix: never touch the racy containers from the listener. We
+  // flip an atomic flag and trigger a paint; the next Draw() (which
+  // is guaranteed GUI-thread) drains the flag and runs refresh()
+  // there. SetDirty(false) is iPlug2's lightweight "schedule a paint"
+  // and is tolerant of any-thread invocation per existing usage in
+  // T3kDownloadsPill and CloudView.
   mBusToken = ::t3k::library::EventBus::instance().subscribe(
       [this](::t3k::library::LibraryEvent ev, int64_t /*payload*/) {
         switch (ev) {
@@ -377,7 +401,8 @@ void LibraryView::OnAttached()
           case ::t3k::library::LibraryEvent::ModelUpdated:
           case ::t3k::library::LibraryEvent::ModelRemoved:
           case ::t3k::library::LibraryEvent::ScanFinished:
-            refresh();
+            mNeedsRefresh.store(true, std::memory_order_release);
+            SetDirty(false);
             break;
           default: break;
         }
@@ -536,9 +561,12 @@ void LibraryView::layoutCards()
     d.displayName = mRows[i].effectiveDisplayName();
     d.creator     = mRows[i].t3k_creator;
     d.gearType    = mRows[i].gear_type;
-    std::string fmt = mRows[i].kind;
-    for (char& c : fmt) c = static_cast<char>(std::toupper((unsigned char)c));
-    d.format = std::move(fmt);
+    // 2026-05-26 — meta line used to read "creator · NAM" / "creator · IR".
+    // The user wants the gear-type name there instead ("Amp Head", "Cabinet",
+    // "Outboard", "Pedal", "Full Rig / Combo"), which is more useful than the
+    // model file format (NAM/IR is implicit from the gear category and
+    // already filterable via the Technical accordion).
+    d.format = GearLabelFor(mRows[i].gear_type);
     // Image — prefer the sidecar's t3k_image_path (already cached to
     // disk by Downloader / ModelSidecar). Fall back to t3k_image_url
     // and let ThumbnailCache pull it on first paint.
@@ -549,12 +577,18 @@ void LibraryView::layoutCards()
     card->setData(std::move(d));
     card->setSelected(mRows[i].id == mSelectedId);
 
-    // Hide cards whose Y rect lies entirely outside the body — iPlug2
-    // doesn't auto-skip; without this, off-screen cards still paint
-    // their fills/borders and break visual layering on tab switches.
+    // 2026-05-25 — require the card to fit ENTIRELY inside mGridRect.
+    // Previously we allowed any vertical overlap, which let
+    // partially-scrolled cards spill below mGridRect.B and paint over
+    // the detail strip (where the "click a card to load it..." hint
+    // lives) — cards are flat-attached to IGraphics and z-order
+    // strictly AFTER the LibraryView's own draw, so any pixel they
+    // paint covers the hint. Hiding partials keeps the boundary
+    // clean; the user just sees the next row of cards pop in cleanly
+    // when scrolled into view.
     const bool visible = !IsHidden() &&
-                         cardR.B > mGridRect.T &&
-                         cardR.T < mGridRect.B;
+                         cardR.T >= mGridRect.T - 1.f &&
+                         cardR.B <= mGridRect.B + 1.f;
     card->Hide(!visible);
     card->SetTargetAndDrawRECTs(cardR);
   }
@@ -680,19 +714,12 @@ void LibraryView::showDetailFor(int64_t id)
   }
   // Tags placeholder — local sidecars don't carry tags yet.
 
-  // Bottom action buttons — Rename / Show in Explorer / Remove apply
-  // to the WHOLE tone group (primary variant). The per-variant LOAD
-  // is handled via the Versions PICK buttons above.
+  // 2026-05-25 — RENAME and SHOW IN EXPLORER were removed from the
+  // detail panel's action row (they still live on the LibraryView's
+  // grid detail strip via mRenameBtn / mRevealBtn). The detail modal
+  // now only carries the destructive REMOVE action so its bottom row
+  // stays focused on the per-variant LOAD buttons.
   std::vector<T3kDetailModal::Action> actions = {
-    { "RENAME",          true, [this, id]() {
-        if (mDetailModal) mDetailModal->Hide(true);
-        showRenameOverlay(id);
-      } },
-    { "SHOW IN EXPLORER", false, [this, id]() {
-        mSelectedId = id;
-        if (mDetailModal) mDetailModal->Hide(true);
-        revealSelected();
-      } },
     { "REMOVE",           false, [this, id]() {
         mSelectedId = id;
         if (mDetailModal) mDetailModal->Hide(true);
@@ -837,13 +864,11 @@ void LibraryView::revealSelected()
   ::t3k::library::Paths::revealInExplorer(row->uri);
 }
 
-void LibraryView::loadSelected()
-{
-  if (mSelectedId <= 0 || !mOnModelClicked) return;
-  auto row = ::t3k::library::LibraryDb::instance().findById(mSelectedId);
-  if (!row.has_value()) return;
-  mOnModelClicked(row->t3k_tone_id, row->t3k_model_id);
-}
+// 2026-05-25 — LibraryView::loadSelected() removed alongside the
+// LOAD-INTO-CHAIN button on the detail strip. The detail modal's
+// per-variant LOAD button now invokes mOnModelClicked directly with
+// the variant's (toneId, modelId), so the LibraryView no longer
+// needs its own loader.
 
 void LibraryView::renameSelected()
 {
@@ -853,7 +878,6 @@ void LibraryView::renameSelected()
 void LibraryView::updateDetailButtons()
 {
   const bool visible = !IsHidden() && mSelectedId > 0;
-  if (mLoadBtn)   mLoadBtn  ->Hide(!visible);
   if (mRenameBtn) mRenameBtn->Hide(!visible);
   if (mRevealBtn) mRevealBtn->Hide(!visible);
   if (mRemoveBtn) mRemoveBtn->Hide(!visible);
@@ -895,16 +919,35 @@ bool LibraryView::handleSidebarClick(float x, float y)
     }
     return false;
   };
-  if (handle(mGearRowRects,    mSelectedGears))    return true;
-  if (handle(mMakeRowRects,    mSelectedMakes))    return true;
-  if (handle(mCreatorRowRects, mSelectedCreators)) return true;
-  if (handle(mFormatRowRects,  mSelectedFormats))  return true;
+  // 2026-05-25 — gate each section's hit-test on the corresponding
+  // accordion being expanded. Without this, the row rects from the
+  // last time the section was open stay populated in mXxxRowRects
+  // and clicks at those screen positions still toggle filters even
+  // when the section is collapsed. Each accordion's drawContent
+  // callback only runs while it's open, so the rects only refresh
+  // when visible.
+  if (mGearAcc     && mGearAcc->isOpen()
+      && handle(mGearRowRects,    mSelectedGears))    return true;
+  if (mMakesAcc    && mMakesAcc->isOpen()
+      && handle(mMakeRowRects,    mSelectedMakes))    return true;
+  if (mCreatorsAcc && mCreatorsAcc->isOpen()
+      && handle(mCreatorRowRects, mSelectedCreators)) return true;
+  if (mTechAcc     && mTechAcc->isOpen()
+      && handle(mFormatRowRects,  mSelectedFormats))  return true;
   return false;
 }
 
 void LibraryView::Draw(IGraphics& g)
 {
   namespace th = ::t3k::theme;
+
+  // 2026-05-25 — drain any pending refresh request that arrived from
+  // a worker-thread EventBus post. Draw() runs on the GUI thread, so
+  // refresh() — which rebuilds mAllRows/mRows/mVariantsByToneId — is
+  // safe here. See OnAttached() for the bug context.
+  if (mNeedsRefresh.exchange(false, std::memory_order_acquire)) {
+    refresh();
+  }
 
   // Body background + 1px dividers.
   g.FillRect(th::kBgBase, mRECT);
@@ -952,7 +995,9 @@ void LibraryView::Draw(IGraphics& g)
       }
 
       const float textL = iconR.R + 12.f;
-      const float textR = mLoadBtnRect.L - kDetailPad;
+      // 2026-05-25 — clamp the metadata text to the leftmost remaining
+      // button (was mLoadBtnRect.L until LOAD INTO CHAIN was removed).
+      const float textR = mRenameBtnRect.L - kDetailPad;
       const IRECT nameR(textL, mDetailRect.T + kDetailPad,
                         textR, mDetailRect.T + kDetailPad + 22.f);
       g.DrawText(IText(16.f, th::kText, th::kFontBodyMed,

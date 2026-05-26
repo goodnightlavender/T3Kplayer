@@ -541,4 +541,19 @@ void T3kCard::setDownloadState(DownloadState s, std::string label)
   SetDirty(false);
 }
 
+void T3kCard::setData(CardData data)
+{
+  mData = std::move(data);
+  // Drop the lazy-thumbnail cache. Without this, the previous tone's
+  // bitmap (or its in-flight ThumbnailCache request) would still be
+  // painted under the new title until the user scrolled or the card
+  // got recreated. nullopt + cleared path + false flags forces the
+  // next Draw to re-issue the lookup for the new tone's imageUrl.
+  mThumbRequested  = false;
+  mThumbPath.clear();
+  mThumbBitmap.reset();
+  mThumbLoadFailed = false;
+  SetDirty(false);
+}
+
 }  // namespace t3k::ui

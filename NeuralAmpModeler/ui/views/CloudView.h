@@ -192,8 +192,18 @@ private:
   // here and toggle mResultReady. Draw() picks it up under the mutex
   // and applies the change. mPendingToken cancels any in-flight
   // request when a new search starts.
+  //
+  // 2026-05-25 — mSearchSeq is the "current generation" of the search.
+  // Each startSearch / fetchNextPage increments it and snapshots the
+  // value into the callback. The callback only writes its result if
+  // its captured seq equals mSearchSeq when it completes. This avoids
+  // the race where a previously-cancelled request's callback fires
+  // AFTER the new request's callback and clobbers the fresh result
+  // with an "error: canceled" state (the symptom: filter/search clicks
+  // appear to do nothing because the cancelled callback wins).
   std::mutex mResultMtx;
   std::atomic<bool> mResultReady{false};
+  std::atomic<std::uint64_t> mSearchSeq{0};
   ::t3k::cloud::ToneSearchResult mPendingResult;
   bool mPendingResultIsAppend = false;  // false = first page, true = next page
   ::t3k::net::CancellationToken mPendingToken;

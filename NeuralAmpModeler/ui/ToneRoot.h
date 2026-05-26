@@ -82,11 +82,24 @@ public:
   void togglePresetOverlay();
   void toggleAccountMenu();
   void toggleDownloadsPopover();
+  // Pop the Settings modal. Used both by the account-menu "Settings..."
+  // entry and the Ctrl+Shift+S global hotkey. Closes the account menu
+  // first if it's open so its z-order doesn't fight the modal backdrop.
+  void openSettings();
 
   // Routes popup-menu selections from per-preset Rename/Delete + the
   // confirm-delete menu back through PresetStore.
   void OnPopupMenuSelection(iplug::igraphics::IPopupMenu* pSelectedMenu,
                             int valIdx) override;
+
+  // 2026-05-25 — periodic hook used to drive deferred actions (see
+  // DeferredAction below). Called by iPlug2 when the editor is idle
+  // (no dirty controls for ~10 frames). We use it as a "next tick"
+  // queue to break out of the popup-menu callback chain when opening
+  // a nested confirm popup — opening a new popup directly from
+  // OnPopupMenuSelection corrupts iPlug2's mInPopupMenu state and
+  // crashes the host (observed in Ableton on preset delete).
+  void OnGUIIdle() override;
 
 private:
   // Layout helpers — computed in OnResize, used in OnAttached to size children.
@@ -277,6 +290,23 @@ private:
   // (false).
   enum class PendingTextEntry { None, SaveAs, RenamePreset };
   PendingTextEntry mPendingTextEntry = PendingTextEntry::None;
+
+  // 2026-05-25 — deferred-action queue. iPlug2's
+  // SetControlValueAfterPopupMenu reads mInPopupMenu BOTH at function
+  // entry AND again after dispatching to OnPopupMenuSelection; if the
+  // selection handler opens a nested CreatePopupMenu, the recursive
+  // SetControlValueAfterPopupMenu sets mInPopupMenu=nullptr on its
+  // way out and the outer frame then dereferences null -> host crash
+  // (observed in Ableton when picking "Delete" on a preset row).
+  // We defer the nested popup to the next idle tick instead. Carries
+  // its own captured preset name/id so the deferred handler can re-
+  // open the confirm popup with the right label after the outer
+  // callback chain has unwound.
+  enum class DeferredAction : uint8_t {
+    None,
+    OpenDeleteConfirm,
+  };
+  DeferredAction mPendingDeferredAction = DeferredAction::None;
 };
 
 }  // namespace t3k::ui
