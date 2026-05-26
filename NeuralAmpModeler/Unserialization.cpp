@@ -106,6 +106,11 @@ void NeuralAmpModeler::_UnserializeApplyConfig(nlohmann::json& config)
           es.inGainDb  = sj.value("in",  0.0);
           es.outGainDb = sj.value("out", 0.0);
           es.eqActive  = sj.value("eq",  true);
+          // v=2 additions (2026-05-26). Older v=1 chunks omit these
+          // keys — .value() back-fills the documented defaults so we
+          // never crash on a short / legacy envelope.
+          es.bypassed  = sj.value("bypassed", false);
+          es.dryWet    = sj.value("dryWet",   1.0);
           std::string namPath = sj.value("nam", std::string{});
           if (!namPath.empty())
           {

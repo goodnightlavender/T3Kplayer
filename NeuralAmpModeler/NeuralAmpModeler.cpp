@@ -522,8 +522,14 @@ bool NeuralAmpModeler::SerializeState(IByteChunk& chunk) const
   // treats this string as optional so legacy chunks still load.
   // Slot 0's EQ/gain is stored redundantly with the iPlug params so a
   // session saved while mActiveSlot != 0 still restores correctly.
+  // Envelope schema:
+  //   v=1 — initial Phase 10 envelope (b/m/t/in/out/eq per slot).
+  //   v=2 — 2026-05-26: add per-slot "bypassed" (bool, default false)
+  //         and "dryWet" (double 0..1, default 1.0). Old (v=1) chunks
+  //         load fine — the reader uses .value(key, default) so the
+  //         new fields fall through to their defaults when absent.
   nlohmann::json chain = {
-    {"v", 1},
+    {"v", 2},
     {"active", mActiveSlot},
     {"slot0", {
       {"b",  mSlot0Bass},
@@ -545,7 +551,11 @@ bool NeuralAmpModeler::SerializeState(IByteChunk& chunk) const
       {"t",   es.treble},
       {"in",  es.inGainDb},
       {"out", es.outGainDb},
-      {"eq",  es.eqActive}
+      {"eq",  es.eqActive},
+      // v=2 additions — appended at the end so older readers that
+      // ignore unknown keys still parse the per-slot record cleanly.
+      {"bypassed", es.bypassed},
+      {"dryWet",   es.dryWet}
     });
   }
   WDL_String chainStr(chain.dump().c_str());
