@@ -83,16 +83,19 @@ void T3kVMeter::Draw(IGraphics& g)
 {
   namespace th = ::t3k::theme;
 
-  const float labelH = 12.f;
-  const float numH   = 12.f;
+  // 2026-05-26 polish-pass — label 8 → 10, bar 10 → 14, num 10 → 12 so
+  // the meters carry their weight against the bigger knobs alongside.
+  const float labelH = 14.f;
+  const float numH   = 14.f;
+  const float barW   = 14.f;
   const IRECT labelR(mRECT.L, mRECT.T, mRECT.R, mRECT.T + labelH);
-  const IRECT barR  (mRECT.L + (mRECT.W() - 10.f) * 0.5f,
+  const IRECT barR  (mRECT.L + (mRECT.W() - barW) * 0.5f,
                      mRECT.T + labelH + 4.f,
-                     mRECT.L + (mRECT.W() + 10.f) * 0.5f,
+                     mRECT.L + (mRECT.W() + barW) * 0.5f,
                      mRECT.B - numH - 4.f);
   const IRECT numR  (mRECT.L, mRECT.B - numH, mRECT.R, mRECT.B);
 
-  const IText lbl(8.f, th::kTextMuted, th::kFontBody, EAlign::Center, EVAlign::Middle);
+  const IText lbl(10.f, th::kTextMuted, th::kFontBody, EAlign::Center, EVAlign::Middle);
   g.DrawText(lbl, mLabel == Label::In ? "IN" : "OUT", labelR);
 
   g.FillRoundRect(IColor(255, 26, 26, 26), barR, 2.f);
@@ -108,7 +111,7 @@ void T3kVMeter::Draw(IGraphics& g)
                IRECT(barR.L - 2.f, peakY - 0.5f, barR.R + 2.f, peakY + 0.5f));
   }
 
-  const IText numT(10.f, th::kText, th::kFontBody, EAlign::Center, EVAlign::Middle);
+  const IText numT(12.f, th::kText, th::kFontBody, EAlign::Center, EVAlign::Middle);
   char buf[16];
   if (mPeakDb <= -80.0)
     std::snprintf(buf, sizeof(buf), "-INF");

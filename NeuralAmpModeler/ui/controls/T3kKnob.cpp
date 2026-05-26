@@ -80,11 +80,12 @@ void T3kKnob::Draw(IGraphics& g)
   const float labelH = th::kTypeLabel + th::kS1;
   const IRECT knobR = mRECT.GetReducedFromBottom(labelH);
 
-  // 2026-05-26 — Phase C7: cap the ring to a 44 px diameter (r = 22). The
-  // surrounding cell may still be larger; cells smaller than 44 px continue
-  // to scale the ring down to fit.
+  // 2026-05-26 polish-pass — cap the ring to a 64 px diameter (r = 32),
+  // up from the original 44 px (r = 22) cap which read too small at the
+  // plug-in's real canvas size. Cells smaller than 64 px continue to
+  // scale the ring down to fit.
   const float diameter = std::min(knobR.W(), knobR.H());
-  const float r = std::min(diameter * 0.5f, 22.f);
+  const float r = std::min(diameter * 0.5f, 32.f);
   const float cx = knobR.MW();
   const float cy = knobR.MH();
 

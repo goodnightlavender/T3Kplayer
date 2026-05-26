@@ -68,7 +68,7 @@ constexpr float kPresetOverlayH = 210.f;
 constexpr float kDownloadsPillW = 60.f;
 constexpr float kDownloadsPopoverW = 320.f;
 constexpr float kDownloadsPopoverH = 260.f;
-constexpr float kGatePillW         = 80.f;   // 2026-05-26 — GATE header pill
+constexpr float kGatePillW         = 100.f;  // 2026-05-26 — GATE header pill (polish-pass: 80 → 100 so the bigger numerals fit)
 constexpr float kGatePillGap       =  8.f;   // gap between GATE pill and downloads pill
 
 // Phase 5 — account menu sized to comfortably hold the header + 3 rows.
