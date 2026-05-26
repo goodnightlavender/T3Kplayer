@@ -12,6 +12,8 @@
 
 #pragma once
 
+#include <functional>
+
 #include "IControl.h"
 #include "../theme.h"
 
@@ -33,9 +35,21 @@ public:
   // its siblings. See Phase C7.
   void setActive(bool a) { if (mActive != a) { mActive = a; SetDirty(false); } }
 
+  // 2026-05-26 (Phase G1) — touch-or-change hook. Fires on mouse-down and on
+  // every drag tick so the parent can push the live param value into a
+  // sibling display (T3kReadout in the focused panel's title row). The
+  // callback receives the knob itself so the parent can read GetParam()
+  // without holding a separate handle.
+  void setOnTouchOrChange(std::function<void(T3kKnob*)> cb) { mOnTouchOrChange = std::move(cb); }
+
+  void OnMouseDown(float x, float y, const iplug::igraphics::IMouseMod& mod) override;
+  void OnMouseDrag(float x, float y, float dX, float dY, const iplug::igraphics::IMouseMod& mod) override;
+  void OnMouseUp(float x, float y, const iplug::igraphics::IMouseMod& mod) override;
+
 private:
   const char* mLabel;
   bool        mActive = false;
+  std::function<void(T3kKnob*)> mOnTouchOrChange;
 };
 
 }  // namespace t3k::ui

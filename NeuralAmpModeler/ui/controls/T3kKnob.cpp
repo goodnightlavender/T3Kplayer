@@ -40,6 +40,29 @@ T3kKnob::T3kKnob(const IRECT& bounds, int paramIdx, const char* label)
 {
 }
 
+// 2026-05-26 (Phase G1) — mouse handlers: forward to IKnobControlBase so it
+// drives the standard drag-to-change param math, then flag this knob as the
+// active one (drives the yellow wash) and fan the touch event out to the
+// parent's readout sink.
+void T3kKnob::OnMouseDown(float x, float y, const IMouseMod& mod)
+{
+  IKnobControlBase::OnMouseDown(x, y, mod);
+  setActive(true);
+  if (mOnTouchOrChange) mOnTouchOrChange(this);
+}
+
+void T3kKnob::OnMouseDrag(float x, float y, float dX, float dY, const IMouseMod& mod)
+{
+  IKnobControlBase::OnMouseDrag(x, y, dX, dY, mod);
+  if (mOnTouchOrChange) mOnTouchOrChange(this);
+}
+
+void T3kKnob::OnMouseUp(float x, float y, const IMouseMod& mod)
+{
+  IKnobControlBase::OnMouseUp(x, y, mod);
+  setActive(false);
+}
+
 void T3kKnob::Draw(IGraphics& g)
 {
   namespace th = ::t3k::theme;

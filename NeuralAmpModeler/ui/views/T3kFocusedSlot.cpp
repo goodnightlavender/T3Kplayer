@@ -118,6 +118,29 @@ void T3kFocusedSlot::rebuild()
   mKnobOutput = new T3kKnob(ph, ::kOutputLevel, "OUTPUT");  g->AttachControl(mKnobOutput);
   mKnobDryWet = new T3kKnob(ph, ::kDryWet,      "DRY/WET"); g->AttachControl(mKnobDryWet);
 
+  // 2026-05-26 (Phase G1) — touch / drag any focused-panel knob and the
+  // big yellow T3kReadout in the title row shows that knob's live value.
+  // Captured `label` is a const char* literal from the T3kKnob ctor and
+  // outlives the lambda; capturing by value keeps the pointer stable
+  // even if the knob is later destroyed.
+  auto wire = [this](T3kKnob* k, const char* label) {
+    if (!k) return;
+    k->setOnTouchOrChange([this, label](T3kKnob* knob) {
+      if (auto* p = knob->GetParam())
+      {
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "%+.1f", p->Value());
+        this->setActiveReadout(label, buf);
+      }
+    });
+  };
+  wire(mKnobBass,   "BASS");
+  wire(mKnobMids,   "MIDS");
+  wire(mKnobTreble, "TREBLE");
+  wire(mKnobInput,  "INPUT");
+  wire(mKnobOutput, "OUTPUT");
+  wire(mKnobDryWet, "DRY/WET");
+
   mMeterIn  = new T3kVMeter(ph, T3kVMeter::Label::In);   g->AttachControl(mMeterIn);
   mMeterOut = new T3kVMeter(ph, T3kVMeter::Label::Out);  g->AttachControl(mMeterOut);
 }
