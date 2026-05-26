@@ -105,6 +105,7 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
   GetParam(kInputCalibrationLevel)
     ->InitDouble(kInputCalibrationLevelParamName.c_str(), kDefaultInputCalibrationLevel, -60.0, 60.0, 0.1, "dBu");
   GetParam(kSlim)->InitDouble("Slim", 0.0, 0.0, 1.0, 0.01);
+  GetParam(kMasterOutput)->InitGain("Master", 0.0, -40.0, 12.0, 0.1);
 
   mNoiseGateTrigger.AddListener(&mNoiseGateGain);
 
@@ -303,6 +304,16 @@ void NeuralAmpModeler::ProcessBlock(iplug::sample** inputs, iplug::sample** outp
   // mLowPass.SetParams(lowPassParams);
   sample** hpfPointers = mHighPass.Process(irPointers, numChannelsInternal, numFrames);
   // sample** lpfPointers = mLowPass.Process(hpfPointers, numChannelsInternal, numFrames);
+
+  // 2026-05-26 - apply global MASTER output gain after the HPF.
+  const double masterAmp = DBToAmp(GetParam(kMasterOutput)->Value());
+  for (size_t c = 0; c < numChannelsInternal; ++c)
+  {
+    for (size_t s = 0; s < numFrames; ++s)
+    {
+      hpfPointers[c][s] *= masterAmp;
+    }
+  }
 
   // restore previous floating point state
   std::feupdateenv(&fe_state);

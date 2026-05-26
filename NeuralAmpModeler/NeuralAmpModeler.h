@@ -48,6 +48,7 @@ enum EParams
   kInputCalibrationLevel,
   kOutputMode,
   kSlim,
+  kMasterOutput,        // 2026-05-26 - global master gain (NOT shadowed)
   kNumParams
 };
 
