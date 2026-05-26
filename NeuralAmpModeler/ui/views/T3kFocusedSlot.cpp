@@ -268,6 +268,7 @@ void T3kFocusedSlot::Draw(IGraphics& g)
     // Approximate auto-size from char count (no measureText available here).
     const float w = 8.f + 6.f * static_cast<float>(t.size());
     const IRECT cR(tagX, tagsR.T + 4.f, tagX + w, tagsR.B - 4.f);
+    g.FillRoundRect(IColor(255, 13, 13, 13), cR, cR.H() * 0.5f);
     g.DrawRoundRect(IColor(255, 34, 34, 34), cR, cR.H() * 0.5f, nullptr, 1.f);
     g.DrawText(tagT, t.c_str(), cR);
     tagX += w + 5.f;
