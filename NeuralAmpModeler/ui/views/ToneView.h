@@ -28,6 +28,7 @@
 
 #include "../controls/T3kGearIcon.h"
 #include "../controls/T3kModelTile.h"
+#include "../controls/T3kGlobalKnob.h"
 // T3kModelInfoPane.h still ships ModelInfoSnapshot, used by ChainView and by
 // T3kFocusedSlot. The pane control itself is no longer mounted (Phase E2).
 #include "T3kModelInfoPane.h"
@@ -178,6 +179,7 @@ private:
   // title row, MODEL INFO / SETTINGS / METERS columns.
   std::vector<T3kModelTile*> mTiles;  // size == kNumChainSlots; null if not yet built
   T3kFocusedSlot*       mFocusedSlot = nullptr;
+  T3kGlobalKnob*        mMasterKnob  = nullptr;  // 2026-05-26 — MASTER bookend on right edge of strip
 
   // Optional z-order-promotion notifier (see setOnStripRebuilt).
   std::function<void()> mOnStripRebuilt;

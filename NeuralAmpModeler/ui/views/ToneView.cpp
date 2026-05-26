@@ -25,6 +25,9 @@ namespace {
 // below the strip is the focused-slot panel (image + title + columns).
 constexpr float kStripH      = 96.f;
 constexpr float kStripGap    = 8.f;
+// MASTER knob bookend (Phase E3). Lives at the right edge of the strip.
+constexpr float kMasterW     = 64.f;
+constexpr float kMasterGap   = 8.f;  // space between rack and master knob
 
 // Inter-tile gap inside a single category group (pedals / amp+cab / outboard).
 constexpr float kTileGapWithinGroup = 8.f;
@@ -102,6 +105,13 @@ void ToneView::OnAttached()
   mFocusedSlot = new T3kFocusedSlot(mFocusedRect, mPlugin);
   g->AttachControl(mFocusedSlot);
 
+  // MASTER knob — bookends the right edge of the strip. Bound directly to
+  // ::kMasterOutput so drag/wheel/host-automation all converge through
+  // iPlug2's standard IKnobControlBase path. Positioned by layoutStripTiles.
+  mMasterKnob = new T3kGlobalKnob(IRECT(0.f, 0.f, 1.f, 1.f),
+                                  ::kMasterOutput, "MASTER");
+  g->AttachControl(mMasterKnob);
+
   // Strip tiles — built AFTER the focused slot so their click events
   // (which trigger setSnapshot on mFocusedSlot) always have a live panel
   // to push into.
@@ -128,6 +138,7 @@ void ToneView::Hide(bool hide)
   // child-cascade for the knobs / meters it owns.
   for (T3kModelTile* t : mTiles) if (t) t->Hide(hide);
   if (mFocusedSlot) mFocusedSlot->Hide(hide);
+  if (mMasterKnob)  mMasterKnob ->Hide(hide);
 }
 
 void ToneView::clearStripChildren()
@@ -142,20 +153,11 @@ void ToneView::clearStripChildren()
 
 void ToneView::computeStripLayout(float& outStartX, float& outTopY) const
 {
-  // Place tiles using fixed equal width derived from mStripRect. The strip
-  // always holds kNumChainSlots tiles arranged in three groups (3 pedals,
-  // amp+cab, 3 outboard). The master-knob bookend on the right takes the
-  // last 64 px of the strip (Phase E3); for now, leave that space empty.
-  //
-  // tileW math: 8 tiles, 5 within-group gaps, 2 between-group gaps.
-  const float availW = mStripRect.W();
+  // Layout split: rack (8 equal-width tiles in 3 groups) on the left,
+  // MASTER knob (kMasterW) on the right with kMasterGap between them.
   const float tileH  = std::min(mStripRect.H() - 4.f, 84.f);
-  const float tileW  =
-      (availW - 2.f * kGroupGap - 5.f * kTileGapWithinGroup) / 8.f;
-
-  outStartX = mStripRect.L;  // left-anchored; master knob will eat the right
+  outStartX = mStripRect.L;
   outTopY   = mStripRect.MH() - tileH * 0.5f;
-  (void)tileW;  // outTopY/X are the only outputs; tile placement does the rest
 }
 
 void ToneView::layoutStripTiles()
@@ -163,11 +165,18 @@ void ToneView::layoutStripTiles()
   if (mTiles.empty()) return;
   if (static_cast<int>(mTiles.size()) != ::kNumChainSlots) return;
 
-  const float availW = mStripRect.W();
-  const float tileH  = std::min(mStripRect.H() - 4.f, 84.f);
-  const float tileW  =
-      (availW - 2.f * kGroupGap - 5.f * kTileGapWithinGroup) / 8.f;
-  const float topY   = mStripRect.MH() - tileH * 0.5f;
+  // MASTER knob owns the right edge.
+  const IRECT masterR(mStripRect.R - kMasterW, mStripRect.T,
+                      mStripRect.R,            mStripRect.B);
+  if (mMasterKnob) mMasterKnob->SetTargetAndDrawRECTs(masterR);
+
+  // The remaining rack hosts the 8 equal-width tiles.
+  const float rackR = masterR.L - kMasterGap;
+  const float rackW = rackR - mStripRect.L;
+  const float tileH = std::min(mStripRect.H() - 4.f, 84.f);
+  const float tileW =
+      (rackW - 2.f * kGroupGap - 5.f * kTileGapWithinGroup) / 8.f;
+  const float topY  = mStripRect.MH() - tileH * 0.5f;
 
   // Walk the 8 slots in chain order, inserting a kGroupGap when we cross
   // pedals→amp/cab (idx 2→3) and amp/cab→outboard (idx 4→5).
