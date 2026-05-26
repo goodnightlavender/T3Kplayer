@@ -1,14 +1,17 @@
 // ToneRoot.h
 // Root view for TONE3000 Player. Owns:
 //   - A single-row header (logo + loose undo/redo glyphs · centered tabs ·
-//     preset pill + avatar) — Phase 2b v6 layout.
-//   - The Tone-tab body (ToneView), which holds the slot strip, the
-//     T3kModelInfoPane, and the 5 persistent tone knobs.
+//     GATE pill + downloads pill + preset pill + avatar) — v6 layout.
+//     The GATE pill lives in the header right cluster (left of the
+//     downloads pill).
+//   - The Tone-tab body (ToneView), which holds the signal-flow strip
+//     (8 T3kModelTile slots + MASTER bookend) and the T3kFocusedSlot
+//     panel for the currently-selected tile.
 //   - LibraryView and CloudView bodies, sized to the same Body rect.
 //   - The T3kPresetOverlay (Hide()-toggled by the preset pill).
 //   - DownloadsView and SettingsView overlays — created and hidden;
-//     Phase 2b doesn't trigger them from the header anymore (the v6
-//     header has no Downloads pill or Settings cog).
+//     the v6 header reaches Settings via the account menu and Downloads
+//     via the header pill's popover.
 //
 // Construction: NeuralAmpModeler.cpp's mLayoutFunc attaches exactly ONE
 // ToneRoot, which then attaches all its children via the IGraphics it's

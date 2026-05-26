@@ -1,19 +1,31 @@
-// ToneView — the Tone-tab body composite (Phase 2b).
+// ToneView — the Tone-tab body composite (v6 redesign, 2026-05-26).
 //
-// Replaces the Phase 2 AmpView + IRView duo. Owns three regions stacked
-// top-to-bottom:
-//   1. Slot strip — a horizontal row of T3kSlot tiles (one per loaded
-//      slot in ChainView) plus a single trailing Add tile.
-//   2. T3kModelInfoPane — inspector for whichever slot is selected.
-//   3. Knob row — the 5 persistent tone knobs (Input / Bass / Mid /
-//      Treble / Output) bound to the upstream EParams indices. Moved
-//      out of ToneRoot per Decision 35.
+// Two regions stacked top-to-bottom:
+//   1. Signal-flow strip — 8 equal-width T3kModelTile tiles in three
+//      flex-distributed groups (PEDALS 0..2 · AMP·CAB 3..4 · OUTBOARD
+//      5..7) with a T3kGlobalKnob MASTER bookend on the right edge.
+//   2. T3kFocusedSlot — focused-slot panel for the currently-selected
+//      tile. Renders the model's image (portrait, cover-cropped, full
+//      panel height), a title row with live T3kReadout, plus three
+//      side-by-side columns: MODEL INFO (description + tags), SETTINGS
+//      (2×3 knob grid bound to kToneBass/Mid/Treble/InputLevel/
+//      OutputLevel/kDryWet), and METERS (vertical IN + OUT T3kVMeter
+//      pair that self-update via OnMsgFromDelegate from the plugin's
+//      input/output IPeakAvgSenders).
 //
-// Phase-2b limitations:
-//   - The Add tile appends a hard-coded sample model rather than opening
-//     a real picker overlay.
-//   - The Remove callback drops the entry locally without any undo
-//     persistence yet.
+// Interactions:
+//   - Click a tile        : focus + SetActiveSlot(dspSlot) — knobs
+//                           re-bind to that slot via per-slot shadow.
+//   - Double-click a tile : toggles bypass on both UI shadow and the
+//                           live ExtraSlot::bypassed.
+//   - Drag a tile         : reorders within the same category (pedals
+//                           or outboard). Cross-category drops snap
+//                           back. AMP / CAB are single-position.
+//   - Click an empty tile : opens the Library tab (via onAddRequested).
+//
+// IsDirty() pulls per-frame ExtraSlot values into each Loaded tile so
+// the strip's numerical readouts stay live; the meter levels are
+// pushed via the senders' OnMsgFromDelegate path, not from IsDirty.
 
 #pragma once
 
