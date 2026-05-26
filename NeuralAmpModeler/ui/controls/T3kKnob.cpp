@@ -44,12 +44,24 @@ void T3kKnob::Draw(IGraphics& g)
 {
   namespace th = ::t3k::theme;
 
+  // 2026-05-26 — Phase C7: if active, paint a faint yellow wash behind the
+  // entire knob cell (including the label strip) so the focused readout
+  // visually traces back to its source knob.
+  if (mActive)
+  {
+    const IColor wash(48, 255, 255, 0);
+    g.FillRoundRect(wash, mRECT, 4.f);
+  }
+
   // Reserve a strip at the bottom for the label.
   const float labelH = th::kTypeLabel + th::kS1;
   const IRECT knobR = mRECT.GetReducedFromBottom(labelH);
 
+  // 2026-05-26 — Phase C7: cap the ring to a 44 px diameter (r = 22). The
+  // surrounding cell may still be larger; cells smaller than 44 px continue
+  // to scale the ring down to fit.
   const float diameter = std::min(knobR.W(), knobR.H());
-  const float r = diameter * 0.5f;
+  const float r = std::min(diameter * 0.5f, 22.f);
   const float cx = knobR.MW();
   const float cy = knobR.MH();
 

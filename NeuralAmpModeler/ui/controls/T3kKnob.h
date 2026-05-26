@@ -28,8 +28,14 @@ public:
 
   void Draw(IGraphics& g) override;
 
+  // 2026-05-26 — active wash: parents call setActive(true) on the currently
+  // focused/touched knob so a faint yellow background distinguishes it from
+  // its siblings. See Phase C7.
+  void setActive(bool a) { if (mActive != a) { mActive = a; SetDirty(false); } }
+
 private:
   const char* mLabel;
+  bool        mActive = false;
 };
 
 }  // namespace t3k::ui
