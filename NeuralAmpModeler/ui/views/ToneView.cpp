@@ -6,8 +6,7 @@
 
 #include "../theme.h"
 #include "../layout.h"
-#include "../controls/T3kDragGhost.h"
-#include "../controls/T3kSlot.h"
+#include "../controls/T3kModelTile.h"
 #include "../controls/T3kKnob.h"
 
 // Plug-in header — gives us the EParams enum (kInputLevel, kToneBass, ...).
@@ -29,33 +28,30 @@ namespace {
 constexpr float kStripH = 132.f;
 constexpr float kKnobH  = 108.f;
 
-// Slot tile dimensions (Decision 47). Scaled to match the bigger strip.
-constexpr float kSlotW        = 88.f;
-constexpr float kSlotFullRigW = 116.f;
-constexpr float kSlotAddW     = 60.f;
-constexpr float kSlotH        = 88.f;
-constexpr float kSlotGap      = 12.f;
+// Inter-tile gap inside a single category group (pedals / amp+cab / outboard).
+constexpr float kTileGapWithinGroup = 8.f;
+// Gap BETWEEN the three category groups (visual separator between pedals,
+// amp+cab, and outboard).
+constexpr float kGroupGap = 16.f;
 
-float widthForSlot(GearType t)
-{
-  return (t == GearType::FullRig) ? kSlotFullRigW : kSlotW;
-}
+// 2026-05-26 — new 8-slot chain schema (was 12-slot):
+//   indices 0..2 → pedals  (category 0, reorderable)
+//   index 3     → amp     (category 1, single-position)
+//   index 4     → cab     (category 3, single-position)
+//   indices 5..7 → outboard (category 2, reorderable)
+constexpr int kPedalSlotMin    = 0;
+constexpr int kPedalSlotMax    = 2;
+constexpr int kAmpSlot         = 3;
+constexpr int kCabSlot         = 4;
+constexpr int kOutboardSlotMin = 5;
+constexpr int kOutboardSlotMax = 7;
 
-// Category id derived from slotIndex. Pedals share category 0 (slot indices
-// 0..4), outboards share category 2 (slot indices 7..11). Amp (5), Cab (6),
-// and any FullRig occupying slot 5 are single-position slots and each get
-// their own unique category so the same-category check below rules out a
-// drop on a different gear type.
-//   0 → pedals
-//   1 → amp (single)
-//   2 → outboards
-//   3 → cab (single)
 int slotCategory(int slotIndex)
 {
-  if (slotIndex >= 0 && slotIndex <= 4) return 0;   // pedals
-  if (slotIndex == 5)                   return 1;   // amp
-  if (slotIndex == 6)                   return 3;   // cab
-  if (slotIndex >= 7 && slotIndex <= 11) return 2;  // outboards
+  if (slotIndex >= kPedalSlotMin    && slotIndex <= kPedalSlotMax)    return 0;
+  if (slotIndex == kAmpSlot)                                          return 1;
+  if (slotIndex == kCabSlot)                                          return 3;
+  if (slotIndex >= kOutboardSlotMin && slotIndex <= kOutboardSlotMax) return 2;
   return -1;
 }
 
@@ -64,6 +60,18 @@ bool isReorderableCategory(int slotIndex)
 {
   const int c = slotCategory(slotIndex);
   return c == 0 || c == 2;
+}
+
+// Map a slot index to the gear icon shown when the tile is Empty.
+GearType emptyGearFor(int slotIndex)
+{
+  switch (slotCategory(slotIndex)) {
+    case 0:  return GearType::Pedal;
+    case 1:  return GearType::Amp;
+    case 3:  return GearType::Cab;
+    case 2:  return GearType::Outboard;
+    default: return GearType::Pedal;
+  }
 }
 
 }  // namespace
@@ -162,9 +170,7 @@ void ToneView::Hide(bool hide)
   // iPlug2 attaches all controls flat — hiding this view does NOT
   // auto-propagate. Cascade to every child so the slot strip / info
   // pane / knob row don't leak onto Library or Cloud tabs.
-  for (T3kSlot* s : mSlots) if (s) s->Hide(hide);
-  if (mAddTile)    mAddTile   ->Hide(hide);
-  if (mDragGhost)  mDragGhost ->Hide(hide);
+  for (T3kModelTile* t : mTiles) if (t) t->Hide(hide);
   if (mInfoPane)   mInfoPane  ->Hide(hide);
   if (mKnobIn)     mKnobIn    ->Hide(hide);
   if (mKnobBass)   mKnobBass  ->Hide(hide);
@@ -177,53 +183,53 @@ void ToneView::clearStripChildren()
 {
   IGraphics* g = GetUI();
   if (!g) return;
-  for (T3kSlot* s : mSlots) {
-    if (s) g->RemoveControl(s);
+  for (T3kModelTile* t : mTiles) {
+    if (t) g->RemoveControl(t);
   }
-  mSlots.clear();
-  if (mAddTile) {
-    g->RemoveControl(mAddTile);
-    mAddTile = nullptr;
-  }
+  mTiles.clear();
 }
 
 void ToneView::computeStripLayout(float& outStartX, float& outTopY) const
 {
-  // Compute total width so the row can be horizontally centered (matches
-  // the mockup's `justify-content: center` on .plg-strip).
-  float totalW = 0.f;
-  for (const auto& ls : mChain.loaded) {
-    totalW += widthForSlot(ls.iconType);
-  }
-  if (!mChain.loaded.empty()) totalW += kSlotGap * mChain.loaded.size();  // gap after each tile + before Add
-  totalW += kSlotAddW;
+  // Place tiles using fixed equal width derived from mStripRect. The strip
+  // always holds kNumChainSlots tiles arranged in three groups (3 pedals,
+  // amp+cab, 3 outboard). The master-knob bookend on the right takes the
+  // last 64 px of the strip (Phase E3); for now, leave that space empty.
+  //
+  // tileW math: 8 tiles, 5 within-group gaps, 2 between-group gaps.
+  const float availW = mStripRect.W();
+  const float tileH  = std::min(mStripRect.H() - 4.f, 84.f);
+  const float tileW  =
+      (availW - 2.f * kGroupGap - 5.f * kTileGapWithinGroup) / 8.f;
 
-  outStartX = mStripRect.MW() - totalW * 0.5f;
-  outTopY   = mStripRect.MH() - kSlotH * 0.5f;
+  outStartX = mStripRect.L;  // left-anchored; master knob will eat the right
+  outTopY   = mStripRect.MH() - tileH * 0.5f;
+  (void)tileW;  // outTopY/X are the only outputs; tile placement does the rest
 }
 
 void ToneView::layoutStripTiles()
 {
-  if (mSlots.empty() && !mAddTile) return;
-  // Sanity: mSlots and mChain.loaded should stay in sync (rebuildStrip is
-  // the only way they diverge, and rebuildStrip rebuilds both in lockstep).
-  if (mSlots.size() != mChain.loaded.size()) return;
+  if (mTiles.empty()) return;
+  if (static_cast<int>(mTiles.size()) != ::kNumChainSlots) return;
 
-  float startX, topY;
-  computeStripLayout(startX, topY);
-  float x = startX;
-  for (size_t i = 0; i < mChain.loaded.size(); ++i) {
-    const float w = widthForSlot(mChain.loaded[i].iconType);
-    if (mSlots[i]) mSlots[i]->SetTargetAndDrawRECTs(IRECT(x, topY, x + w, topY + kSlotH));
-    x += w + kSlotGap;
-  }
-  if (mAddTile) {
-    mAddTile->SetTargetAndDrawRECTs(IRECT(x, topY, x + kSlotAddW, topY + kSlotH));
+  const float availW = mStripRect.W();
+  const float tileH  = std::min(mStripRect.H() - 4.f, 84.f);
+  const float tileW  =
+      (availW - 2.f * kGroupGap - 5.f * kTileGapWithinGroup) / 8.f;
+  const float topY   = mStripRect.MH() - tileH * 0.5f;
+
+  // Walk the 8 slots in chain order, inserting a kGroupGap when we cross
+  // pedals→amp/cab (idx 2→3) and amp/cab→outboard (idx 4→5).
+  float x = mStripRect.L;
+  for (int i = 0; i < ::kNumChainSlots; ++i) {
+    if (i == kAmpSlot)         x += kGroupGap - kTileGapWithinGroup;
+    if (i == kOutboardSlotMin) x += kGroupGap - kTileGapWithinGroup;
+    if (mTiles[i]) {
+      mTiles[i]->SetTargetAndDrawRECTs(IRECT(x, topY, x + tileW, topY + tileH));
+    }
+    x += tileW + kTileGapWithinGroup;
   }
 
-  // Tile positions changed → recompute the per-tile drag bounds so a
-  // window-resize during a drag (rare, but possible) doesn't leak
-  // stale clamps.
   updateDragBoundsForCategories();
 }
 
@@ -232,85 +238,57 @@ void ToneView::rebuildStrip()
   IGraphics* g = GetUI();
   if (!g) return;
 
-  float startX, topY;
-  computeStripLayout(startX, topY);
-
-  // Detach existing tiles before laying out fresh ones.
+  // Always exactly kNumChainSlots tiles — Loaded if a chain entry occupies
+  // that slot index, Empty otherwise. The Empty variant draws a dashed +
+  // and routes click → onSlotAdded(slotIndex).
   clearStripChildren();
-  mSlots.reserve(mChain.loaded.size());
+  mTiles.assign(::kNumChainSlots, nullptr);
 
-  float x = startX;
-  for (const auto& ls : mChain.loaded) {
-    const float w = widthForSlot(ls.iconType);
-    const IRECT r(x, topY, x + w, topY + kSlotH);
-    const int idx = ls.slotIndex;
-    auto* tile = new T3kSlot(
-        r, idx, T3kSlot::Variant::Loaded, ls.iconType,
-        /*onSelect*/ [this](int slot) { onSlotSelected(slot); },
-        /*onRemove*/ [this](int slot) { onSlotRemoved(slot); },
-        /*onAdd*/    {});
-    tile->setSelected(idx == mChain.selectedIndex);
-    // Polish round 3 (2026-05-25): the strip tiles stay as gear-type
-    // SVG icons — the model's photo lives in the right-side info pane
-    // (T3kModelInfoPane) when the slot is selected. Don't push an
-    // imagePath/imageUrl down — the slot's image-render branch only
-    // fires when these are non-empty.
+  const IRECT ph(0.f, 0.f, 1.f, 1.f);
 
-    // Only pedal / outboard tiles support drag-to-reorder. Amp / Cab /
-    // FullRig live at fixed positions, so we leave their drag callbacks
-    // null and T3kSlot disables drag accordingly.
-    if (isReorderableCategory(idx)) {
-      // onDragStart points the drag ghost at this tile so it paints
-      // above the strip's siblings. The ghost is attached last in
-      // z-order (see recreateDragGhostOnTop) — without this hook the
-      // dragged tile would render under tiles attached after it.
-      tile->setOnDragStart([this](int /*slot*/) {
-        if (mDragGhost) {
-          // Find the corresponding tile pointer to hand the ghost.
-          // mSlots is parallel to mChain.loaded so the active drag
-          // source is always the slot whose mDragging just flipped
-          // true — but for simplicity, scan to find the one that
-          // reports isDragging(). Cheap (≤5 entries per category).
-          for (T3kSlot* s : mSlots) {
-            if (s && s->isDragging()) { mDragGhost->setSource(s); break; }
-          }
-        }
-      });
+  for (int i = 0; i < ::kNumChainSlots; ++i) {
+    // Find the loaded entry at this slot index (if any).
+    auto it = std::find_if(
+        mChain.loaded.begin(), mChain.loaded.end(),
+        [i](const ChainView::LoadedSlot& s) { return s.slotIndex == i; });
+
+    const bool      isLoaded  = (it != mChain.loaded.end());
+    const GearType  iconType  = isLoaded ? it->iconType : emptyGearFor(i);
+    const auto      variant   = isLoaded
+        ? T3kModelTile::Variant::Loaded
+        : T3kModelTile::Variant::Empty;
+
+    auto* tile = new T3kModelTile(
+        ph, /*slotIndex*/ i, variant, iconType,
+        /*onSelect*/        [this](int slot) { onSlotSelected(slot); },
+        /*onAdd*/           [this](int slot) { onSlotAdded(slot); },
+        /*onBypassToggle*/  [this](int slot) { onSlotBypassToggle(slot); });
+
+    if (isLoaded) {
+      tile->setName(it->info.displayName);
+      tile->setSelected(i == mChain.selectedIndex);
+      tile->setBypassed(it->bypassed);
+    }
+
+    // Only pedal / outboard tiles support drag-to-reorder. Amp / Cab live
+    // at fixed positions; their drag callbacks stay null (T3kModelTile's
+    // OnMouseDrag still fires for Loaded tiles, but with no callbacks it
+    // just visually offsets and snaps back on mouse-up).
+    if (isLoaded && isReorderableCategory(i)) {
       tile->setOnDragMove([this](int slot, float mx, float my) {
-        // The slot itself early-returns in Draw while dragging, so the
-        // ghost is the only thing that paints the moving tile. Mark
-        // it dirty on every drag tick so iPlug2 schedules a repaint
-        // in lock-step with the cursor motion.
-        if (mDragGhost) mDragGhost->SetDirty(false);
         onSlotDragMove(slot, mx, my);
       });
       tile->setOnDragEnd([this](int slot, float mx, float my) {
-        if (mDragGhost) mDragGhost->clear();
         onSlotDragEnd(slot, mx, my);
       });
     }
 
     g->AttachControl(tile);
-    mSlots.push_back(tile);
-    x += w + kSlotGap;
+    mTiles[i] = tile;
   }
 
-  // Trailing Add tile.
-  const IRECT addR(x, topY, x + kSlotAddW, topY + kSlotH);
-  mAddTile = new T3kSlot(
-      addR, /*slotIndex*/ -1, T3kSlot::Variant::Add, GearType::Pedal,
-      /*onSelect*/ {},
-      /*onRemove*/ {},
-      /*onAdd*/    [this](int /*slot*/) { onSlotAdded(); });
-  g->AttachControl(mAddTile);
-
-  // Push the per-tile drag-bounds onto each reorderable slot now that
-  // positions exist.
-  updateDragBoundsForCategories();
-
-  // Bump the drag ghost to the very end of the IGraphics control list
-  // so it paints above the just-attached strip tiles.
-  recreateDragGhostOnTop();
+  // Position the freshly-attached tiles and seed their drag bounds.
+  layoutStripTiles();
 
   // The rebuild appended new tiles to the end of the IGraphics control
   // list. If anything was attached later (e.g. the preset overlay), that
@@ -326,72 +304,68 @@ void ToneView::updateDragBoundsForCategories()
   // any same-category tile in the current layout, then express the
   // dragged tile's allowable offset range relative to its own mRECT.L.
   //
-  // This guarantees the dragged tile's drawn position can never cross
-  // the amp/cab boundary or run off the edge of the strip — the
-  // visual matches what the drop logic accepts in onSlotDragEnd.
-  if (mSlots.size() != mChain.loaded.size()) return;
-  for (size_t i = 0; i < mSlots.size(); ++i) {
-    if (!mSlots[i]) continue;
-    const int slotIdx = mChain.loaded[i].slotIndex;
-    if (!isReorderableCategory(slotIdx)) continue;
-    const int cat = slotCategory(slotIdx);
+  // mTiles is now indexed BY slot (always kNumChainSlots entries) — not
+  // by chain position — so the loop is over slot indices directly.
+  if (static_cast<int>(mTiles.size()) != ::kNumChainSlots) return;
+  for (int i = 0; i < ::kNumChainSlots; ++i) {
+    if (!mTiles[i]) continue;
+    if (!isReorderableCategory(i)) continue;
+    const int cat = slotCategory(i);
 
-    float catLeft  = mSlots[i]->GetRECT().L;
-    float catRight = mSlots[i]->GetRECT().R;
-    for (size_t j = 0; j < mSlots.size(); ++j) {
-      if (!mSlots[j]) continue;
-      if (slotCategory(mChain.loaded[j].slotIndex) != cat) continue;
-      catLeft  = std::min(catLeft,  mSlots[j]->GetRECT().L);
-      catRight = std::max(catRight, mSlots[j]->GetRECT().R);
+    float catLeft  = mTiles[i]->GetRECT().L;
+    float catRight = mTiles[i]->GetRECT().R;
+    for (int j = 0; j < ::kNumChainSlots; ++j) {
+      if (!mTiles[j]) continue;
+      if (slotCategory(j) != cat) continue;
+      catLeft  = std::min(catLeft,  mTiles[j]->GetRECT().L);
+      catRight = std::max(catRight, mTiles[j]->GetRECT().R);
     }
 
-    const float baseL = mSlots[i]->GetRECT().L;
-    const float tileW = mSlots[i]->GetRECT().W();
-    // Allowable offsets:
-    //   minOffset → tile slid left until its L == catLeft
-    //   maxOffset → tile slid right until its R == catRight,
-    //               i.e. L == catRight - tileW.
-    mSlots[i]->setDragBoundsX(catLeft - baseL,
+    const float baseL = mTiles[i]->GetRECT().L;
+    const float tileW = mTiles[i]->GetRECT().W();
+    mTiles[i]->setDragBoundsX(catLeft - baseL,
                               catRight - tileW - baseL);
   }
-}
-
-void ToneView::recreateDragGhostOnTop()
-{
-  IGraphics* g = GetUI();
-  if (!g) return;
-
-  // Destroy + recreate to land at the end of IGraphics's flat control
-  // list (= top of z-order). Same pattern as ToneRoot uses for the
-  // preset overlay. Ghost holds no state — just a non-owning pointer
-  // to whichever T3kSlot is currently dragging (cleared on drag-end),
-  // so destroying it mid-strip-rebuild is safe.
-  if (mDragGhost) {
-    g->RemoveControl(mDragGhost);
-    mDragGhost = nullptr;
-  }
-  // Size to the strip area — the actual paint happens at the slot's
-  // own offset rect, but iPlug2 uses the control's mRECT for dirty
-  // tracking, so spanning the strip captures any plausible drag
-  // position.
-  mDragGhost = new T3kDragGhost(mStripRect);
-  g->AttachControl(mDragGhost);
 }
 
 void ToneView::onSlotSelected(int slotIndex)
 {
   mChain.selectedIndex = slotIndex;
-  for (size_t i = 0; i < mChain.loaded.size(); ++i) {
-    const bool sel = (mChain.loaded[i].slotIndex == slotIndex);
-    if (i < mSlots.size() && mSlots[i]) mSlots[i]->setSelected(sel);
-    if (sel && mInfoPane) mInfoPane->setSnapshot(mChain.loaded[i].info);
-    // Phase 10 — route the visible knobs to the just-selected slot's
-    // DSP slot. If the selected tile isn't in the audio chain (more
-    // than kNumChainSlots loaded), keep the previous active slot.
-    if (sel && mChain.loaded[i].dspSlot >= 0) {
-      mPlugin.SetActiveSlot(mChain.loaded[i].dspSlot);
-    }
+  for (int i = 0; i < static_cast<int>(mTiles.size()); ++i) {
+    if (mTiles[i]) mTiles[i]->setSelected(i == slotIndex);
   }
+  // Find the loaded entry corresponding to this slot and push its info /
+  // active-slot pointer through to the inspector + DSP.
+  auto it = std::find_if(
+      mChain.loaded.begin(), mChain.loaded.end(),
+      [slotIndex](const ChainView::LoadedSlot& s) {
+        return s.slotIndex == slotIndex;
+      });
+  if (it != mChain.loaded.end()) {
+    if (mInfoPane) mInfoPane->setSnapshot(it->info);
+    if (it->dspSlot >= 0) mPlugin.SetActiveSlot(it->dspSlot);
+  } else if (mInfoPane) {
+    mInfoPane->clear();
+  }
+}
+
+void ToneView::onSlotBypassToggle(int slotIndex)
+{
+  auto it = std::find_if(
+      mChain.loaded.begin(), mChain.loaded.end(),
+      [slotIndex](const ChainView::LoadedSlot& s) {
+        return s.slotIndex == slotIndex;
+      });
+  if (it == mChain.loaded.end()) return;
+  it->bypassed = !it->bypassed;
+  if (auto* es = mPlugin.GetExtraSlot(it->dspSlot)) {
+    es->bypassed = it->bypassed;
+  }
+  if (slotIndex >= 0 && slotIndex < static_cast<int>(mTiles.size())
+      && mTiles[slotIndex]) {
+    mTiles[slotIndex]->setBypassed(it->bypassed);
+  }
+  SetDirty(false);
 }
 
 void ToneView::onSlotRemoved(int slotIndex)
@@ -431,7 +405,7 @@ void ToneView::onSlotDragMove(int /*slotIndex*/, float /*x*/, float /*y*/)
 
 void ToneView::onSlotDragEnd(int slotIndex, float x, float y)
 {
-  // Find the source index in mChain.loaded.
+  // Source = the loaded entry whose slot index is slotIndex.
   auto srcIt = std::find_if(mChain.loaded.begin(), mChain.loaded.end(),
                             [slotIndex](const ChainView::LoadedSlot& s) {
                               return s.slotIndex == slotIndex;
@@ -440,80 +414,49 @@ void ToneView::onSlotDragEnd(int slotIndex, float x, float y)
     rebuildStrip();  // safety: re-snap the tile back to its original rect
     return;
   }
-  const size_t srcPos = static_cast<size_t>(srcIt - mChain.loaded.begin());
   const int srcCat = slotCategory(slotIndex);
 
-  // Find which tile (by parallel index in mSlots) sits under (x, y).
-  // mSlots is sized to mChain.loaded; each tile's mRECT was set by
-  // computeStripLayout(). A drop outside any tile is a no-op (we just
-  // rebuildStrip to snap the visual back).
-  int dstPos = -1;
-  for (size_t i = 0; i < mSlots.size(); ++i) {
-    if (mSlots[i] && mSlots[i]->GetRECT().Contains(x, y)) {
-      dstPos = static_cast<int>(i);
+  // Destination = the slot whose tile contains the drop point.
+  int dstSlot = -1;
+  for (int i = 0; i < static_cast<int>(mTiles.size()); ++i) {
+    if (mTiles[i] && mTiles[i]->GetRECT().Contains(x, y)) {
+      dstSlot = i;
       break;
     }
   }
-  if (dstPos < 0) {
+  if (dstSlot < 0 || dstSlot == slotIndex) {
+    rebuildStrip();
+    return;
+  }
+  if (slotCategory(dstSlot) != srcCat) {
     rebuildStrip();
     return;
   }
 
-  // Same source as drop target → no-op (the user just twitched).
-  if (static_cast<size_t>(dstPos) == srcPos) {
-    rebuildStrip();
-    return;
+  // Swap-or-shift within the category. If the destination is occupied,
+  // swap slot indices; otherwise just move the dragged entry there.
+  auto dstIt = std::find_if(mChain.loaded.begin(), mChain.loaded.end(),
+                            [dstSlot](const ChainView::LoadedSlot& s) {
+                              return s.slotIndex == dstSlot;
+                            });
+  srcIt->slotIndex = dstSlot;
+  if (dstIt != mChain.loaded.end() && dstIt != srcIt) {
+    dstIt->slotIndex = slotIndex;
   }
+  mChain.selectedIndex = dstSlot;
 
-  // Cross-category drops are rejected. The dragged tile snaps back.
-  const int dstSlotIdx = mChain.loaded[dstPos].slotIndex;
-  if (slotCategory(dstSlotIdx) != srcCat) {
-    rebuildStrip();
-    return;
-  }
-
-  // Reorder by moving the source entry to the destination position. After
-  // erasing srcPos, dstPos shifts left by one if it sat past srcPos; the
-  // adjustedDst below compensates so the moved entry lands at the visual
-  // position the user dropped on. We also rotate the slotIndex values so
-  // the chain DSP order stays consistent with the visual order — the
-  // slotIndex is what audio code will use to look up effects in chain
-  // position once Phase 3 wires it.
-  ChainView::LoadedSlot moved = std::move(mChain.loaded[srcPos]);
-  mChain.loaded.erase(mChain.loaded.begin() + srcPos);
-  const size_t adjustedDst = (static_cast<size_t>(dstPos) > srcPos)
-                                 ? static_cast<size_t>(dstPos - 1)
-                                 : static_cast<size_t>(dstPos);
-  mChain.loaded.insert(mChain.loaded.begin() + adjustedDst, std::move(moved));
-
-  // Re-number slotIndices within the source category so they stay
-  // contiguous and reflect the new visual order. Pedals get 0..4,
-  // outboards 7..11. Other categories don't reorder so they're
-  // untouched.
-  int nextIdx = (srcCat == 0) ? 0 : 7;
-  for (auto& ls : mChain.loaded) {
-    if (slotCategory(ls.slotIndex) == srcCat) {
-      ls.slotIndex = nextIdx++;
-    }
-  }
-  // Keep the selection on the just-moved item.
-  mChain.selectedIndex = mChain.loaded[adjustedDst].slotIndex;
-
-  // Reorder doesn't move models between DSP slots — they stay
-  // pinned. syncDspChain just emits a new SetChainOrder reflecting
-  // the new visual rank, and ProcessBlock walks the chain in that
-  // order on the next audio tick. No restage, no audio glitch.
   rebuildStrip();
   syncDspChain();
   if (mChain.selectedIndex >= 0) onSlotSelected(mChain.selectedIndex);
 }
 
-void ToneView::onSlotAdded()
+void ToneView::onSlotAdded(int /*slotIndex*/)
 {
-  // Phase-10-polish (2026-05-25). The "+" tile now opens the Library
-  // tab — the user picks a real model there and clicks LOAD INTO
-  // CHAIN to land it back in this strip. The hardcoded "Sample Pedal"
-  // stub that lived here from Phase 2b has been retired.
+  // The Empty tile click now opens the Library tab — the user picks a
+  // model there and clicks LOAD INTO CHAIN to land it back in this strip.
+  // We currently ignore the slot index; loadModelIntoSlot picks the first
+  // free pedal slot. Wiring the click to pre-target a specific slot is
+  // a Phase G/X follow-up.
   if (mOnAddRequested) mOnAddRequested();
 }
 
@@ -713,17 +656,17 @@ void ToneView::loadModelIntoSlot(int slotIndex,
   if (!row.has_value()) return;
 
   // Pick the destination slot index. -1 means "first empty pedal slot
-  // (0..4)" — wrapping to 0 if none free.
+  // (0..2)" — wrapping to 0 if none free.
   int dst = slotIndex;
   if (dst < 0) {
-    for (int i = 0; i <= 4; ++i) {
+    for (int i = kPedalSlotMin; i <= kPedalSlotMax; ++i) {
       bool occupied = false;
       for (const auto& ls : mChain.loaded) {
         if (ls.slotIndex == i) { occupied = true; break; }
       }
       if (!occupied) { dst = i; break; }
     }
-    if (dst < 0) dst = 0;
+    if (dst < 0) dst = kPedalSlotMin;
   }
 
   // Build the new LoadedSlot from the LibraryDb row.

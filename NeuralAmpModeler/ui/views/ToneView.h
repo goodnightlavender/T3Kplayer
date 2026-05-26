@@ -27,6 +27,7 @@
 #include "IGraphics.h"
 
 #include "../controls/T3kGearIcon.h"
+#include "../controls/T3kModelTile.h"
 #include "T3kModelInfoPane.h"
 #include "../../library/PresetState.h"
 
@@ -34,9 +35,7 @@ class NeuralAmpModeler;  // forward-declare upstream plug-in
 
 namespace t3k::ui {
 
-class T3kSlot;
 class T3kKnob;
-class T3kDragGhost;
 
 class ToneView : public iplug::igraphics::IControl {
 public:
@@ -86,7 +85,7 @@ private:
   // ── Chain snapshot ────────────────────────────────────────────────
   struct ChainView {
     struct LoadedSlot {
-      int        slotIndex;   // 0..11 — chain UI index (visual slot)
+      int        slotIndex;   // 0..kNumChainSlots-1 — chain UI index (visual slot)
       GearType   iconType;
       // 2026-05-26 — file kind, mirrors LibraryDb's `kind` column.
       // "nam" → routes through StageModelInSlot. "ir" → routes through
@@ -109,10 +108,13 @@ private:
     int selectedIndex = -1;   // slotIndex of the currently-selected tile
   };
 
-  // ── Callbacks from child T3kSlot tiles ────────────────────────────
+  // ── Callbacks from child T3kModelTile tiles ───────────────────────
   void onSlotSelected(int slotIndex);
   void onSlotRemoved(int slotIndex);
-  void onSlotAdded();
+  void onSlotAdded(int slotIndex);
+  // 2026-05-26 — double-click on a loaded tile flips both the UI shadow
+  // (mChain.loaded[].bypassed) AND the live ExtraSlot.bypassed.
+  void onSlotBypassToggle(int slotIndex);
 
   // Phase 10 — push the current chain into the DSP. Walks mChain.loaded
   // sorted by visual slotIndex, assigning DSP slots 0..kNumChainSlots-1.
@@ -122,12 +124,11 @@ private:
   // commit.
   void syncDspChain();
 
-  // Drag-to-reorder: only pedal (slotIndex 0..4) and outboard (7..11)
+  // Drag-to-reorder: only pedal (slotIndex 0..2) and outboard (5..7)
   // tiles fire these. Within those categories the user can drag a tile
   // onto another same-category tile to swap positions. Drops outside
-  // the category — or on the Amp/Cab single-position slots, or onto the
-  // trailing "+" tile, or off the strip entirely — are rejected and the
-  // tile snaps back.
+  // the category — or on the Amp/Cab single-position slots, or off the
+  // strip entirely — are rejected and the tile snaps back.
   void onSlotDragMove(int slotIndex, float x, float y);
   void onSlotDragEnd (int slotIndex, float x, float y);
 
@@ -158,12 +159,6 @@ private:
   // category's span on the strip.
   void updateDragBoundsForCategories();
 
-  // Ensure the drag ghost sits at the very end of the IGraphics
-  // control list so it paints above the strip tiles. Called after
-  // every rebuildStrip — without this the rebuild would push the
-  // newly-attached tiles past the ghost in z-order.
-  void recreateDragGhostOnTop();
-
   // Seed mChain with the v6 mockup's demo chain.
   void seedDemoSnapshot();
 
@@ -176,17 +171,11 @@ private:
 
   ChainView mChain;
 
-  // Children. The slot strip tiles + Add tile are recreated on each
-  // chain change; the info pane and knobs live for the lifetime of
-  // ToneView.
-  std::vector<T3kSlot*> mSlots;     // loaded slot tiles, sized to mChain.loaded
-  T3kSlot*              mAddTile = nullptr;
-  // Invisible high-z-order overlay that paints whichever T3kSlot is
-  // currently being dragged so it floats above its siblings (iPlug2
-  // doesn't expose a move-to-front API — see T3kDragGhost.h for the
-  // full rationale). Re-attached to the end of the control list
-  // after every rebuildStrip via recreateDragGhostOnTop.
-  T3kDragGhost*         mDragGhost = nullptr;
+  // Children. The strip's 8 tiles are ALWAYS present — pedal/amp/cab/
+  // outboard positions either show a Loaded tile or an Empty
+  // ("dashed +") tile. The info pane and knobs live for the lifetime
+  // of ToneView (info pane + knob row drop out in Phase E2).
+  std::vector<T3kModelTile*> mTiles;  // size == kNumChainSlots; null if not yet built
   T3kModelInfoPane*     mInfoPane = nullptr;
   T3kKnob*              mKnobIn = nullptr;
   T3kKnob*              mKnobBass = nullptr;
