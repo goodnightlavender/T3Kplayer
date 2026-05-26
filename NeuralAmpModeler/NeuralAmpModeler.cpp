@@ -276,8 +276,16 @@ void NeuralAmpModeler::ProcessBlock(iplug::sample** inputs, iplug::sample** outp
     // internal buffer — copy back unconditionally so subsequent stages
     // see a stable pointer.
     const double outGain = DBToAmp(es.outGainDb);
+    // 2026-05-26 - apply per-slot output gain + dry/wet mix.
+    // chainScratch[] holds the post-in-gain pre-process signal (the dry
+    // reference); afterEq is the fully-processed signal.
+    const double w = es.dryWet;
     for (size_t s = 0; s < numFrames; ++s)
-      mOutputArray[0][s] = outGain * afterEq[0][s];
+    {
+      const double wet = afterEq[0][s];
+      const double dry = chainScratch[s];
+      mOutputArray[0][s] = outGain * (w * wet + (1.0 - w) * dry);
+    }
     currentPointers = mOutputPointers;
   }
 
