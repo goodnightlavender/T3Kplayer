@@ -373,10 +373,8 @@
     <ClInclude Include="..\ui\controls\T3kLibraryCard.h" />
     <ClInclude Include="..\ui\controls\T3kLogo.h" />
     <ClInclude Include="..\ui\controls\T3kGearIcon.h" />
-    <ClInclude Include="..\ui\controls\T3kSlot.h" />
     <ClInclude Include="..\ui\controls\T3kLooseGlyph.h" />
     <ClInclude Include="..\ui\controls\T3kClickBackdrop.h" />
-    <ClInclude Include="..\ui\controls\T3kDragGhost.h" />
     <ClInclude Include="..\ui\controls\T3kPresetPill.h" />
     <ClInclude Include="..\ui\controls\T3kPresetOverlay.h" />
     <ClInclude Include="..\ui\controls\T3kDownloadsPill.h" />
@@ -536,10 +534,8 @@
     <ClCompile Include="..\ui\controls\T3kLibraryCard.cpp" />
     <ClCompile Include="..\ui\controls\T3kLogo.cpp" />
     <ClCompile Include="..\ui\controls\T3kGearIcon.cpp" />
-    <ClCompile Include="..\ui\controls\T3kSlot.cpp" />
     <ClCompile Include="..\ui\controls\T3kLooseGlyph.cpp" />
     <ClCompile Include="..\ui\controls\T3kClickBackdrop.cpp" />
-    <ClCompile Include="..\ui\controls\T3kDragGhost.cpp" />
     <ClCompile Include="..\ui\controls\T3kPresetPill.cpp" />
     <ClCompile Include="..\ui\controls\T3kPresetOverlay.cpp" />
     <ClCompile Include="..\ui\controls\T3kDownloadsPill.cpp" />
