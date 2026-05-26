@@ -10,8 +10,6 @@
 //      out of ToneRoot per Decision 35.
 //
 // Phase-2b limitations:
-//   - mChain is seeded from seedDemoSnapshot() — no real signal-chain
-//     reads yet. Phase 3 wires audio::SignalChain.
 //   - The Add tile appends a hard-coded sample model rather than opening
 //     a real picker overlay.
 //   - The Remove callback drops the entry locally without any undo
@@ -117,7 +115,6 @@ private:
 
   // ── Callbacks from child T3kModelTile tiles ───────────────────────
   void onSlotSelected(int slotIndex);
-  void onSlotRemoved(int slotIndex);
   void onSlotAdded(int slotIndex);
   // 2026-05-26 — double-click on a loaded tile flips both the UI shadow
   // (mChain.loaded[].bypassed) AND the live ExtraSlot.bypassed.
@@ -127,8 +124,7 @@ private:
   // sorted by visual slotIndex, assigning DSP slots 0..kNumChainSlots-1.
   // Excess models (more than 5 loaded) are not staged into the audio
   // chain — they remain visible in the strip but are silent. Called
-  // from loadModelIntoSlot, onSlotRemoved, and after a drag-reorder
-  // commit.
+  // from loadModelIntoSlot and after a drag-reorder commit.
   void syncDspChain();
 
   // Drag-to-reorder: only pedal (slotIndex 0..2) and outboard (5..7)
@@ -165,9 +161,6 @@ private:
   // maxOffset) extent into each tile so its drag can't escape the
   // category's span on the strip.
   void updateDragBoundsForCategories();
-
-  // Seed mChain with the v6 mockup's demo chain.
-  void seedDemoSnapshot();
 
   // ── Layout sub-rects ──────────────────────────────────────────────
   iplug::igraphics::IRECT mStripRect;

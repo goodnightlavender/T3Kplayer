@@ -179,13 +179,6 @@ void T3kFocusedSlot::setActiveReadout(std::string paramName, std::string formatt
   if (mReadout) mReadout->setActive(std::move(paramName), std::move(formattedValue));
 }
 
-void T3kFocusedSlot::setMeterLevels(double inL, double inP, double inDb,
-                                    double outL, double outP, double outDb)
-{
-  if (mMeterIn)  mMeterIn->setLevel(inL,  inP,  inDb);
-  if (mMeterOut) mMeterOut->setLevel(outL, outP, outDb);
-}
-
 void T3kFocusedSlot::Hide(bool hide)
 {
   IControl::Hide(hide);

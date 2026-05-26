@@ -369,32 +369,6 @@ void ToneView::onSlotBypassToggle(int slotIndex)
   SetDirty(false);
 }
 
-void ToneView::onSlotRemoved(int slotIndex)
-{
-  auto it = std::find_if(mChain.loaded.begin(), mChain.loaded.end(),
-                         [slotIndex](const ChainView::LoadedSlot& s) {
-                           return s.slotIndex == slotIndex;
-                         });
-  if (it == mChain.loaded.end()) return;
-  const bool wasSelected = (mChain.selectedIndex == slotIndex);
-  mChain.loaded.erase(it);
-
-  if (wasSelected) {
-    mChain.selectedIndex = mChain.loaded.empty() ? -1
-                                                 : mChain.loaded.front().slotIndex;
-    if (mChain.selectedIndex < 0 && mFocusedSlot) {
-      mFocusedSlot->clear();
-    }
-  }
-  // Removed entry: syncDspChain detects it (its slot is no longer in
-  // mChain.loaded) and unloads the corresponding DSP slot. Remaining
-  // models stay pinned to their existing dspSlot — no restage, no
-  // audio dropout. The processing order updates via SetChainOrder.
-  rebuildStrip();
-  syncDspChain();
-  if (mChain.selectedIndex >= 0) onSlotSelected(mChain.selectedIndex);
-}
-
 void ToneView::onSlotDragMove(int /*slotIndex*/, float /*x*/, float /*y*/)
 {
   // No-op for Phase 2b. The dragged tile already paints itself shifted
@@ -459,68 +433,6 @@ void ToneView::onSlotAdded(int /*slotIndex*/)
   // free pedal slot. Wiring the click to pre-target a specific slot is
   // a Phase G/X follow-up.
   if (mOnAddRequested) mOnAddRequested();
-}
-
-void ToneView::seedDemoSnapshot()
-{
-  // Stable demo timestamp — T3kModelInfoPane offsets this by +14d internally
-  // so the meta line deterministically reads "downloaded 2 weeks ago".
-  constexpr int64_t kDemoDownloadAt = 1700000000LL * 1000LL;
-
-  auto mk = [&](int slotIdx, GearType type, const std::string& tone,
-                const std::string& model, const std::string& name,
-                const std::string& creator, int64_t bytes,
-                std::vector<std::string> tags, const std::string& desc)
-  {
-    ChainView::LoadedSlot s;
-    s.slotIndex = slotIdx;
-    s.iconType  = type;
-    s.toneId    = tone;
-    s.modelId   = model;
-    s.info.displayName    = name;
-    s.info.creator        = creator;
-    s.info.format         = "NAM";
-    s.info.sizeBytes      = bytes;
-    s.info.downloadedAtMs = kDemoDownloadAt;
-    s.info.tags           = std::move(tags);
-    s.info.description    = desc;
-    return s;
-  };
-
-  mChain.loaded.push_back(mk(0, GearType::Pedal,
-      "ts808-tone", "ts808-model",
-      "Tube Screamer", "tone3000",
-      9 * 1024 * 1024, {"overdrive", "mid-hump"},
-      "Classic mid-hump overdrive. Pushes the front end of an amp into smooth breakup without losing pick attack."));
-
-  mChain.loaded.push_back(mk(1, GearType::Pedal,
-      "klon94-tone", "klon94-model",
-      "Klon '94 — original-circuit centaur clone", "primalnerd",
-      14 * 1024 * 1024 + 300 * 1024, {"overdrive", "transparent", "klon-clone"},
-      "Captured at unity, mid drive, treble at 12 o'clock. Sweetens the front end of a clean amp without losing low-end. Works with single-coils and humbuckers."));
-
-  mChain.loaded.push_back(mk(2, GearType::Pedal,
-      "bigmuff-tone", "bigmuff-model",
-      "Big Muff", "tone3000",
-      11 * 1024 * 1024, {"fuzz", "sustain"},
-      "Thick, sustaining fuzz. Wall-of-sound textures for solos and stoner-rock chord work."));
-
-  // Slot index 5 = Amp position in the chain. A Full Rig occupies it and
-  // omits the Cab tile (index 6) per Decisions 40, 47.
-  mChain.loaded.push_back(mk(5, GearType::FullRig,
-      "giltone-fullrig-tone", "giltone-fullrig-model",
-      "giltone Full Rig — 5e3 Tweed Deluxe clone", "giltone",
-      82 * 1024 * 1024, {"full-rig", "tweed", "amp+cab"},
-      "Full rig capture: 15W tweed Deluxe clone into a stock pine cab, mic'd with a single SM57. Honky and aggressive."));
-
-  mChain.loaded.push_back(mk(7, GearType::Outboard,
-      "ssl-bus-tone", "ssl-bus-model",
-      "SSL Bus Compressor", "tone3000",
-      6 * 1024 * 1024, {"outboard", "compressor"},
-      "Glues the chain together. Light 2-3 dB of gain reduction on a slow attack adds punch without squashing."));
-
-  // Klon is the demo-selected slot in the v6 mockup.
-  mChain.selectedIndex = 1;
 }
 
 ::t3k::library::PresetState ToneView::snapshotPresetState() const

@@ -37,9 +37,6 @@ public:
   void setSnapshot(ModelInfoSnapshot s);
   void clear();
 
-  void setMeterLevels(double inLevel0to1, double inPeak0to1, double inPeakDb,
-                      double outLevel0to1, double outPeak0to1, double outPeakDb);
-
   void setActiveReadout(std::string paramName, std::string formattedValue);
 
   void OnResize() override;
