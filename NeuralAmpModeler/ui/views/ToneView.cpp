@@ -162,13 +162,10 @@ bool ToneView::IsDirty()
     }
   }
 
-  // Meter placeholder — real audio levels land in Phase G2 via
-  // IPeakAvgSender + OnMessage. Pushing zero here keeps the meters'
-  // last-known levels from going stale during the placeholder phase.
-  if (mFocusedSlot)
-  {
-    mFocusedSlot->setMeterLevels(0.0, 0.0, -80.0, 0.0, 0.0, -80.0);
-  }
+  // 2026-05-26 (Phase G2) — meters self-update via iPlug2's tagged routing
+  // from NeuralAmpModeler's mInputSender/mOutputSender to each T3kVMeter's
+  // OnMsgFromDelegate. No fan-out from ToneView needed; placeholder zero-
+  // push removed.
 
   return IControl::IsDirty();
 }

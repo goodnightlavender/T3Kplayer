@@ -1,8 +1,14 @@
 #include "T3kVMeter.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <utility>
+
 #include "IGraphics.h"
+#include "ISender.h"          // ISenderData<MAXNC, std::pair<float,float>>
+#include "IPlugUtilities.h"   // AmpToDB
+
 #include "../theme.h"
 
 namespace t3k::ui {
@@ -30,6 +36,47 @@ void T3kVMeter::setLevel(double level0to1, double peak0to1, double peakDb)
   mPeak   = peak0to1;
   mPeakDb = peakDb;
   SetDirty(false);
+}
+
+// 2026-05-26 (Phase G2) — IPeakAvgSender<1> payload decoder. The plugin
+// emits one packet per ProcessBlock through mInputSender / mOutputSender,
+// each tagged with kCtrlTagInputMeter / kCtrlTagOutputMeter respectively.
+// iPlug2 dispatches the packet to whichever IControl was attached with
+// that tag — by AttachControl(meter, kCtrlTagXxxMeter) in T3kFocusedSlot.
+//
+// Channel layout matches the upstream IVPeakAvgMeterControl: vals[c] is
+// std::pair<float,float>(peak, avg). Plugin is mono internally, so we
+// take channel 0 (or chanOffset if non-zero) and ignore the rest.
+//
+// dB→bar-fraction mapping matches the visual range we want shown in the
+// focused-slot panel: -60 dBFS at the bottom, +12 dBFS at the top.
+void T3kVMeter::OnMsgFromDelegate(int msgTag, int dataSize, const void* pData)
+{
+  using PairT      = std::pair<float, float>;
+  using SenderData = iplug::ISenderData<1, PairT>;
+
+  if (msgTag != iplug::ISender<1, 64, PairT>::kUpdateMessage) return;
+  if (!pData) return;
+  if (dataSize < static_cast<int>(sizeof(SenderData))) return;
+
+  const auto* d = static_cast<const SenderData*>(pData);
+  const int c   = std::clamp(d->chanOffset, 0, 0);  // mono
+  const float peakAmp = std::get<0>(d->vals[c]);
+  const float avgAmp  = std::get<1>(d->vals[c]);
+
+  const double peakDb = (peakAmp > 0.f) ? iplug::AmpToDB(static_cast<double>(peakAmp)) : -80.0;
+  const double avgDb  = (avgAmp  > 0.f) ? iplug::AmpToDB(static_cast<double>(avgAmp))  : -80.0;
+
+  // Map dBFS into the bar's 0..1 fraction over a -60..+12 dB window. Matches
+  // the LOW/HIGH range that IVPeakAvgMeterControl uses by default.
+  constexpr double kLowDb  = -60.0;
+  constexpr double kHighDb = 12.0;
+  constexpr double kRange  = kHighDb - kLowDb;
+  auto toFrac = [&](double db) -> double {
+    return std::clamp((db - kLowDb) / kRange, 0.0, 1.0);
+  };
+
+  setLevel(toFrac(avgDb), toFrac(peakDb), peakDb);
 }
 
 void T3kVMeter::Draw(IGraphics& g)

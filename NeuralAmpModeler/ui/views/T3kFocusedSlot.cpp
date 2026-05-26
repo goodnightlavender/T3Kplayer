@@ -141,8 +141,15 @@ void T3kFocusedSlot::rebuild()
   wire(mKnobOutput, "OUTPUT");
   wire(mKnobDryWet, "DRY/WET");
 
-  mMeterIn  = new T3kVMeter(ph, T3kVMeter::Label::In);   g->AttachControl(mMeterIn);
-  mMeterOut = new T3kVMeter(ph, T3kVMeter::Label::Out);  g->AttachControl(mMeterOut);
+  // 2026-05-26 (Phase G2) — attach the meters with the input/output ctrl
+  // tags so iPlug2's SendControlMsgFromDelegate (fired every ProcessBlock
+  // by mInputSender/mOutputSender in NeuralAmpModeler::ProcessBlock) lands
+  // directly in each meter's OnMsgFromDelegate decoder. No middleman view
+  // hop; the bar updates at audio-rate (delta-gated by setLevel's epsilon).
+  mMeterIn  = new T3kVMeter(ph, T3kVMeter::Label::In);
+  g->AttachControl(mMeterIn,  ::kCtrlTagInputMeter);
+  mMeterOut = new T3kVMeter(ph, T3kVMeter::Label::Out);
+  g->AttachControl(mMeterOut, ::kCtrlTagOutputMeter);
 }
 
 void T3kFocusedSlot::setSnapshot(ModelInfoSnapshot s)

@@ -20,6 +20,14 @@ public:
 
   void Draw(iplug::igraphics::IGraphics& g) override;
 
+  // 2026-05-26 (Phase G2) — direct receiver for IPeakAvgSender<1> packets
+  // routed by ctrl tag. The plugin's input + output senders fire every
+  // ProcessBlock; iPlug2 hands the payload to the control attached with
+  // the matching tag. We unpack the (peak, avg) pair, convert to a
+  // 0..1 bar height (mapped against a -60..+12 dBFS range to match the
+  // visual scale), and call setLevel().
+  void OnMsgFromDelegate(int msgTag, int dataSize, const void* pData) override;
+
 private:
   Label mLabel;
   double mLevel = 0.0;
