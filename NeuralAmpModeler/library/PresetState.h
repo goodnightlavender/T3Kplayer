@@ -1,9 +1,7 @@
 // PresetState.h — POD describing a single saved Tone-tab preset.
 //
-// Mirrors the spec §8 "presets.state_json schema" (v2). Per-slot
-// bypass / gain were removed in Decision 44 (v6), so the SlotEntry is
-// just (index, tone_id, model_id). Empty tone_id means the slot is
-// empty in the saved chain.
+// Mirrors the spec §8 "presets.state_json schema" (v2). Empty tone_id
+// means the slot is empty in the saved chain.
 //
 // Round-trips through PresetStore via nlohmann/json. Schema-1 state
 // blobs are migrated forward by silently dropping the dropped fields
@@ -24,6 +22,9 @@ struct PresetState {
     std::string modelId;
   };
   std::vector<SlotEntry> slots;
+
+  // 2026-05-26 — global master output gain in dB. Default 0 (unity).
+  double master_output_db = 0.0;
 
   struct Knobs {
     float input_db  = 0.f;

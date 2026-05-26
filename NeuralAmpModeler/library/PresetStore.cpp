@@ -63,6 +63,8 @@ std::string SerializeState(const PresetState& s)
   }
   j["chain"]["slots"] = std::move(slots);
 
+  j["master_output_db"] = s.master_output_db;
+
   j["knobs"]["input_db"]  = s.knobs.input_db;
   j["knobs"]["bass"]      = s.knobs.bass;
   j["knobs"]["mid"]       = s.knobs.mid;
@@ -94,6 +96,11 @@ std::optional<PresetState> DeserializeState(const std::string& blob)
         }
         s.slots.push_back(std::move(e));
       }
+    }
+    if (j.contains("master_output_db") && j["master_output_db"].is_number()) {
+      s.master_output_db = j["master_output_db"].get<double>();
+    } else {
+      s.master_output_db = 0.0;  // back-fill for older presets
     }
     if (j.contains("knobs") && j["knobs"].is_object()) {
       auto& k = j["knobs"];
