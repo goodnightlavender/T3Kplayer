@@ -38,6 +38,7 @@ enum EParams
   kToneMid,
   kToneTreble,
   kOutputLevel,
+  kDryWet,              // 2026-05-26 - per-slot dry/wet (shadowed)
   // The rest is fine though.
   kNoiseGateActive,
   kEQActive,
@@ -417,6 +418,7 @@ private:
   double mSlot0Treble   = 5.0;
   double mSlot0InGainDb = 0.0;
   double mSlot0OutGainDb = 0.0;
+  double mSlot0DryWet = 100.0;  // slot-0 shadow for kDryWet (UI %)
 
   // Guards re-entrant push-from-active-slot → SetParameterValue →
   // OnParamChange → push-back loops.

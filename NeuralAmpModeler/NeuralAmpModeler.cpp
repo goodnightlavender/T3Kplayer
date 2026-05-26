@@ -95,6 +95,7 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
   GetParam(kToneMid)->InitDouble("Middle", 5.0, 0.0, 10.0, 0.1);
   GetParam(kToneTreble)->InitDouble("Treble", 5.0, 0.0, 10.0, 0.1);
   GetParam(kOutputLevel)->InitGain("Output", 0.0, -40.0, 40.0, 0.1);
+  GetParam(kDryWet)->InitDouble("Dry/Wet", 100.0, 0.0, 100.0, 0.1, "%");
   GetParam(kNoiseGateThreshold)->InitGain("Threshold", -80.0, -100.0, 0.0, 0.1);
   GetParam(kNoiseGateActive)->InitBool("NoiseGateActive", true);
   GetParam(kEQActive)->InitBool("ToneStack", true);
@@ -504,6 +505,18 @@ void NeuralAmpModeler::OnParamChange(int paramIdx)
           es->outGainDb = v;
       }
       _SetOutputGain();
+      break;
+    }
+    case kDryWet:
+    {
+      if (!mInActiveSlotPush)
+      {
+        const double v = GetParam(kDryWet)->Value();
+        if (mActiveSlot == 0)
+          mSlot0DryWet = v;
+        else if (ExtraSlot* es = _Extra(mActiveSlot))
+          es->dryWet = v / 100.0;
+      }
       break;
     }
     case kOutputMode: _SetOutputGain(); break;
@@ -986,6 +999,7 @@ void NeuralAmpModeler::SetActiveSlot(int slot)
     mSlot0Treble    = GetParam(kToneTreble)->Value();
     mSlot0InGainDb  = GetParam(kInputLevel)->Value();
     mSlot0OutGainDb = GetParam(kOutputLevel)->Value();
+    mSlot0DryWet    = GetParam(kDryWet)->Value();
   }
   else if (ExtraSlot* prev = _Extra(mActiveSlot))
   {
@@ -994,6 +1008,7 @@ void NeuralAmpModeler::SetActiveSlot(int slot)
     prev->treble    = GetParam(kToneTreble)->Value();
     prev->inGainDb  = GetParam(kInputLevel)->Value();
     prev->outGainDb = GetParam(kOutputLevel)->Value();
+    prev->dryWet    = GetParam(kDryWet)->Value() / 100.0;
   }
   mActiveSlot = slot;
   _PushActiveSlotIntoParams();
@@ -1020,7 +1035,7 @@ bool NeuralAmpModeler::SlotHasModel(int slot) const
 void NeuralAmpModeler::_PushActiveSlotIntoParams()
 {
   mInActiveSlotPush = true;
-  double bass = 5.0, mid = 5.0, treble = 5.0, inDb = 0.0, outDb = 0.0;
+  double bass = 5.0, mid = 5.0, treble = 5.0, inDb = 0.0, outDb = 0.0, dryWetPct = 100.0;
   if (mActiveSlot == 0)
   {
     bass = mSlot0Bass;
@@ -1028,6 +1043,7 @@ void NeuralAmpModeler::_PushActiveSlotIntoParams()
     treble = mSlot0Treble;
     inDb = mSlot0InGainDb;
     outDb = mSlot0OutGainDb;
+    dryWetPct = mSlot0DryWet;
   }
   else if (const ExtraSlot* es = _Extra(mActiveSlot))
   {
@@ -1036,6 +1052,7 @@ void NeuralAmpModeler::_PushActiveSlotIntoParams()
     treble = es->treble;
     inDb = es->inGainDb;
     outDb = es->outGainDb;
+    dryWetPct = es->dryWet * 100.0;
   }
   else
   {
@@ -1051,12 +1068,14 @@ void NeuralAmpModeler::_PushActiveSlotIntoParams()
   SendParameterValueFromDelegate(kToneTreble,  GetParam(kToneTreble) ->ToNormalized(treble), true);
   SendParameterValueFromDelegate(kInputLevel,  GetParam(kInputLevel) ->ToNormalized(inDb),   true);
   SendParameterValueFromDelegate(kOutputLevel, GetParam(kOutputLevel)->ToNormalized(outDb),  true);
+  SendParameterValueFromDelegate(kDryWet,      GetParam(kDryWet)     ->ToNormalized(dryWetPct), true);
   // Also push directly into GetParam so subsequent reads work.
   GetParam(kToneBass)   ->Set(bass);
   GetParam(kToneMid)    ->Set(mid);
   GetParam(kToneTreble) ->Set(treble);
   GetParam(kInputLevel) ->Set(inDb);
   GetParam(kOutputLevel)->Set(outDb);
+  GetParam(kDryWet)     ->Set(dryWetPct);
   // Reapply EQ to the now-active slot's tone stack with these values.
   _ApplyEqToSlot(mActiveSlot);
   _SetInputGain();
