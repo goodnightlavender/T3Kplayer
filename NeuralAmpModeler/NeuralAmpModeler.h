@@ -207,7 +207,7 @@ private:
 // the active slot is a UI affordance — the EQ knobs jump to the newly
 // active slot's stored values, the underlying iPlug param value moves
 // with them. Inactive slots keep processing with their last-stored EQ.
-constexpr int kNumChainSlots = 5;
+constexpr int kNumChainSlots = 8;
 
 // ExtraSlot — slots 1..N-1. Slot 0 stays on the legacy members below
 // (mModel / mStagedModel / mShouldRemoveModel / mToneStack) so no
@@ -417,9 +417,9 @@ private:
   // mChainOrderDirty. The pending buffer is drained at the top of
   // the chain section in ProcessBlock. Default identity order.
   static constexpr int kNumExtraSlots = kNumChainSlots - 1;
-  int mChainOrder[kNumExtraSlots]        = {0, 1, 2, 3};
+  int mChainOrder[kNumExtraSlots]        = {0, 1, 2, 3, 4, 5, 6};
   int mChainOrderLen                     = kNumExtraSlots;
-  int mPendingChainOrder[kNumExtraSlots] = {0, 1, 2, 3};
+  int mPendingChainOrder[kNumExtraSlots] = {0, 1, 2, 3, 4, 5, 6};
   int mPendingChainOrderLen              = kNumExtraSlots;
   std::atomic<bool> mChainOrderDirty{false};
 
