@@ -119,10 +119,14 @@ void T3kSettingsModal::OnAttached()
       T3kButton::Variant::Secondary);
   g->AttachControl(mSignOutBtn);
 
+  // 2026-05-26 polish-pass — CLOSE was Primary (kAccent fill + white
+  // text). Since the accent is #FFFF00, white-on-yellow was unreadable.
+  // Match the PICK / DOWNLOAD CTA treatment: Invert (white fill +
+  // black text).
   mCloseBtn = new T3kButton(
       mCloseBtnRect, "CLOSE",
       [this]() { if (mOnClose) mOnClose(); },
-      T3kButton::Variant::Primary);
+      T3kButton::Variant::Invert);
   g->AttachControl(mCloseBtn);
 
   // Inherit the parent control's hidden state on first attach.

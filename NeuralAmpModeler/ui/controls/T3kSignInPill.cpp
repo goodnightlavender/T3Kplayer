@@ -8,23 +8,6 @@ namespace t3k::ui {
 
 using namespace ::iplug::igraphics;
 
-namespace {
-
-// Lighten a color toward white. Mirrors T3kButton's helper so the
-// hover treatment matches Primary buttons.
-IColor LightenTowardWhite(const IColor& c, float frac)
-{
-  const float k = (frac < 0.f ? 0.f : (frac > 1.f ? 1.f : frac));
-  auto mix = [k](int ch) {
-    const float v = float(ch) + (255.f - float(ch)) * k;
-    const int iv = int(v + 0.5f);
-    return iv < 0 ? 0 : (iv > 255 ? 255 : iv);
-  };
-  return IColor(c.A, mix(c.R), mix(c.G), mix(c.B));
-}
-
-}  // namespace
-
 T3kSignInPill::T3kSignInPill(const IRECT& bounds,
                              std::function<void()> onClick)
 : IControl(bounds)
@@ -36,14 +19,19 @@ void T3kSignInPill::Draw(IGraphics& g)
 {
   namespace th = ::t3k::theme;
 
-  const IColor fill = mMouseIsOver
-      ? LightenTowardWhite(th::kAccent, 0.10f)
-      : th::kAccent;
+  // 2026-05-26 polish-pass — switched from kAccent fill (yellow) + kText
+  // (white) to white fill + black text. The accent went to #FFFF00 in
+  // the v6 pass and white text on top of it was unreadable. Mirrors the
+  // T3kButton::Variant::Invert treatment already used for PICK /
+  // DOWNLOAD CTAs in the Library and Cloud tabs.
+  const IColor fillWhite(255, 255, 255, 255);
+  const IColor fillHover(255, 230, 230, 230);
+  const IColor fill = mMouseIsOver ? fillHover : fillWhite;
   g.FillRoundRect(fill, mRECT, th::pillRadius(mRECT.H()));
 
-  // White "Sign in" label centered.
+  // Black "Sign in" label centered.
   const IText label(th::kTypeSmall,
-                    th::kText,
+                    IColor(255, 0, 0, 0),
                     th::kFontBodySemi,
                     EAlign::Center,
                     EVAlign::Middle);

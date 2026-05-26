@@ -60,11 +60,14 @@ void T3kFirstRunModal::OnAttached()
   IGraphics* g = GetUI();
   if (!g) return;
 
+  // 2026-05-26 polish-pass — Primary (yellow + white text) was
+  // unreadable on the #FFFF00 accent. Use Invert (white + black text)
+  // for the same affordance, matching PICK / DOWNLOAD / CLOSE.
   mUseSuggestedBtn = new T3kButton(
       mPrimaryBtnRect,
       "USE SUGGESTED FOLDER",
       [this]() { onUseSuggested(); },
-      T3kButton::Variant::Primary);
+      T3kButton::Variant::Invert);
   g->AttachControl(mUseSuggestedBtn);
 
   mPickCustomBtn = new T3kButton(

@@ -69,11 +69,12 @@ void T3kRestoreModal::OnAttached()
   IGraphics* g = GetUI();
   if (!g) return;
 
+  // 2026-05-26 polish-pass — same Invert flip as the other CTAs.
   mRestoreBtn = new T3kButton(
       mPrimaryBtnRect,
       "RESTORE ALL",
       [this]() { if (mOnRestore) mOnRestore(); },
-      T3kButton::Variant::Primary);
+      T3kButton::Variant::Invert);
   g->AttachControl(mRestoreBtn);
 
   mDismissBtn = new T3kButton(
