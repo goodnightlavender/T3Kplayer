@@ -265,6 +265,10 @@ public:
   const char* GetSlotNamPath(int slot) const;
   bool        SlotHasModel(int slot) const;
 
+  // 2026-05-26 — UI access to per-slot DSP state for preset round-trip.
+  ExtraSlot*       GetExtraSlot(int slot)       { return _Extra(slot); }
+  const ExtraSlot* GetExtraSlot(int slot) const { return _Extra(slot); }
+
   // ── Chain order indirection (2026-05-25, fixes pops on reorder) ─
   // ToneView pushes the desired processing order for the ExtraSlots
   // here. ProcessBlock walks the ExtraSlots in this order instead of
