@@ -3,6 +3,7 @@
 #include <cstdio>
 #include "IGraphics.h"
 #include "../theme.h"
+#include "../text_util.h"
 
 namespace t3k::ui {
 
@@ -126,7 +127,10 @@ void T3kModelTile::Draw(IGraphics& g)
   const IRECT nameR(body.L + 2.f, iconR.B + 3.f, body.R - 2.f, iconR.B + 13.f);
   const IText nameT(9.f, th::kText, th::kFontBodyBold,
                     EAlign::Center, EVAlign::Middle);
-  g.DrawText(nameT, mName.c_str(), nameR);
+  // Pipe model name through the ASCII sanitizer so middle dots / em dashes
+  // / ellipses from the catalog don't paint as tofu boxes.
+  const std::string safeName = ::t3k::text_util::toAsciiSafe(mName);
+  g.DrawText(nameT, safeName.c_str(), nameR);
 
   const float numY = nameR.B + 2.f;
   const IText numT(8.f, th::kTextMuted, th::kFontBody,

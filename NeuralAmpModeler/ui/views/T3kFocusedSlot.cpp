@@ -9,6 +9,7 @@
 #include "IGraphics.h"
 
 #include "../theme.h"
+#include "../text_util.h"
 #include "../controls/T3kReadout.h"
 #include "../controls/T3kVMeter.h"
 #include "../controls/T3kSectionHeader.h"
@@ -233,18 +234,25 @@ void T3kFocusedSlot::Draw(IGraphics& g)
   }
 
   // ── Title row ────────────────────────────────────────────────────────
+  // Title source strings come from LibraryDb / catalog responses and can
+  // include U+2014 em dashes ("Klon '94 — centaur clone"). The vendored
+  // Inter subset doesn't carry that glyph, so we pipe the text through
+  // text_util::toAsciiSafe before drawing to avoid tofu boxes.
   const IText h2(20.f, th::kText, th::kFontBodyBold,
                  EAlign::Near, EVAlign::Top);
-  g.DrawText(h2, mSnap.displayName.c_str(),
+  const std::string safeTitle = ::t3k::text_util::toAsciiSafe(mSnap.displayName);
+  g.DrawText(h2, safeTitle.c_str(),
              IRECT(mTitleRect.L, mTitleRect.T,
                    mReadoutRect.L - 8.f, mTitleRect.T + 24.f));
 
-  // Sub-line: creator · format (NAM / IR — reused as the gear-type label).
+  // Sub-line: creator - format (NAM / IR — reused as the gear-type label).
+  // The separator is plain " - " (ASCII) because the Inter subset doesn't
+  // carry U+00B7 either; same toAsciiSafe pass scrubs the creator string.
   const IText sub(9.f, th::kTextMuted, th::kFontBody,
                   EAlign::Near, EVAlign::Top);
-  std::string subStr = mSnap.creator;
+  std::string subStr = ::t3k::text_util::toAsciiSafe(mSnap.creator);
   if (!mSnap.format.empty()) {
-    if (!subStr.empty()) subStr += " · ";
+    if (!subStr.empty()) subStr += " - ";
     subStr += mSnap.format;
   }
   g.DrawText(sub, subStr.c_str(),
@@ -256,7 +264,8 @@ void T3kFocusedSlot::Draw(IGraphics& g)
                     mInfoColRect.R, mInfoColRect.B - 28.f);
   const IText descT(11.5f, IColor(255, 170, 170, 170), th::kFontBody,
                     EAlign::Near, EVAlign::Top);
-  g.DrawText(descT, mSnap.description.c_str(), descR);
+  const std::string safeDesc = ::t3k::text_util::toAsciiSafe(mSnap.description);
+  g.DrawText(descT, safeDesc.c_str(), descR);
 
   const IRECT tagsR(mInfoColRect.L, mInfoColRect.B - 24.f,
                     mInfoColRect.R, mInfoColRect.B);
@@ -265,12 +274,13 @@ void T3kFocusedSlot::Draw(IGraphics& g)
   float tagX = tagsR.L;
   for (const auto& t : mSnap.tags)
   {
+    const std::string safeTag = ::t3k::text_util::toAsciiSafe(t);
     // Approximate auto-size from char count (no measureText available here).
-    const float w = 8.f + 6.f * static_cast<float>(t.size());
+    const float w = 8.f + 6.f * static_cast<float>(safeTag.size());
     const IRECT cR(tagX, tagsR.T + 4.f, tagX + w, tagsR.B - 4.f);
     g.FillRoundRect(IColor(255, 13, 13, 13), cR, cR.H() * 0.5f);
     g.DrawRoundRect(IColor(255, 34, 34, 34), cR, cR.H() * 0.5f, nullptr, 1.f);
-    g.DrawText(tagT, t.c_str(), cR);
+    g.DrawText(tagT, safeTag.c_str(), cR);
     tagX += w + 5.f;
     if (tagX > tagsR.R) break;
   }
