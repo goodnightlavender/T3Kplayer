@@ -288,6 +288,9 @@
     <ClCompile Include="..\ui\views\T3kModelInfoPane.cpp">
       <Filter>ui\views</Filter>
     </ClCompile>
+    <ClCompile Include="..\ui\views\T3kFocusedSlot.cpp">
+      <Filter>ui\views</Filter>
+    </ClCompile>
     <ClCompile Include="..\ui\views\ToneView.cpp">
       <Filter>ui\views</Filter>
     </ClCompile>
@@ -779,6 +782,9 @@
       <Filter>settings</Filter>
     </ClInclude>
     <ClInclude Include="..\ui\views\T3kModelInfoPane.h">
+      <Filter>ui\views</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ui\views\T3kFocusedSlot.h">
       <Filter>ui\views</Filter>
     </ClInclude>
     <ClInclude Include="..\ui\views\ToneView.h">

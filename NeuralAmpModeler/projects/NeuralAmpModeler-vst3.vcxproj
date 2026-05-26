@@ -402,6 +402,7 @@
     <ClInclude Include="..\library\PresetStore.h" />
     <ClInclude Include="..\settings\Settings.h" />
     <ClInclude Include="..\ui\views\T3kModelInfoPane.h" />
+    <ClInclude Include="..\ui\views\T3kFocusedSlot.h" />
     <ClInclude Include="..\ui\views\ToneView.h" />
     <ClInclude Include="..\ui\views\CloudView.h" />
     <ClInclude Include="..\ui\views\LibraryView.h" />
@@ -569,6 +570,7 @@
     <ClCompile Include="..\library\PresetStore.cpp" />
     <ClCompile Include="..\settings\Settings.cpp" />
     <ClCompile Include="..\ui\views\T3kModelInfoPane.cpp" />
+    <ClCompile Include="..\ui\views\T3kFocusedSlot.cpp" />
     <ClCompile Include="..\ui\views\ToneView.cpp" />
     <ClCompile Include="..\ui\views\CloudView.cpp" />
     <ClCompile Include="..\ui\views\LibraryView.cpp" />
