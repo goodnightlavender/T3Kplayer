@@ -7,7 +7,7 @@
 #include "../theme.h"
 #include "../layout.h"
 #include "../controls/T3kModelTile.h"
-#include "../controls/T3kKnob.h"
+#include "T3kFocusedSlot.h"
 
 // Plug-in header — gives us the EParams enum (kInputLevel, kToneBass, ...).
 #include "../../NeuralAmpModeler.h"
@@ -21,12 +21,10 @@ using namespace iplug::igraphics;
 
 namespace {
 
-// Section heights (match the v6 mockup .plg-strip / .plg-info / .plg-knobs).
-// Scaled ~×1.36 for the 1280×800 default window — without this the strip and
-// knob row hugged the top and bottom of a tall body, leaving an oversized
-// empty middle where the info pane couldn't fill the space.
-constexpr float kStripH = 132.f;
-constexpr float kKnobH  = 108.f;
+// 2026-05-26 — strip height pinned to the v6 mockup's `.plg-strip`. The body
+// below the strip is the focused-slot panel (image + title + columns).
+constexpr float kStripH      = 96.f;
+constexpr float kStripGap    = 8.f;
 
 // Inter-tile gap inside a single category group (pedals / amp+cab / outboard).
 constexpr float kTileGapWithinGroup = 8.f;
@@ -86,38 +84,13 @@ ToneView::ToneView(const IRECT& bounds, NeuralAmpModeler& plugin)
 
 void ToneView::OnResize()
 {
-  // Carve the body into: top strip / middle info / bottom knob row.
-  auto topSplit    = t3k::layout::rowFixedTop(mRECT, kStripH);
-  mStripRect       = topSplit.first;
-  IRECT remainder  = topSplit.second;
+  // Top strip (kStripH px) sits above the focused-slot panel (the rest).
+  mStripRect   = IRECT(mRECT.L, mRECT.T,            mRECT.R, mRECT.T + kStripH);
+  mFocusedRect = IRECT(mRECT.L, mStripRect.B + kStripGap, mRECT.R, mRECT.B);
 
-  auto bottomSplit = t3k::layout::rowFixedBottom(remainder, kKnobH);
-  mInfoRect        = bottomSplit.first;
-  mKnobRect        = bottomSplit.second;
-
-  if (mInfoPane) mInfoPane->SetTargetAndDrawRECTs(mInfoRect);
-
-  // Resize strip tiles in place — do NOT detach/reattach them. Earlier
-  // versions called rebuildStrip() here, which removed all existing tiles
-  // and re-added them. Because iPlug2 appends new controls to the end of
-  // mControls, that re-add ran AFTER the preset overlay had already been
-  // attached (ToneRoot::OnAttached ends with OnResize() to size children),
-  // which pushed the tiles in front of the overlay in z-order — and the
-  // overlay then drew under the strip. Updating positions in place keeps
-  // existing z-order intact.
+  if (mFocusedSlot) mFocusedSlot->SetTargetAndDrawRECTs(mFocusedRect);
+  // Position the strip's tiles in place (no z-order disruption).
   layoutStripTiles();
-
-  if (mKnobIn || mKnobBass || mKnobMid || mKnobTreble || mKnobOut) {
-    auto cells = t3k::layout::row(
-        t3k::layout::pad(mKnobRect, t3k::theme::kS2, t3k::theme::kS5,
-                                    t3k::theme::kS2, t3k::theme::kS5),
-        { 1.f, 1.f, 1.f, 1.f, 1.f }, t3k::theme::kS4);
-    if (mKnobIn)     mKnobIn->SetTargetAndDrawRECTs(cells[0]);
-    if (mKnobBass)   mKnobBass->SetTargetAndDrawRECTs(cells[1]);
-    if (mKnobMid)    mKnobMid->SetTargetAndDrawRECTs(cells[2]);
-    if (mKnobTreble) mKnobTreble->SetTargetAndDrawRECTs(cells[3]);
-    if (mKnobOut)    mKnobOut->SetTargetAndDrawRECTs(cells[4]);
-  }
 }
 
 void ToneView::OnAttached()
@@ -125,58 +98,36 @@ void ToneView::OnAttached()
   IGraphics* g = GetUI();
   if (!g) return;
 
-  // Info pane — created once, lives for ToneView's lifetime.
-  mInfoPane = new T3kModelInfoPane(mInfoRect);
-  g->AttachControl(mInfoPane);
+  // Focused-slot panel — created once, lives for ToneView's lifetime.
+  mFocusedSlot = new T3kFocusedSlot(mFocusedRect, mPlugin);
+  g->AttachControl(mFocusedSlot);
 
-  // Knob row — 5 persistent knobs bound to upstream EParams indices.
-  auto cells = t3k::layout::row(
-      t3k::layout::pad(mKnobRect, t3k::theme::kS2, t3k::theme::kS5,
-                                  t3k::theme::kS2, t3k::theme::kS5),
-      { 1.f, 1.f, 1.f, 1.f, 1.f }, t3k::theme::kS4);
-  mKnobIn     = new T3kKnob(cells[0], ::kInputLevel,  "INPUT");
-  mKnobBass   = new T3kKnob(cells[1], ::kToneBass,    "BASS");
-  mKnobMid    = new T3kKnob(cells[2], ::kToneMid,     "MID");
-  mKnobTreble = new T3kKnob(cells[3], ::kToneTreble,  "TREBLE");
-  mKnobOut    = new T3kKnob(cells[4], ::kOutputLevel, "OUTPUT");
-  g->AttachControl(mKnobIn);
-  g->AttachControl(mKnobBass);
-  g->AttachControl(mKnobMid);
-  g->AttachControl(mKnobTreble);
-  g->AttachControl(mKnobOut);
-
-  // Strip tiles — created from the demo seed.
+  // Strip tiles — built AFTER the focused slot so their click events
+  // (which trigger setSnapshot on mFocusedSlot) always have a live panel
+  // to push into.
   rebuildStrip();
 
-  // Reflect initial selection in the info pane.
+  // Reflect initial selection in the focused panel.
   if (mChain.selectedIndex >= 0) {
     onSlotSelected(mChain.selectedIndex);
   }
 }
 
-void ToneView::Draw(IGraphics& g)
+void ToneView::Draw(IGraphics& /*g*/)
 {
-  namespace th = ::t3k::theme;
-
-  // Section separator above the knob row (matches the v6 .plg-knobs
-  // border-top: 1px solid #141414).
-  g.FillRect(th::kBorder,
-             IRECT(mRECT.L, mKnobRect.T - 1.f, mRECT.R, mKnobRect.T));
+  // The strip + focused-slot panel paint themselves; ToneView is purely
+  // a layout shell with no chrome of its own.
 }
 
 void ToneView::Hide(bool hide)
 {
   IControl::Hide(hide);
   // iPlug2 attaches all controls flat — hiding this view does NOT
-  // auto-propagate. Cascade to every child so the slot strip / info
-  // pane / knob row don't leak onto Library or Cloud tabs.
+  // auto-propagate. Cascade to every child so the strip / focused panel
+  // don't leak onto Library or Cloud tabs. T3kFocusedSlot does its own
+  // child-cascade for the knobs / meters it owns.
   for (T3kModelTile* t : mTiles) if (t) t->Hide(hide);
-  if (mInfoPane)   mInfoPane  ->Hide(hide);
-  if (mKnobIn)     mKnobIn    ->Hide(hide);
-  if (mKnobBass)   mKnobBass  ->Hide(hide);
-  if (mKnobMid)    mKnobMid   ->Hide(hide);
-  if (mKnobTreble) mKnobTreble->Hide(hide);
-  if (mKnobOut)    mKnobOut   ->Hide(hide);
+  if (mFocusedSlot) mFocusedSlot->Hide(hide);
 }
 
 void ToneView::clearStripChildren()
@@ -334,18 +285,18 @@ void ToneView::onSlotSelected(int slotIndex)
   for (int i = 0; i < static_cast<int>(mTiles.size()); ++i) {
     if (mTiles[i]) mTiles[i]->setSelected(i == slotIndex);
   }
-  // Find the loaded entry corresponding to this slot and push its info /
-  // active-slot pointer through to the inspector + DSP.
+  // Find the loaded entry corresponding to this slot and push its snapshot
+  // into the focused-slot panel. Empty selection clears the panel.
   auto it = std::find_if(
       mChain.loaded.begin(), mChain.loaded.end(),
       [slotIndex](const ChainView::LoadedSlot& s) {
         return s.slotIndex == slotIndex;
       });
   if (it != mChain.loaded.end()) {
-    if (mInfoPane) mInfoPane->setSnapshot(it->info);
+    if (mFocusedSlot) mFocusedSlot->setSnapshot(it->info);
     if (it->dspSlot >= 0) mPlugin.SetActiveSlot(it->dspSlot);
-  } else if (mInfoPane) {
-    mInfoPane->clear();
+  } else if (mFocusedSlot) {
+    mFocusedSlot->clear();
   }
 }
 
@@ -381,8 +332,8 @@ void ToneView::onSlotRemoved(int slotIndex)
   if (wasSelected) {
     mChain.selectedIndex = mChain.loaded.empty() ? -1
                                                  : mChain.loaded.front().slotIndex;
-    if (mChain.selectedIndex < 0 && mInfoPane) {
-      mInfoPane->clear();
+    if (mChain.selectedIndex < 0 && mFocusedSlot) {
+      mFocusedSlot->clear();
     }
   }
   // Removed entry: syncDspChain detects it (its slot is no longer in

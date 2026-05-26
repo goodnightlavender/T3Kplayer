@@ -28,6 +28,8 @@
 
 #include "../controls/T3kGearIcon.h"
 #include "../controls/T3kModelTile.h"
+// T3kModelInfoPane.h still ships ModelInfoSnapshot, used by ChainView and by
+// T3kFocusedSlot. The pane control itself is no longer mounted (Phase E2).
 #include "T3kModelInfoPane.h"
 #include "../../library/PresetState.h"
 
@@ -35,7 +37,7 @@ class NeuralAmpModeler;  // forward-declare upstream plug-in
 
 namespace t3k::ui {
 
-class T3kKnob;
+class T3kFocusedSlot;
 
 class ToneView : public iplug::igraphics::IControl {
 public:
@@ -164,24 +166,18 @@ private:
 
   // ── Layout sub-rects ──────────────────────────────────────────────
   iplug::igraphics::IRECT mStripRect;
-  iplug::igraphics::IRECT mInfoRect;
-  iplug::igraphics::IRECT mKnobRect;
+  iplug::igraphics::IRECT mFocusedRect;
 
   NeuralAmpModeler& mPlugin;
 
   ChainView mChain;
 
-  // Children. The strip's 8 tiles are ALWAYS present — pedal/amp/cab/
-  // outboard positions either show a Loaded tile or an Empty
-  // ("dashed +") tile. The info pane and knobs live for the lifetime
-  // of ToneView (info pane + knob row drop out in Phase E2).
+  // Children. The strip holds exactly kNumChainSlots tiles — pedal/amp/
+  // cab/outboard positions show either a Loaded tile or an Empty
+  // ("dashed +") tile. The focused-slot panel beneath owns the image,
+  // title row, MODEL INFO / SETTINGS / METERS columns.
   std::vector<T3kModelTile*> mTiles;  // size == kNumChainSlots; null if not yet built
-  T3kModelInfoPane*     mInfoPane = nullptr;
-  T3kKnob*              mKnobIn = nullptr;
-  T3kKnob*              mKnobBass = nullptr;
-  T3kKnob*              mKnobMid = nullptr;
-  T3kKnob*              mKnobTreble = nullptr;
-  T3kKnob*              mKnobOut = nullptr;
+  T3kFocusedSlot*       mFocusedSlot = nullptr;
 
   // Optional z-order-promotion notifier (see setOnStripRebuilt).
   std::function<void()> mOnStripRebuilt;
