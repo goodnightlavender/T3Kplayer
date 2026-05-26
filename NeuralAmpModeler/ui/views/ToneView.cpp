@@ -607,7 +607,8 @@ void ToneView::seedDemoSnapshot()
   // 2026-05-26 — new global + per-slot fields.
   if (auto* p = mPlugin.GetParam(::kMasterOutput))
     s.master_output_db = p->Value();
-  for (size_t i = 0; i < mChain.loaded.size() && i < s.slots.size(); ++i)
+  // s.slots was built 1:1 from mChain.loaded above — the second bound is dead.
+  for (size_t i = 0; i < mChain.loaded.size(); ++i)
   {
     s.slots[i].bypassed = mChain.loaded[i].bypassed;
     if (const auto* es = mPlugin.GetExtraSlot(mChain.loaded[i].dspSlot))
@@ -658,6 +659,7 @@ void ToneView::applyPresetState(const ::t3k::library::PresetState& s)
     else                                   ls.iconType = GearType::Pedal;
     ls.kind                = row->kind;  // 2026-05-26 — see loadModelIntoSlot.
     ls.bypassed            = e.bypassed;
+    ls.dryWet              = e.dryWet;
     // 2026-05-26 — also restore absPath + image fields so the audio
     // chain gets re-staged on the syncDspChain() call below. Without
     // this, applyPresetState was a UI-only snapshot — restoring a
@@ -685,16 +687,18 @@ void ToneView::applyPresetState(const ::t3k::library::PresetState& s)
   syncDspChain();
 
   // 2026-05-26 — restore per-slot dry/wet + bypass to the DSP after staging.
-  for (size_t i = 0; i < mChain.loaded.size() && i < s.slots.size(); ++i)
+  // Both reads use mChain.loaded[i].* (the aligned UI shadow set during the
+  // construction loop above) — NOT s.slots[i].* which would be misaligned
+  // because the construction loop skips empty/unresolvable preset entries.
+  for (size_t i = 0; i < mChain.loaded.size(); ++i)
   {
     if (auto* es = mPlugin.GetExtraSlot(mChain.loaded[i].dspSlot))
     {
-      es->dryWet   = s.slots[i].dryWet;
+      es->dryWet   = mChain.loaded[i].dryWet;
       es->bypassed = mChain.loaded[i].bypassed;
     }
   }
-  if (auto* p = mPlugin.GetParam(::kMasterOutput))
-    p->Set(s.master_output_db);
+  writeParam(::kMasterOutput, static_cast<float>(s.master_output_db));
 
   if (mChain.selectedIndex >= 0) onSlotSelected(mChain.selectedIndex);
 }
