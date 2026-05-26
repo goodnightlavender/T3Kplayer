@@ -66,6 +66,18 @@ private:
   bool mBitmapLoadFailed = false;
   std::string mLoadedImagePath;  // path the current mBitmap was loaded from
 
+  // 2026-05-26 polish-pass — when the snapshot only carries a remote
+  // imageUrl (no local sibling), we resolve it via cloud::ThumbnailCache.
+  // mThumbRequested gates the fetch so we don't re-enqueue on every Draw,
+  // mThumbForUrl lets us notice when the URL changes mid-cache-hit so
+  // we kick a fresh request, mThumbPath is the resulting local file, and
+  // mThumbLoadFailed sticks on transport / disk failure so we stop
+  // retrying for the current URL.
+  bool        mThumbRequested  = false;
+  std::string mThumbForUrl;
+  std::string mThumbPath;
+  bool        mThumbLoadFailed = false;
+
   T3kReadout*       mReadout         = nullptr;
   T3kSectionHeader* mInfoHeader      = nullptr;
   T3kSectionHeader* mSettingsHeader  = nullptr;
