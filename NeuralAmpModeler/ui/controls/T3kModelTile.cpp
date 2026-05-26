@@ -30,7 +30,18 @@ void T3kModelTile::setIconType(GearType t) { if (mIconType  != t) { mIconType  =
 void T3kModelTile::setName(std::string n)  { if (mName      != n) { mName      = std::move(n); SetDirty(false); } }
 void T3kModelTile::setSelected(bool s)     { if (mSelected  != s) { mSelected  = s; SetDirty(false); } }
 void T3kModelTile::setBypassed(bool b)     { if (mBypassed  != b) { mBypassed  = b; SetDirty(false); } }
-void T3kModelTile::setValues(Values v)     { mValues = v; SetDirty(false); }
+void T3kModelTile::setValues(Values v)
+{
+  // Delta gate — ToneView::IsDirty pushes these every frame; only mark
+  // dirty when something actually changed, so iPlug2's repaint loop
+  // can stay quiescent at idle.
+  if (mValues.bass   == v.bass   && mValues.mid    == v.mid    &&
+      mValues.treble == v.treble && mValues.inDb   == v.inDb   &&
+      mValues.outDb  == v.outDb  && mValues.dryWet == v.dryWet)
+    return;
+  mValues = v;
+  SetDirty(false);
+}
 
 void T3kModelTile::setDragBoundsX(float minOffsetX, float maxOffsetX)
 {

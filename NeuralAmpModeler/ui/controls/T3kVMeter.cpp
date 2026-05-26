@@ -1,5 +1,6 @@
 #include "T3kVMeter.h"
 
+#include <cmath>
 #include <cstdio>
 #include "IGraphics.h"
 #include "../theme.h"
@@ -17,6 +18,14 @@ T3kVMeter::T3kVMeter(const IRECT& bounds, Label label)
 
 void T3kVMeter::setLevel(double level0to1, double peak0to1, double peakDb)
 {
+  // Delta gate — meters get updated at audio-rate via OnMsgFromDelegate;
+  // many of those updates don't move the rendered bar at all. Skip the
+  // repaint when nothing visible would change.
+  constexpr double kEps = 1e-4;
+  if (std::abs(level0to1 - mLevel)  < kEps &&
+      std::abs(peak0to1  - mPeak)   < kEps &&
+      std::abs(peakDb    - mPeakDb) < 0.05)
+    return;
   mLevel  = level0to1;
   mPeak   = peak0to1;
   mPeakDb = peakDb;

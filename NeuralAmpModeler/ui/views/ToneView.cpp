@@ -132,6 +132,11 @@ void ToneView::Draw(IGraphics& /*g*/)
 
 bool ToneView::IsDirty()
 {
+  // When the Tone tab isn't visible, skip the per-frame ExtraSlot pull
+  // entirely. Saves N tile-setter calls and the meter-level fan-out on
+  // every display refresh while the user is on the Library or Cloud tab.
+  if (IsHidden()) return IControl::IsDirty();
+
   // Push the live ExtraSlot values for each loaded entry into its tile so
   // the strip's per-slot numeric readouts stay in sync with knob changes
   // (which may come from the focused panel, the host, or a preset apply).
