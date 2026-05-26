@@ -63,10 +63,12 @@ public:
   // control under the cursor; without this hook a wheel gesture over
   // a card never reaches LibraryView's scroll handler.
   void setOnWheel(std::function<void(float delta)> cb) { mOnWheel = std::move(cb); }
+  void setOnDrag(std::function<void(float dY)> cb) { mOnDrag = std::move(cb); }
 
   void Draw(IGraphics& g) override;
   void OnMouseDown(float x, float y, const IMouseMod& mod) override;
   void OnMouseDblClick(float x, float y, const IMouseMod& mod) override;
+  void OnMouseDrag(float x, float y, float dX, float dY, const IMouseMod& mod) override;
   void OnMouseOver(float x, float y, const IMouseMod& mod) override;
   void OnMouseOut() override;
   void OnMouseWheel(float x, float y, const IMouseMod& mod, float d) override;
@@ -80,6 +82,7 @@ public:
   // LibraryView when the same card slot is reused for a new row
   // (e.g. after refresh() following a rename).
   void setData(CardData data);
+  void setLogicalRect(const IRECT& r);
 
 private:
   void RecomputeRects();
@@ -89,9 +92,11 @@ private:
   std::function<void(int64_t, float, float)> mOnRightClick;
   std::function<void(int64_t)> mOnDblClick;
   std::function<void(float)> mOnWheel;
+  std::function<void(float)> mOnDrag;
 
   bool  mSelected = false;
   bool  mHovered  = false;
+  IRECT mLogicalRect;
 
   // Lazy bitmap loading. When mData.imagePath is non-empty (or once
   // ThumbnailCache resolves mData.imageUrl into a local path), the

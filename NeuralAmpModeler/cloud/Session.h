@@ -106,6 +106,7 @@ private:
   // to SignedIn, publishes SignedIn. On failure: wipes credentials,
   // sets state to SignedOut, publishes SessionExpired.
   void attemptRefresh(const std::string& refreshToken);
+  void fetchCurrentUserAsync();
 
   // Background-thread entry point. Loops on mCv with a 60-second
   // timeout; on each wake checks if mAccessExpiryMs is within 60s of

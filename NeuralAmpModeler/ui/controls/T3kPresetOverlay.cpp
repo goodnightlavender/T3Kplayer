@@ -22,7 +22,9 @@ constexpr float kListMaxH    = 180.f;
 constexpr float kDividerVPad = 4.f;
 constexpr float kActionRowH  = 24.f;
 constexpr float kActionGap   = 5.f;
-constexpr float kMoreBtnW    = 28.f;
+constexpr float kMoreBtnW    = 0.f;
+constexpr float kContextW    = 124.f;
+constexpr float kContextRowH = 24.f;
 
 // Panel chrome colors — pulled from the v6 mockup, not theme tokens, because
 // the overlay sits slightly darker than the rest of the surface palette.
@@ -68,6 +70,16 @@ void T3kPresetOverlay::setActiveId(int64_t id)
   SetDirty(false);
 }
 
+void T3kPresetOverlay::openContextMenu(int64_t id, const std::string& name)
+{
+  if (id <= 0) return;
+  mContextOpen = true;
+  mContextId = id;
+  mContextName = name;
+  mContextAnchor = moreBtnRect();
+  SetDirty(false);
+}
+
 IRECT T3kPresetOverlay::searchRect() const
 {
   return IRECT(mRECT.L + kPanelPad,
@@ -107,23 +119,41 @@ IRECT T3kPresetOverlay::actionRowRect() const
 
 IRECT T3kPresetOverlay::saveBtnRect() const
 {
-  const IRECT a = actionRowRect();
-  const float btnW = (a.W() - kMoreBtnW - kActionGap * 2.f) * 0.5f;
-  return IRECT(a.L, a.T, a.L + btnW, a.B);
+  return IRECT();
 }
 
 IRECT T3kPresetOverlay::saveAsBtnRect() const
 {
-  const IRECT a = actionRowRect();
-  const float btnW = (a.W() - kMoreBtnW - kActionGap * 2.f) * 0.5f;
-  const float l = a.L + btnW + kActionGap;
-  return IRECT(l, a.T, l + btnW, a.B);
+  return actionRowRect();
 }
 
 IRECT T3kPresetOverlay::moreBtnRect() const
 {
   const IRECT a = actionRowRect();
   return IRECT(a.R - kMoreBtnW, a.T, a.R, a.B);
+}
+
+IRECT T3kPresetOverlay::contextMenuRect() const
+{
+  IRECT anchor = mContextAnchor.W() > 0.f ? mContextAnchor : moreBtnRect();
+  float left = anchor.R - kContextW;
+  if (left < mRECT.L + kPanelPad) left = mRECT.L + kPanelPad;
+  float top = anchor.T - kContextRowH * 2.f - 4.f;
+  if (top < mRECT.T + kPanelPad) top = anchor.B + 4.f;
+  top = anchor.B + 4.f;
+  return IRECT(left, top, left + kContextW, top + kContextRowH * 2.f);
+}
+
+IRECT T3kPresetOverlay::contextRenameRect() const
+{
+  const IRECT r = contextMenuRect();
+  return IRECT(r.L, r.T, r.R, r.T + kContextRowH);
+}
+
+IRECT T3kPresetOverlay::contextDeleteRect() const
+{
+  const IRECT r = contextMenuRect();
+  return IRECT(r.L, r.T + kContextRowH, r.R, r.B);
 }
 
 IRECT T3kPresetOverlay::listRowRect(int filteredIndex) const
@@ -210,43 +240,65 @@ void T3kPresetOverlay::Draw(IGraphics& g)
   g.FillRect(kPanelBorder, dividerRect());
 
   // ── Action row ──────────────────────────────────────────────────────
-  // Save (primary blue).
-  const IRECT save = saveBtnRect();
-  g.FillRoundRect(th::kAccent, save, th::kRadiusSm);
-  g.DrawText(IText(th::kTypeLabel, th::kText, th::kFontBodyBold,
-                   EAlign::Center, EVAlign::Middle),
-             "SAVE", save);
-
+  // Save.
   // Save As… (outline).
   const IRECT saveAs = saveAsBtnRect();
   g.DrawRoundRect(kPanelBorder, saveAs, th::kRadiusSm, nullptr, 1.f);
   g.DrawText(IText(th::kTypeLabel, th::kText, th::kFontBodySemi,
                    EAlign::Center, EVAlign::Middle),
-             "SAVE AS\xE2\x80\xA6", saveAs);
+             "Save Preset", saveAs);
 
   // ⋯ overflow.
-  const IRECT more = moreBtnRect();
-  g.DrawRoundRect(kPanelBorder, more, th::kRadiusSm, nullptr, 1.f);
-  g.DrawText(IText(th::kTypeBody, th::kTextMuted, th::kFontBodyBold,
-                   EAlign::Center, EVAlign::Middle),
-             "\xE2\x8B\xAF", more);  // U+22EF
+  if (mContextOpen) {
+    const IRECT menu = contextMenuRect();
+    g.FillRoundRect(kPanelBg, menu, th::kRadiusSm);
+    g.DrawRoundRect(kPanelBorder, menu, th::kRadiusSm, nullptr, 1.f);
+    const IRECT renameText(contextRenameRect().L + 8.f, contextRenameRect().T,
+                           contextRenameRect().R - 8.f, contextRenameRect().B);
+    const IRECT deleteText(contextDeleteRect().L + 8.f, contextDeleteRect().T,
+                           contextDeleteRect().R - 8.f, contextDeleteRect().B);
+    g.DrawText(IText(th::kTypeSmall, th::kText, th::kFontBody,
+                     EAlign::Near, EVAlign::Middle),
+               "Rename", renameText);
+    g.DrawText(IText(th::kTypeSmall, th::kText, th::kFontBody,
+                     EAlign::Near, EVAlign::Middle),
+               "Delete", deleteText);
+  }
 }
 
 void T3kPresetOverlay::OnMouseDown(float x, float y, const IMouseMod& mod)
 {
   namespace th = ::t3k::theme;
 
-  // Right-click on a preset row → fire onRowContextMenu so the parent
-  // (ToneRoot) can open a Rename / Delete popup menu. We do this
+  if (mContextOpen) {
+    if (contextRenameRect().Contains(x, y)) {
+      mContextOpen = false;
+      if (onRenamePreset) onRenamePreset(mContextId, mContextName);
+      SetDirty(false);
+      return;
+    }
+    if (contextDeleteRect().Contains(x, y)) {
+      mContextOpen = false;
+      if (onDeletePreset) onDeletePreset(mContextId, mContextName);
+      SetDirty(false);
+      return;
+    }
+    mContextOpen = false;
+  }
+
+  // Right-click on a preset row → open the custom Rename / Delete menu.
+  // We do this
   // BEFORE the regular left-click row handling so a right-click
   // doesn't also select the row.
   if (mod.R) {
     const auto rows = filteredRows();
     for (size_t i = 0; i < rows.size(); ++i) {
-      if (listRowRect(static_cast<int>(i)).Contains(x, y)) {
-        if (onRowContextMenu) {
-          onRowContextMenu(rows[i]->id, rows[i]->name);
-        }
+      const IRECT rr = listRowRect(static_cast<int>(i));
+      if (rr.Contains(x, y)) {
+        mContextOpen = true;
+        mContextId = rows[i]->id;
+        mContextName = rows[i]->name;
+        mContextAnchor = rr;
         SetDirty(false);
         return;
       }
@@ -277,11 +329,22 @@ void T3kPresetOverlay::OnMouseDown(float x, float y, const IMouseMod& mod)
 
   // Action row buttons (check before list rows so a button click below the
   // list doesn't trigger a phantom row select).
-  if (saveBtnRect().Contains(x, y))   { if (onSave)     onSave();     SetDirty(false); return; }
   if (saveAsBtnRect().Contains(x, y)) { if (onSaveAs)   onSaveAs();   SetDirty(false); return; }
-  if (moreBtnRect().Contains(x, y))   { if (onMoreMenu) onMoreMenu(); SetDirty(false); return; }
 
-  // Preset list rows.
+  // Preset list rows. Single-click only selects visually; load requires
+  // double-click so accidental clicks do not replace the current chain.
+  const auto rows = filteredRows();
+  for (size_t i = 0; i < rows.size(); ++i) {
+    if (listRowRect(static_cast<int>(i)).Contains(x, y)) {
+      mDragPresetId = rows[i]->id;
+      SetDirty(false);
+      return;
+    }
+  }
+}
+
+void T3kPresetOverlay::OnMouseDblClick(float x, float y, const IMouseMod& /*mod*/)
+{
   const auto rows = filteredRows();
   for (size_t i = 0; i < rows.size(); ++i) {
     if (listRowRect(static_cast<int>(i)).Contains(x, y)) {
@@ -292,6 +355,50 @@ void T3kPresetOverlay::OnMouseDown(float x, float y, const IMouseMod& mod)
       return;
     }
   }
+}
+
+void T3kPresetOverlay::OnMouseDrag(float x, float y, float, float, const IMouseMod&)
+{
+  if (!mSearch.empty() || mDragPresetId <= 0 || mDragPresetId == 1) return;
+  const auto rows = filteredRows();
+  int target = -1;
+  for (size_t i = 0; i < rows.size(); ++i) {
+    if (listRowRect(static_cast<int>(i)).Contains(x, y)) {
+      target = static_cast<int>(i);
+      break;
+    }
+  }
+  if (target <= 0) return;
+  const int64_t targetId = rows[static_cast<size_t>(target)]->id;
+  auto fromIt = std::find_if(mPresets.begin(), mPresets.end(),
+                             [this](const PresetRow& r) { return r.id == mDragPresetId; });
+  if (fromIt == mPresets.end()) return;
+  const PresetRow moving = *fromIt;
+  auto toIt = std::find_if(mPresets.begin(), mPresets.end(),
+                           [targetId](const PresetRow& r) { return r.id == targetId; });
+  if (toIt == mPresets.end() || fromIt == toIt || toIt->id == 1) return;
+  mPresets.erase(fromIt);
+  toIt = std::find_if(mPresets.begin(), mPresets.end(),
+                      [targetId](const PresetRow& r) { return r.id == targetId; });
+  if (toIt == mPresets.end()) mPresets.push_back(moving);
+  else mPresets.insert(toIt, moving);
+  mDraggingPreset = true;
+  SetDirty(false);
+}
+
+void T3kPresetOverlay::OnMouseUp(float, float, const IMouseMod&)
+{
+  if (!mDraggingPreset) {
+    mDragPresetId = 0;
+    return;
+  }
+  mDraggingPreset = false;
+  mDragPresetId = 0;
+  std::vector<int64_t> ids;
+  ids.reserve(mPresets.size());
+  for (const auto& r : mPresets) ids.push_back(r.id);
+  if (onReorder) onReorder(ids);
+  SetDirty(false);
 }
 
 void T3kPresetOverlay::OnTextEntryCompletion(const char* str, int /*valIdx*/)

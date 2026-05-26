@@ -57,6 +57,7 @@ class T3kSettingsModal : public iplug::igraphics::IControl {
   // persists, and calls IGraphics::Resize. Same effect as the
   // Ctrl+Shift+0 global hotkey.
   void resetWindowSize();
+  void resetAllLocalData();
 
   iplug::igraphics::IRECT mCardRect;
   iplug::igraphics::IRECT mChangeRootBtnRect;
@@ -68,10 +69,12 @@ class T3kSettingsModal : public iplug::igraphics::IControl {
   // earlier Small/Medium/Large preset row; resizing is now done
   // freely via the bottom-right corner drag.)
   iplug::igraphics::IRECT mResetBtnRect;
+  iplug::igraphics::IRECT mResetAllBtnRect;
 
   OnClose mOnClose;
 
   T3kButton* mResetBtn      = nullptr;
+  T3kButton* mResetAllBtn   = nullptr;
   T3kButton* mChangeRootBtn = nullptr;
   T3kButton* mRescanBtn     = nullptr;
   T3kButton* mSignOutBtn    = nullptr;

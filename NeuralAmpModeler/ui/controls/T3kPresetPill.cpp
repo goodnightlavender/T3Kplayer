@@ -43,7 +43,7 @@ std::string ClampName(IGraphics& g, const IText& text, const std::string& name, 
 T3kPresetPill::T3kPresetPill(const IRECT& bounds,
                              std::function<void()> onToggleOverlay)
 : IControl(bounds)
-, mActiveName("Default Setting")
+, mActiveName("Default")
 , mOnToggleOverlay(std::move(onToggleOverlay))
 {
 }

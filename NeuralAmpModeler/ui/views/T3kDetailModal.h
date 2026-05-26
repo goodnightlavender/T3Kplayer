@@ -47,6 +47,7 @@ class T3kDetailModal : public iplug::igraphics::IControl {
   struct PickableItem {
     std::string label;
     std::function<void()> onPick;
+    std::function<void(const std::string&)> onRename;
   };
 
   struct DetailData {
@@ -62,6 +63,8 @@ class T3kDetailModal : public iplug::igraphics::IControl {
     std::string imagePath;           // local FS path; preferred
     std::string imageUrl;            // remote URL (cloud); resolved via
                                      // cloud::ThumbnailCache when set.
+    std::function<void(const std::string&)> onEditDescription;
+    std::function<void(const std::string&)> onEditTitle;
   };
 
   struct Action {
@@ -81,6 +84,7 @@ class T3kDetailModal : public iplug::igraphics::IControl {
   void OnResize() override;
   void OnAttached() override;
   void OnMouseDown(float x, float y, const iplug::igraphics::IMouseMod& mod) override;
+  void OnMouseDblClick(float x, float y, const iplug::igraphics::IMouseMod& mod) override;
   // 2026-05-25 — mouse-wheel scroll for the Versions list. Previously
   // the list was capped at 6 visible variants with a "+N more..."
   // hint and the rest were unreachable. Now the list scrolls.
@@ -94,6 +98,7 @@ class T3kDetailModal : public iplug::igraphics::IControl {
                    const iplug::igraphics::IMouseMod& mod) override;
   void OnMouseUp(float x, float y,
                  const iplug::igraphics::IMouseMod& mod) override;
+  void OnTextEntryCompletion(const char* str, int valIdx) override;
   void Hide(bool hide) override;
 
   // Remove flat-attached children (close button, action buttons) from
@@ -146,6 +151,9 @@ class T3kDetailModal : public iplug::igraphics::IControl {
   float                   mPickablesScrollOffset = 0.f;
   iplug::igraphics::IRECT mPickablesAreaRect;
   float                   mPickablesContentHeight = 0.f;
+  iplug::igraphics::IRECT mDescriptionEditRect;
+  iplug::igraphics::IRECT mTitleEditRect;
+  std::vector<iplug::igraphics::IRECT> mPickableLabelRects;
 
   // 2026-05-25 — scrollbar drag state. mScrollbarThumbRect is the
   // thumb's screen-space rect computed each Draw (used by mouse hit-
@@ -165,6 +173,10 @@ class T3kDetailModal : public iplug::igraphics::IControl {
   // scrolls down (increases offset), dragging down scrolls up. Mirrors
   // touch-scroll UX. Cleared on OnMouseUp.
   bool                    mContentDragging = false;
+
+  enum class EditTarget { None, Title, Description, Pickable };
+  EditTarget mEditTarget = EditTarget::None;
+  int mEditPickableIndex = -1;
 };
 
 }  // namespace t3k::ui

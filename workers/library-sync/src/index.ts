@@ -69,6 +69,79 @@ app.get('/v1/library', async c => {
 // creator, gear_type, platform, image_url, sync_version.
 // Returns 409 with {server_version} if client's sync_version is
 // behind — client should pull, merge, and retry.
+app.get('/v1/presets', async c => {
+  const user_id = c.get('user_id');
+  const result = await c.env.DB.prepare(
+    `SELECT preset_id, name, state_json, sort_order, sync_version, synced_at
+       FROM presets
+      WHERE user_id = ?1 AND deleted = 0
+      ORDER BY sort_order ASC, name COLLATE NOCASE`
+  ).bind(user_id).all();
+
+  return c.json({ presets: result.results ?? [] });
+});
+
+app.put('/v1/presets/:preset_id', async c => {
+  const user_id = c.get('user_id');
+  const preset_id = c.req.param('preset_id');
+  if (preset_id === '1') return c.json({ error: 'default preset is immutable' }, 400);
+
+  let body: Record<string, unknown> = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'missing preset body' }, 400);
+  }
+
+  const name = typeof body.name === 'string' ? body.name : '';
+  const state_json = typeof body.state_json === 'string' ? body.state_json : '';
+  if (!name || !state_json) return c.json({ error: 'name and state_json are required' }, 400);
+
+  const incomingVersion = Number(body.sync_version) || 1;
+  const current = await c.env.DB.prepare(
+    `SELECT sync_version FROM presets WHERE user_id = ?1 AND preset_id = ?2`
+  ).bind(user_id, preset_id).first<{ sync_version: number }>();
+
+  if (current && current.sync_version > incomingVersion) {
+    return c.json({ error: 'stale', server_version: current.sync_version }, 409);
+  }
+
+  const newVersion = (current?.sync_version ?? 0) + 1;
+  const now = Date.now();
+  await c.env.DB.prepare(
+    `INSERT INTO presets (
+        user_id, preset_id, name, state_json, sort_order,
+        sync_version, synced_at, deleted
+     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)
+     ON CONFLICT(user_id, preset_id) DO UPDATE SET
+        name         = excluded.name,
+        state_json   = excluded.state_json,
+        sort_order   = excluded.sort_order,
+        sync_version = excluded.sync_version,
+        synced_at    = excluded.synced_at,
+        deleted      = 0`
+  ).bind(user_id, preset_id, name, state_json, Number(body.sort_order) || 0,
+         newVersion, now).run();
+
+  return c.json({ ok: true, sync_version: newVersion, synced_at: now });
+});
+
+app.delete('/v1/presets/:preset_id', async c => {
+  const user_id = c.get('user_id');
+  const preset_id = c.req.param('preset_id');
+  if (preset_id === '1') return c.json({ ok: true });
+
+  await c.env.DB.prepare(
+    `UPDATE presets
+        SET deleted = 1,
+            synced_at = ?3,
+            sync_version = sync_version + 1
+      WHERE user_id = ?1 AND preset_id = ?2`
+  ).bind(user_id, preset_id, Date.now()).run();
+
+  return c.json({ ok: true });
+});
+
 app.put('/v1/library/entry/:tone_id/:model_id', async c => {
   const user_id  = c.get('user_id');
   const tone_id  = c.req.param('tone_id');

@@ -37,10 +37,10 @@ jobs:
       - name: Verify the bundle exists
         shell: pwsh
         run: |
-          $bundle = Get-ChildItem -Recurse -Filter "TONE3000Player.vst3" -Directory `
+          $bundle = Get-ChildItem -Recurse -Filter "T3KPlayer.vst3" -Directory `
             | Select-Object -First 1
           if (-not $bundle) {
-            Write-Error "TONE3000Player.vst3 bundle not produced"
+            Write-Error "T3KPlayer.vst3 bundle not produced"
             exit 1
           }
           Write-Host "Built bundle at: $($bundle.FullName)"
@@ -49,7 +49,7 @@ jobs:
       - name: Upload VST3 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TONE3000Player-vst3-windows-x64
-          path: NeuralAmpModeler/build-win/TONE3000Player.vst3/**
+          name: T3KPlayer-vst3-windows-x64
+          path: NeuralAmpModeler/build-win/T3KPlayer.vst3/**
           if-no-files-found: error
           retention-days: 30

@@ -78,7 +78,7 @@ public:
   // double-click / LOAD INTO CHAIN on a card brings the model back
   // here. Empty/null = no-op (the old hardcoded sample-pedal seed was
   // retired on 2026-05-25).
-  void setOnAddSlotRequested(std::function<void()> cb) { mOnAddRequested = std::move(cb); }
+  void setOnAddSlotRequested(std::function<void(int)> cb) { mOnAddRequested = std::move(cb); }
 
   // ── Preset snapshot / apply (Phase 3) ───────────────────────────────
   // Snapshot the current chain + knob values into a PresetState ready
@@ -119,6 +119,11 @@ private:
       int        dspSlot = -1; // 0..kNumChainSlots-1 once staged, -1 otherwise.
       bool       bypassed = false;  // 2026-05-26 — UI shadow of ExtraSlot::bypassed
       double     dryWet   = 1.0;    // 2026-05-26 — UI shadow of ExtraSlot::dryWet
+      float      inputDb  = 0.f;
+      float      bass     = 5.f;
+      float      mid      = 5.f;
+      float      treble   = 5.f;
+      float      outputDb = 0.f;
       ModelInfoSnapshot info;
     };
     std::vector<LoadedSlot> loaded;
@@ -131,6 +136,7 @@ private:
   // 2026-05-26 — double-click on a loaded tile flips both the UI shadow
   // (mChain.loaded[].bypassed) AND the live ExtraSlot.bypassed.
   void onSlotBypassToggle(int slotIndex);
+  void onSlotDelete(int slotIndex);
 
   // Phase 10 — push the current chain into the DSP. Walks mChain.loaded
   // sorted by visual slotIndex, assigning DSP slots 0..kNumChainSlots-1.
@@ -138,6 +144,8 @@ private:
   // chain — they remain visible in the strip but are silent. Called
   // from loadModelIntoSlot and after a drag-reorder commit.
   void syncDspChain();
+  bool isCabinetDisabledByFullRig() const;
+  void removeLoadedAtSlot(int slotIndex);
 
   // Drag-to-reorder: only pedal (slotIndex 0..2) and outboard (5..7)
   // tiles fire these. Within those categories the user can drag a tile
@@ -193,7 +201,7 @@ private:
   // Optional z-order-promotion notifier (see setOnStripRebuilt).
   std::function<void()> mOnStripRebuilt;
   // "+ tile" pressed — switches tabs to Library so the user can pick.
-  std::function<void()> mOnAddRequested;
+  std::function<void(int)> mOnAddRequested;
 };
 
 }  // namespace t3k::ui

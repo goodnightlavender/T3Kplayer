@@ -1,0 +1,79 @@
+name: Release T3K Player
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, for example 0.1.0
+        required: true
+        default: 0.1.0
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-vst3:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Download VST3 SDK
+        shell: bash
+        run: |
+          cd iPlug2/Dependencies/IPlug
+          bash download-vst3-sdk.sh
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build VST3
+        shell: cmd
+        run: |
+          msbuild NeuralAmpModeler\NeuralAmpModeler.sln ^
+            /p:Configuration=Release ^
+            /p:Platform=x64 ^
+            /t:NeuralAmpModeler-vst3 ^
+            /m /nologo /verbosity:minimal
+
+      - name: Package VST3
+        shell: pwsh
+        run: |
+          $bundle = "NeuralAmpModeler/build-win/T3KPlayer.vst3"
+          if (-not (Test-Path $bundle)) {
+            Write-Error "Missing $bundle"
+            exit 1
+          }
+          Compress-Archive -Path $bundle -DestinationPath T3KPlayer-vst3-windows-x64.zip -Force
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" NeuralAmpModeler\installer\NeuralAmpModeler.iss
+          $installer = Get-ChildItem NeuralAmpModeler\build-win\installer -Filter "*.exe" | Select-Object -First 1
+          if (-not $installer) {
+            Write-Error "Installer was not produced"
+            exit 1
+          }
+          Copy-Item $installer.FullName .\T3KPlayer-Setup.exe -Force
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref_name }}
+          name: T3K Player ${{ github.event.inputs.version || github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |
+            T3KPlayer-vst3-windows-x64.zip
+            T3KPlayer-Setup.exe

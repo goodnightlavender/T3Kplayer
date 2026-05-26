@@ -61,6 +61,11 @@ std::string SerializeState(const PresetState& s)
     o["model_id"] = slot.modelId.empty() ? json(nullptr) : json(slot.modelId);
     o["dry_wet"]  = slot.dryWet;
     o["bypassed"] = slot.bypassed;
+    o["input_db"]  = slot.input_db;
+    o["bass"]      = slot.bass;
+    o["mid"]       = slot.mid;
+    o["treble"]    = slot.treble;
+    o["output_db"] = slot.output_db;
     slots.push_back(std::move(o));
   }
   j["chain"]["slots"] = std::move(slots);
@@ -106,6 +111,11 @@ std::optional<PresetState> DeserializeState(const std::string& blob)
         } else {
           e.bypassed = false;
         }
+        if (o.contains("input_db")  && o["input_db"].is_number())  e.input_db  = o["input_db"].get<float>();
+        if (o.contains("bass")      && o["bass"].is_number())      e.bass      = o["bass"].get<float>();
+        if (o.contains("mid")       && o["mid"].is_number())       e.mid       = o["mid"].get<float>();
+        if (o.contains("treble")    && o["treble"].is_number())    e.treble    = o["treble"].get<float>();
+        if (o.contains("output_db") && o["output_db"].is_number()) e.output_db = o["output_db"].get<float>();
         s.slots.push_back(std::move(e));
       }
     }
@@ -147,9 +157,10 @@ void PresetStore::ensureDefaults()
   if (!db) return;
   std::lock_guard<std::mutex> lk(LibraryDb::instance().writeMutex());
 
-  // Default Setting row. We don't ON CONFLICT here — we want to leave
-  // the user's existing "Default Setting" alone if they renamed it
-  // (we still need an active row regardless).
+  sqlite3_exec(db, "ALTER TABLE presets ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+               nullptr, nullptr, nullptr);
+
+  const std::string defaultBlob = SerializeState(PresetState{});
   sqlite3_stmt* exists = nullptr;
   bool defaultPresent = false;
   if (sqlite3_prepare_v2(db,
@@ -161,16 +172,24 @@ void PresetStore::ensureDefaults()
   if (!defaultPresent) {
     sqlite3_stmt* ins = nullptr;
     if (sqlite3_prepare_v2(db,
-                           "INSERT INTO presets(id, name, state_json, created_at, updated_at) "
-                           "VALUES (1, 'Default Setting', ?1, ?2, ?2)",
+                           "INSERT INTO presets(id, name, state_json, created_at, updated_at, sort_order) "
+                           "VALUES (1, 'Default', ?1, ?2, ?2, 0)",
                            -1, &ins, nullptr) == SQLITE_OK) {
-      const std::string blob = SerializeState(PresetState{});
       const int64_t now = NowMs();
-      BindText(ins, 1, blob);
+      BindText(ins, 1, defaultBlob);
       sqlite3_bind_int64(ins, 2, now);
       sqlite3_step(ins);
       sqlite3_finalize(ins);
     }
+  }
+  sqlite3_stmt* fix = nullptr;
+  if (sqlite3_prepare_v2(db,
+                         "UPDATE presets SET name='Default', state_json=?1, sort_order=0 "
+                         "WHERE id=1",
+                         -1, &fix, nullptr) == SQLITE_OK) {
+    BindText(fix, 1, defaultBlob);
+    sqlite3_step(fix);
+    sqlite3_finalize(fix);
   }
 
   // active_preset_id default → 1 (the Default Setting row).
@@ -204,7 +223,8 @@ std::vector<PresetStore::PresetRow> PresetStore::list()
 
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(db,
-                         "SELECT id, name FROM presets ORDER BY name COLLATE NOCASE",
+                         "SELECT id, name, sort_order FROM presets "
+                         "ORDER BY CASE WHEN id=1 THEN 0 ELSE 1 END, sort_order ASC, name COLLATE NOCASE",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     if (stmt) sqlite3_finalize(stmt);
     return out;
@@ -213,6 +233,7 @@ std::vector<PresetStore::PresetRow> PresetStore::list()
     PresetRow r;
     r.id     = sqlite3_column_int64(stmt, 0);
     r.name   = ColumnText(stmt, 1);
+    r.sort_order = sqlite3_column_int(stmt, 2);
     r.active = (r.id == active);
     out.push_back(std::move(r));
   }
@@ -246,6 +267,7 @@ int64_t PresetStore::saveCurrent(const PresetState& state)
 {
   const int64_t id = activeId();
   if (id <= 0) return 0;
+  if (id == 1) return 0;
 
   sqlite3* db = LibraryDb::instance().raw();
   if (!db) return 0;
@@ -271,6 +293,7 @@ int64_t PresetStore::saveCurrent(const PresetState& state)
 int64_t PresetStore::saveAs(const std::string& name, const PresetState& state)
 {
   if (name.empty()) return 0;
+  if (name == "Default" || name == "Default Setting") return 0;
 
   sqlite3* db = LibraryDb::instance().raw();
   if (!db) return 0;
@@ -317,6 +340,7 @@ int64_t PresetStore::saveAs(const std::string& name, const PresetState& state)
 void PresetStore::rename(int64_t presetId, const std::string& newName)
 {
   if (presetId <= 0 || newName.empty()) return;
+  if (presetId == 1 || newName == "Default" || newName == "Default Setting") return;
   sqlite3* db = LibraryDb::instance().raw();
   if (!db) return;
   std::lock_guard<std::mutex> lk(LibraryDb::instance().writeMutex());
@@ -339,6 +363,7 @@ void PresetStore::rename(int64_t presetId, const std::string& newName)
 void PresetStore::remove(int64_t presetId)
 {
   if (presetId <= 0) return;
+  if (presetId == 1) return;
   sqlite3* db = LibraryDb::instance().raw();
   if (!db) return;
   std::lock_guard<std::mutex> lk(LibraryDb::instance().writeMutex());
@@ -351,6 +376,36 @@ void PresetStore::remove(int64_t presetId)
   }
   sqlite3_bind_int64(stmt, 1, presetId);
   sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+}
+
+void PresetStore::reorder(const std::vector<int64_t>& orderedIds)
+{
+  sqlite3* db = LibraryDb::instance().raw();
+  if (!db) return;
+  std::lock_guard<std::mutex> lk(LibraryDb::instance().writeMutex());
+
+  sqlite3_exec(db, "ALTER TABLE presets ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+               nullptr, nullptr, nullptr);
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db,
+                         "UPDATE presets SET sort_order=?1, updated_at=?2 "
+                         "WHERE id=?3 AND id<>1",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    if (stmt) sqlite3_finalize(stmt);
+    return;
+  }
+  const int64_t now = NowMs();
+  int order = 1;
+  for (int64_t id : orderedIds) {
+    if (id == 1) continue;
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+    sqlite3_bind_int(stmt, 1, order++);
+    sqlite3_bind_int64(stmt, 2, now);
+    sqlite3_bind_int64(stmt, 3, id);
+    sqlite3_step(stmt);
+  }
   sqlite3_finalize(stmt);
 }
 

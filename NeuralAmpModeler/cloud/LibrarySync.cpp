@@ -18,8 +18,10 @@
 #include "sqlite3.h"
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <sstream>
+#include <string>
 #include <unordered_set>
 
 namespace t3k::cloud::sync {
@@ -37,6 +39,21 @@ std::string s(const json& j, const char* key)
   if (it == j.end() || it->is_null()) return {};
   if (it->is_string()) return it->get<std::string>();
   return it->dump();
+}
+
+std::string ColumnText(sqlite3_stmt* stmt, int col)
+{
+  const unsigned char* p = sqlite3_column_text(stmt, col);
+  const int n = sqlite3_column_bytes(stmt, col);
+  if (!p || n <= 0) return {};
+  return std::string(reinterpret_cast<const char*>(p), static_cast<size_t>(n));
+}
+
+int64_t NowMs()
+{
+  using clock = std::chrono::system_clock;
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             clock::now().time_since_epoch()).count();
 }
 
 }  // namespace
@@ -61,6 +78,8 @@ std::string LibrarySync::entryJson(const ::t3k::library::ModelRow& row) const
   if (row.display_name_override.has_value()) {
     j["display_name_override"] = *row.display_name_override;
   }
+  if (!row.t3k_description.empty()) j["description"] = row.t3k_description;
+  if (!row.model_name.empty())      j["model_name"]  = row.model_name;
   if (!row.t3k_creator.empty()) j["creator"]   = row.t3k_creator;
   if (!row.gear_type.empty())   j["gear_type"] = row.gear_type;
   // platform isn't stored on ModelRow; deferred. Worker tolerates
@@ -92,6 +111,7 @@ void LibrarySync::start()
             case K::SignedIn:
               this->mRunning.store(true, std::memory_order_release);
               this->pullLibrary();
+              this->pullPresets();
               break;
             case K::SignedOut:
             case K::SessionExpired:
@@ -133,6 +153,7 @@ void LibrarySync::start()
   if (::t3k::cloud::Session::instance().state()
       == ::t3k::cloud::Session::State::SignedIn) {
     this->pullLibrary();
+    this->pullPresets();
   }
 }
 
@@ -179,6 +200,120 @@ void LibrarySync::pushEntry(const ::t3k::library::ModelRow& row)
         // acceptable for first cut — the row is still on local disk
         // and LibraryDb; the user just doesn't get cross-device sync
         // for this write. Phase 9 polish can add a status toast.
+      });
+}
+
+void LibrarySync::pushPreset(int64_t presetId)
+{
+  if (!isConfigured() || presetId <= 1) return;
+  if (!mRunning.load(std::memory_order_acquire)) return;
+  auto token = ::t3k::cloud::Session::instance().accessTokenIfValid();
+  if (!token.has_value()) return;
+
+  sqlite3* db = ::t3k::library::LibraryDb::instance().raw();
+  if (!db) return;
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db,
+                         "SELECT id, name, state_json, sort_order FROM presets WHERE id=?1",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    if (stmt) sqlite3_finalize(stmt);
+    return;
+  }
+  sqlite3_bind_int64(stmt, 1, presetId);
+  if (sqlite3_step(stmt) != SQLITE_ROW) {
+    sqlite3_finalize(stmt);
+    return;
+  }
+
+  json j;
+  const auto id = sqlite3_column_int64(stmt, 0);
+  j["name"] = ColumnText(stmt, 1);
+  j["state_json"] = ColumnText(stmt, 2);
+  j["sort_order"] = sqlite3_column_int(stmt, 3);
+  j["sync_version"] = 0;
+  sqlite3_finalize(stmt);
+
+  ::t3k::net::HttpRequest req;
+  req.method = ::t3k::net::HttpMethod::Put;
+  req.url = std::string(kLibrarySyncUrl) + "/v1/presets/" + std::to_string(id);
+  req.headers["Authorization"] = "Bearer " + *token;
+  req.headers["Content-Type"] = "application/json";
+  req.headers["Accept"] = "application/json";
+  req.headers["User-Agent"] = "T3KPlayer/0.1";
+  const std::string body = j.dump();
+  req.body.assign(body.begin(), body.end());
+  req.timeout_ms = 15'000;
+  ::t3k::net::HttpClient::instance().send(std::move(req), [](const auto&) {});
+}
+
+void LibrarySync::deletePreset(int64_t presetId)
+{
+  if (!isConfigured() || presetId <= 1) return;
+  if (!mRunning.load(std::memory_order_acquire)) return;
+  auto token = ::t3k::cloud::Session::instance().accessTokenIfValid();
+  if (!token.has_value()) return;
+
+  ::t3k::net::HttpRequest req;
+  req.method = ::t3k::net::HttpMethod::Delete;
+  req.url = std::string(kLibrarySyncUrl) + "/v1/presets/" + std::to_string(presetId);
+  req.headers["Authorization"] = "Bearer " + *token;
+  req.headers["Accept"] = "application/json";
+  req.headers["User-Agent"] = "T3KPlayer/0.1";
+  req.timeout_ms = 15'000;
+  ::t3k::net::HttpClient::instance().send(std::move(req), [](const auto&) {});
+}
+
+void LibrarySync::pullPresets()
+{
+  if (!isConfigured()) return;
+  auto token = ::t3k::cloud::Session::instance().accessTokenIfValid();
+  if (!token.has_value()) return;
+
+  ::t3k::net::HttpRequest req;
+  req.method = ::t3k::net::HttpMethod::Get;
+  req.url = std::string(kLibrarySyncUrl) + "/v1/presets";
+  req.headers["Authorization"] = "Bearer " + *token;
+  req.headers["Accept"] = "application/json";
+  req.headers["User-Agent"] = "T3KPlayer/0.1";
+  req.timeout_ms = 30'000;
+
+  ::t3k::net::HttpClient::instance().send(std::move(req),
+      [](const ::t3k::net::HttpResponse& res) {
+        if (res.status_code < 200 || res.status_code >= 300 || res.body.empty()) return;
+        try {
+          const auto j = json::parse(std::string(res.body.begin(), res.body.end()));
+          const auto it = j.find("presets");
+          if (it == j.end() || !it->is_array()) return;
+          sqlite3* db = ::t3k::library::LibraryDb::instance().raw();
+          if (!db) return;
+          std::lock_guard<std::mutex> lk(::t3k::library::LibraryDb::instance().writeMutex());
+          for (const auto& p : *it) {
+            const int64_t id = std::stoll(s(p, "preset_id"));
+            if (id <= 1) continue;
+            sqlite3_stmt* stmt = nullptr;
+            if (sqlite3_prepare_v2(db,
+                "INSERT INTO presets(id, name, state_json, created_at, updated_at, sort_order) "
+                "VALUES(?1, ?2, ?3, ?4, ?4, ?5) "
+                "ON CONFLICT(id) DO UPDATE SET name=excluded.name, "
+                "state_json=excluded.state_json, updated_at=excluded.updated_at, "
+                "sort_order=excluded.sort_order",
+                -1, &stmt, nullptr) != SQLITE_OK) {
+              if (stmt) sqlite3_finalize(stmt);
+              continue;
+            }
+            const auto now = NowMs();
+            const std::string name = s(p, "name");
+            const std::string state = s(p, "state_json");
+            sqlite3_bind_int64(stmt, 1, id);
+            sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 3, state.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int64(stmt, 4, now);
+            sqlite3_bind_int(stmt, 5, p.value("sort_order", 0));
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+          }
+        } catch (...) {
+        }
       });
 }
 
@@ -258,7 +393,16 @@ void LibrarySync::pullLibrary(PullCompletion onDone)
                 existing.has_value()
                 && !existing->uri.empty()
                 && existing->uri.rfind("sync://", 0) != 0) {
-              // Already on disk — nothing for the pull to do.
+              if (auto ov = e.find("display_name_override");
+                  ov != e.end() && ov->is_string()) {
+                ::t3k::library::LibraryDb::instance()
+                    .setDisplayNameOverride(existing->id, ov->get<std::string>());
+              }
+              const std::string desc = s(e, "description");
+              if (!desc.empty()) {
+                ::t3k::library::LibraryDb::instance()
+                    .setDescription(existing->id, desc);
+              }
               continue;
             }
 
@@ -277,7 +421,9 @@ void LibrarySync::pullLibrary(PullCompletion onDone)
             meta.display_name    = s(e, "tone_title");
             if (meta.display_name.empty()) meta.display_name = model_id;
             meta.t3k_creator     = s(e, "creator");
+            meta.t3k_description = s(e, "description");
             meta.gear_type       = s(e, "gear_type");
+            meta.model_name      = s(e, "model_name");
             meta.t3k_image_url   = s(e, "image_url");
             meta.kind            = "nam";  // best guess; corrected on
                                            // real download.

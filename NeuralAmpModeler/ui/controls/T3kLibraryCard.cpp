@@ -3,6 +3,7 @@
 #include "T3kLibraryCard.h"
 
 #include <algorithm>
+#include <vector>
 
 #include "IGraphics.h"
 
@@ -18,7 +19,7 @@ namespace {
 
 constexpr float kCardPad     = 12.f;
 constexpr float kHeroH       = 96.f;
-constexpr float kNameH       = 18.f;
+constexpr float kNameH       = 34.f;
 constexpr float kMetaH       = 14.f;
 
 // Map gear_type -> resource filename. Falls back to the pedal icon.
@@ -41,6 +42,7 @@ T3kLibraryCard::T3kLibraryCard(const IRECT& bounds,
 , mData(std::move(data))
 , mOnClick(std::move(onClick))
 , mOnRightClick(std::move(onRightClick))
+, mLogicalRect(bounds)
 {
   RecomputeRects();
 }
@@ -72,12 +74,22 @@ void T3kLibraryCard::setSelected(bool s)
 
 void T3kLibraryCard::OnResize()
 {
+  // LibraryView supplies a clipped mRECT for scroll scissoring and a separate
+  // logical rect for stable content layout.
+}
+
+void T3kLibraryCard::setLogicalRect(const IRECT& r)
+{
+  if (r.L == mLogicalRect.L && r.T == mLogicalRect.T
+      && r.R == mLogicalRect.R && r.B == mLogicalRect.B) return;
+  mLogicalRect = r;
   RecomputeRects();
+  SetDirty(false);
 }
 
 void T3kLibraryCard::RecomputeRects()
 {
-  const IRECT r = mRECT.GetPadded(-kCardPad);
+  const IRECT r = mLogicalRect.GetPadded(-kCardPad);
   // Hero is a square pinned to the top of the inner content rect. Width
   // drives height so the hero stays a perfect square regardless of
   // surrounding panel height (which is taller now to make room for the
@@ -103,6 +115,11 @@ void T3kLibraryCard::OnMouseDblClick(float /*x*/, float /*y*/,
                                      const IMouseMod& /*mod*/)
 {
   if (mOnDblClick) mOnDblClick(mData.id);
+}
+
+void T3kLibraryCard::OnMouseDrag(float, float, float, float dY, const IMouseMod&)
+{
+  if (mOnDrag) mOnDrag(dY);
 }
 
 void T3kLibraryCard::OnMouseOver(float /*x*/, float /*y*/, const IMouseMod& /*mod*/)
@@ -135,9 +152,9 @@ void T3kLibraryCard::Draw(IGraphics& g)
   // accent ring; hovered ones get a slightly elevated fill (matches
   // T3kCard's hover cue).
   const IColor& fill = mHovered ? th::kBgElevated : th::kBgSurface;
-  g.FillRoundRect(fill, mRECT, th::kRadiusMd);
+  g.FillRoundRect(fill, mLogicalRect, th::kRadiusMd);
   const IColor& outline = mSelected ? th::kBorderActive : th::kBorder;
-  g.DrawRoundRect(outline, mRECT, th::kRadiusMd, nullptr, mSelected ? 2.f : 1.f);
+  g.DrawRoundRect(outline, mLogicalRect, th::kRadiusMd, nullptr, mSelected ? 2.f : 1.f);
 
   // Hero — try the cached image first, fall back to the gear icon SVG.
   g.FillRoundRect(th::kBgBase, mHeroRect, th::kRadiusSm);
@@ -204,13 +221,45 @@ void T3kLibraryCard::Draw(IGraphics& g)
   auto truncate = [](const std::string& src, float widthPx, float pxPerChar) {
     const int maxChars = std::max(1, static_cast<int>(widthPx / pxPerChar));
     if (static_cast<int>(src.size()) <= maxChars) return src;
-    return src.substr(0, static_cast<size_t>(maxChars)) +
-           "\xE2\x80\xA6";  // U+2026 horizontal ellipsis
+    if (maxChars <= 3) return std::string(static_cast<size_t>(maxChars), '.');
+    return src.substr(0, static_cast<size_t>(maxChars - 3)) + "...";
   };
-  const std::string nameOut = truncate(mData.displayName, mNameRect.W(), 7.f);
-  g.DrawText(IText(13.f, th::kText, th::kFontBodyMed,
-                   EAlign::Near, EVAlign::Middle),
-             nameOut.c_str(), mNameRect);
+  auto wrapTwo = [&truncate](const std::string& src, float widthPx) {
+    const int maxChars = std::max(4, static_cast<int>(widthPx / 7.f));
+    std::vector<std::string> lines;
+    std::string line;
+    size_t i = 0;
+    while (i < src.size() && lines.size() < 2) {
+      const size_t sp = src.find(' ', i);
+      const size_t end = (sp == std::string::npos) ? src.size() : sp;
+      const std::string word = src.substr(i, end - i);
+      if (line.empty()) {
+        line = word;
+      } else if (static_cast<int>(line.size() + 1 + word.size()) <= maxChars) {
+        line += " ";
+        line += word;
+      } else {
+        lines.push_back(line);
+        line = word;
+      }
+      i = (sp == std::string::npos) ? src.size() : sp + 1;
+    }
+    if (!line.empty() && lines.size() < 2) lines.push_back(line);
+    if (lines.empty()) lines.push_back("");
+    if (i < src.size() && !lines.empty()) {
+      lines.back() = truncate(lines.back(), widthPx, 7.f);
+    }
+    for (auto& ln : lines) ln = truncate(ln, widthPx, 7.f);
+    return lines;
+  };
+  const auto nameLines = wrapTwo(mData.displayName, mNameRect.W());
+  for (size_t i = 0; i < nameLines.size(); ++i) {
+    const IRECT lineR(mNameRect.L, mNameRect.T + static_cast<float>(i) * 16.f,
+                      mNameRect.R, mNameRect.T + static_cast<float>(i + 1) * 16.f);
+    g.DrawText(IText(13.f, th::kText, th::kFontBodyMed,
+                     EAlign::Near, EVAlign::Top),
+               nameLines[i].c_str(), lineR);
+  }
 
   // Meta: creator . format.
   std::string meta;

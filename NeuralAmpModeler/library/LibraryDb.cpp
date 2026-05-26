@@ -303,6 +303,24 @@ void LibraryDb::setDisplayNameOverride(int64_t id, std::optional<std::string> na
   sqlite3_finalize(stmt);
 }
 
+void LibraryDb::setDescription(int64_t id, const std::string& description)
+{
+  if (!mDb || id <= 0) return;
+  std::lock_guard<std::mutex> lk(mWriteMtx);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "UPDATE models SET t3k_description=?1, "
+      "sync_version=sync_version+1 WHERE id=?2";
+  if (sqlite3_prepare_v2(mDb, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    if (stmt) sqlite3_finalize(stmt);
+    return;
+  }
+  BindText(stmt, 1, description);
+  sqlite3_bind_int64(stmt, 2, id);
+  sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+}
+
 bool LibraryDb::removeRow(int64_t id)
 {
   if (!mDb || id <= 0) return false;

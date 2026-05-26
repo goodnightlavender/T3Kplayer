@@ -275,6 +275,7 @@ private:
   std::vector<UndoEntry> mUndoStack;
   std::vector<UndoEntry> mRedoStack;
   bool                   mUndoApplyInProgress = false;
+  int                    mPendingTonePickerSlot = -1;
 
   // Snapshot current state and push the partial entry. The matching
   // commitUndo writes the "after" half once the mutation lands. If

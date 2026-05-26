@@ -4,6 +4,8 @@
 
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <mutex>
 
 #include "IGraphics.h"
 #include "wdlstring.h"
@@ -12,8 +14,12 @@
 #include "../controls/T3kButton.h"
 #include "../../cloud/Session.h"
 #include "../../library/LibraryScanner.h"
+#include "../../library/LibraryDb.h"
+#include "../../library/PresetStore.h"
+#include "../../library/Paths.h"
 #include "../../settings/Settings.h"
 #include "../../config.h"  // PLUG_NAME, PLUG_VERSION_STR, PLUG_COPYRIGHT_STR
+#include "sqlite3.h"
 
 namespace t3k::ui {
 
@@ -77,6 +83,7 @@ void T3kSettingsModal::OnResize()
   rowTop += kRowH;
   const float btnY3 = rowTop + (kRowH - kBtnH) * 0.5f;
   mSignOutBtnRect = IRECT(rowL, btnY3, rowL + 180.f, btnY3 + kBtnH);
+  mResetAllBtnRect = IRECT(rowL + 190.f, btnY3, rowL + 350.f, btnY3 + kBtnH);
 
   // CLOSE — bottom-right of the card.
   const float closeBtnW = 120.f;
@@ -86,6 +93,7 @@ void T3kSettingsModal::OnResize()
 
   if (mChangeRootBtn) mChangeRootBtn->SetTargetAndDrawRECTs(mChangeRootBtnRect);
   if (mResetBtn)      mResetBtn     ->SetTargetAndDrawRECTs(mResetBtnRect);
+  if (mResetAllBtn)   mResetAllBtn  ->SetTargetAndDrawRECTs(mResetAllBtnRect);
   if (mSignOutBtn)    mSignOutBtn   ->SetTargetAndDrawRECTs(mSignOutBtnRect);
   if (mCloseBtn)      mCloseBtn     ->SetTargetAndDrawRECTs(mCloseBtnRect);
 }
@@ -119,6 +127,12 @@ void T3kSettingsModal::OnAttached()
       T3kButton::Variant::Secondary);
   g->AttachControl(mSignOutBtn);
 
+  mResetAllBtn = new T3kButton(
+      mResetAllBtnRect, "RESET ALL",
+      [this]() { this->resetAllLocalData(); },
+      T3kButton::Variant::Secondary);
+  g->AttachControl(mResetAllBtn);
+
   // 2026-05-26 polish-pass — CLOSE was Primary (kAccent fill + white
   // text). Since the accent is #FFFF00, white-on-yellow was unreadable.
   // Match the PICK / DOWNLOAD CTA treatment: Invert (white fill +
@@ -134,6 +148,7 @@ void T3kSettingsModal::OnAttached()
   mChangeRootBtn->Hide(startHidden);
   mResetBtn     ->Hide(startHidden);
   mSignOutBtn   ->Hide(startHidden);
+  mResetAllBtn  ->Hide(startHidden);
   mCloseBtn     ->Hide(startHidden);
 }
 
@@ -154,6 +169,7 @@ void T3kSettingsModal::detachAllChildren()
   if (mChangeRootBtn) { g->RemoveControl(mChangeRootBtn); mChangeRootBtn = nullptr; }
   if (mRescanBtn)     { g->RemoveControl(mRescanBtn);     mRescanBtn     = nullptr; }
   if (mResetBtn)      { g->RemoveControl(mResetBtn);      mResetBtn      = nullptr; }
+  if (mResetAllBtn)   { g->RemoveControl(mResetAllBtn);   mResetAllBtn   = nullptr; }
   if (mSignOutBtn)    { g->RemoveControl(mSignOutBtn);    mSignOutBtn    = nullptr; }
   if (mCloseBtn)      { g->RemoveControl(mCloseBtn);      mCloseBtn      = nullptr; }
 }
@@ -164,6 +180,7 @@ void T3kSettingsModal::Hide(bool hide)
   if (mChangeRootBtn) mChangeRootBtn->Hide(hide);
   if (mRescanBtn)     mRescanBtn    ->Hide(hide);
   if (mResetBtn)      mResetBtn     ->Hide(hide);
+  if (mResetAllBtn)   mResetAllBtn  ->Hide(hide);
   if (mSignOutBtn)    mSignOutBtn   ->Hide(hide);
   if (mCloseBtn)      mCloseBtn     ->Hide(hide);
   if (!hide) refresh();
@@ -253,7 +270,7 @@ void T3kSettingsModal::Draw(IGraphics& g)
   // "REFRESH LIBRARY" + "LIBRARY SYNC WORKER" rows were dropped in
   // polish round 3.
   {
-    const IRECT labelR(mSignOutBtnRect.R + th::kS3,
+    const IRECT labelR(mResetAllBtnRect.R + th::kS3,
                        rowTop + (kRowH - 32.f) * 0.5f,
                        rowR,
                        rowTop + (kRowH - 32.f) * 0.5f + 16.f);
@@ -329,6 +346,32 @@ void T3kSettingsModal::resetWindowSize()
     g->Resize(PLUG_WIDTH, PLUG_HEIGHT, kDefaultScale,
               /*needsPlatformResize*/ true);
   }
+  refresh();
+}
+
+void T3kSettingsModal::resetAllLocalData()
+{
+  namespace fs = std::filesystem;
+  const std::string toneRoot = ::t3k::settings::instance().tone3000_root;
+
+  ::t3k::cloud::Session::instance().signOut();
+
+  sqlite3* db = ::t3k::library::LibraryDb::instance().raw();
+  if (db) {
+    std::lock_guard<std::mutex> lk(::t3k::library::LibraryDb::instance().writeMutex());
+    sqlite3_exec(db, "DELETE FROM models; DELETE FROM presets; DELETE FROM meta_kv;", nullptr, nullptr, nullptr);
+  }
+  ::t3k::library::PresetStore::instance().ensureDefaults();
+
+  std::error_code ec;
+  if (!toneRoot.empty()) fs::remove_all(fs::u8path(toneRoot), ec);
+  fs::remove(fs::u8path(::t3k::library::Paths::settingsPath()), ec);
+  fs::remove_all(fs::u8path(::t3k::library::Paths::thumbnailCacheDir()), ec);
+  ::t3k::library::Paths::ensureAppDataLayout();
+
+  ::t3k::settings::instance().tone3000_root.clear();
+  ::t3k::settings::instance().window_scale = 1.35f;
+  ::t3k::settings::save();
   refresh();
 }
 

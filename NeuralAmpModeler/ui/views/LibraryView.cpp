@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <optional>
 #include <unordered_set>
 
 #include "IGraphics.h"
@@ -66,12 +67,15 @@ constexpr float kGridPad        = 16.f;
 // = 184, leaving 12 px of breathing room). Math: mGridRect.H ≈ 452,
 // minus 2 × kGridPad(16) = 420 usable, fits 2 × 196 + 12 gap = 404.
 constexpr float kCardW          = 144.f;
+constexpr float kPickerCardW    = 144.f;
 constexpr float kCardH          = 196.f;
-constexpr float kCardGap        = 12.f;
+constexpr float kPickerCardH    = 196.f;
+constexpr float kCardGap        = 8.f;
 // 2026-05-25 — five columns. Cards narrowed (kCardW 168 -> 144) so
 // the 5*144 + 4*12 + 2*16 + 220-sidebar = 1004 fits inside the 1024
 // design canvas with a few px to spare.
 constexpr int   kCols           = 5;
+constexpr int   kPickerCols     = 6;
 
 enum PopupCmd {
   kCmdNone           = 0,
@@ -106,6 +110,7 @@ const char* GearLabelFor(const std::string& g)
   if (g == "full-rig")  return "Full Rig / Combo";
   if (g == "amp")       return "Amp Head";
   if (g == "cab")       return "Cabinet";
+  if (g == "ir")        return "Cabinet";
   if (g == "pedal")     return "Pedal";
   if (g == "outboard")  return "Outboard";
   return g.c_str();
@@ -115,9 +120,40 @@ const char* GearIconResource(const std::string& g)
 {
   if (g == "amp")       return ICON_AMP_FN;
   if (g == "cab")       return ICON_CAB_FN;
+  if (g == "ir")        return ICON_CAB_FN;
   if (g == "outboard")  return ICON_OUTBOARD_FN;
   if (g == "full-rig")  return ICON_FULLRIG_FN;
   return ICON_PEDAL_FN;
+}
+
+std::string EffectiveGearFor(const ::t3k::library::ModelRow& row)
+{
+  if (row.kind == "ir" || row.gear_type == "ir") return "cab";
+  return row.gear_type;
+}
+
+const char* KindLabelFor(const std::string& kind)
+{
+  if (kind == "ir")  return "Cabinet";
+  if (kind == "nam") return "";
+  return kind.c_str();
+}
+
+bool GearAllowedForPicker(LibraryView::PickerKind kind, const std::string& gear)
+{
+  switch (kind) {
+    case LibraryView::PickerKind::Pedal:
+      return gear == "pedal";
+    case LibraryView::PickerKind::AmpHead:
+      return gear == "amp" || gear == "full-rig";
+    case LibraryView::PickerKind::Cabinet:
+      return gear == "cab";
+    case LibraryView::PickerKind::Outboard:
+      return gear == "outboard";
+    case LibraryView::PickerKind::None:
+    default:
+      return true;
+  }
 }
 
 }  // namespace
@@ -142,11 +178,12 @@ void LibraryView::Hide(bool hide)
   IControl::Hide(hide);
   if (mSearchBar)     mSearchBar    ->Hide(hide);
   if (mRescanBtn)     mRescanBtn    ->Hide(hide);
-  if (mGearAcc)       mGearAcc      ->Hide(hide);
-  if (mTagsAcc)       mTagsAcc      ->Hide(hide);
-  if (mMakesAcc)      mMakesAcc     ->Hide(hide);
-  if (mCreatorsAcc)   mCreatorsAcc  ->Hide(hide);
-  if (mTechAcc)       mTechAcc      ->Hide(hide);
+  const bool hideFilters = hide || mPickerKind != PickerKind::None;
+  if (mGearAcc)       mGearAcc      ->Hide(hideFilters);
+  if (mTagsAcc)       mTagsAcc      ->Hide(hideFilters);
+  if (mMakesAcc)      mMakesAcc     ->Hide(hideFilters);
+  if (mCreatorsAcc)   mCreatorsAcc  ->Hide(hideFilters);
+  if (mTechAcc)       mTechAcc      ->Hide(hideFilters);
   if (mRenameOverlay) mRenameOverlay->Hide(true);  // always hidden between sessions
   if (mDetailModal)   mDetailModal  ->Hide(true);  // ditto
   if (hide) {
@@ -182,9 +219,15 @@ void LibraryView::OnResize()
                       searchTop + kSearchH);
 
   // Body: sidebar (left) + detail strip (bottom) + grid (remaining).
-  mSidebarRect = IRECT(below.L, below.T, below.L + kSidebarW, below.B);
-  const IRECT body(mSidebarRect.R, below.T, below.R, below.B);
-  mDetailRect = IRECT(body.L, body.B - kDetailH, body.R, body.B);
+  const bool pickerMode = mPickerKind != PickerKind::None;
+  mSidebarRect = pickerMode
+      ? IRECT(below.L, below.T, below.L, below.B)
+      : IRECT(below.L, below.T, below.L + kSidebarW, below.B);
+  const IRECT body(pickerMode ? below.L : mSidebarRect.R,
+                   below.T, below.R, below.B);
+  mDetailRect = pickerMode
+      ? IRECT(body.L, body.B, body.R, body.B)
+      : IRECT(body.L, body.B - kDetailH, body.R, body.B);
   mGridRect   = IRECT(body.L, body.T,            body.R, mDetailRect.T);
 
   if (mSearchBar) mSearchBar->SetTargetAndDrawRECTs(mSearchRect);
@@ -212,6 +255,7 @@ void LibraryView::OnResize()
 
 void LibraryView::layoutSidebar()
 {
+  if (mPickerKind != PickerKind::None) return;
   namespace th = ::t3k::theme;
   T3kAccordion* accs[] = {
       mGearAcc, mTagsAcc, mMakesAcc, mCreatorsAcc, mTechAcc,
@@ -247,7 +291,7 @@ void LibraryView::OnAttached()
         mSearch = v;
         refresh();
       },
-      "Search by name or creator\xE2\x80\xA6");
+      "Search by name or creator");
   g->AttachControl(mSearchBar);
 
   mRescanBtn = new T3kButton(mSortRect, "RESCAN",
@@ -340,9 +384,7 @@ void LibraryView::OnAttached()
   // them when a card is selected. 2026-05-25: LOAD INTO CHAIN was
   // removed (loading is now exclusively via the detail modal's per-
   // variant LOAD button — double-click a card to open it).
-  mRenameBtn = new T3kButton(mRenameBtnRect, "RENAME",
-      [this]() { this->renameSelected(); },
-      T3kButton::Variant::Secondary);
+  mRenameBtn = nullptr;
   // 2026-05-26 — SHOW IN EXPLORER button removed. revealSelected() is
   // kept around as dead-but-reachable code in case we re-add it via a
   // context menu later. mRevealBtn stays nullptr so all guarded
@@ -360,7 +402,6 @@ void LibraryView::OnAttached()
                             mRemoveBtnRect.MW(), mRemoveBtnRect.T);
       },
       T3kButton::Variant::Secondary);
-  g->AttachControl(mRenameBtn);
   g->AttachControl(mRemoveBtn);
   updateDetailButtons();
 
@@ -418,6 +459,20 @@ void LibraryView::refresh()
   applyFilters();
 }
 
+void LibraryView::setPickerKind(PickerKind kind)
+{
+  if (mPickerKind == kind) return;
+  mPickerKind = kind;
+  mSelectedId = 0;
+  mSelectedGears.clear();
+  mSelectedMakes.clear();
+  mSelectedCreators.clear();
+  mSelectedFormats.clear();
+  OnResize();
+  refresh();
+  Hide(IsHidden());
+}
+
 void LibraryView::recomputeFilterOptions()
 {
   std::unordered_set<std::string> makes, creators;
@@ -452,8 +507,12 @@ void LibraryView::applyFilters()
   // are treated as standalone groups keyed by their numeric id.
   std::unordered_map<std::string, size_t> primaryIndexByTone;
   for (const auto& r : mAllRows) {
+    const std::string effectiveGear = EffectiveGearFor(r);
+    if (!GearAllowedForPicker(mPickerKind, effectiveGear)) {
+      continue;
+    }
     if (!mSelectedGears.empty() &&
-        mSelectedGears.find(r.gear_type) == mSelectedGears.end()) {
+        mSelectedGears.find(effectiveGear) == mSelectedGears.end()) {
       continue;
     }
     if (!mSelectedMakes.empty() &&
@@ -481,7 +540,7 @@ void LibraryView::applyFilters()
     }
   }
   // Drop selection if it filtered out.
-  if (mSelectedId > 0) {
+  if (mPickerKind == PickerKind::None && mSelectedId > 0) {
     bool stillVisible = false;
     for (const auto& r : mRows) {
       if (r.id == mSelectedId) { stillVisible = true; break; }
@@ -508,6 +567,7 @@ void LibraryView::ensureCardCount(int n)
         [this](int64_t id) { this->onCardClicked(id); },
         [this](int64_t id, float x, float y) { this->onCardRightClicked(id, x, y); });
     card->setOnWheel([this](float d) { this->scrollBy(d); });
+    card->setOnDrag([this](float dY) { this->scrollBy(dY / 40.f); });
     card->setOnDblClick([this](int64_t id) { this->onCardDblClicked(id); });
     g->AttachControl(card);
     mCards.push_back(card);
@@ -518,8 +578,10 @@ float LibraryView::gridContentHeight() const
 {
   const int n = static_cast<int>(mRows.size());
   if (n == 0) return 0.f;
-  const int rows = (n + kCols - 1) / kCols;
-  return rows * kCardH + (rows - 1) * kCardGap + 2.f * kGridPad;
+  const int cols = (mPickerKind != PickerKind::None) ? kPickerCols : kCols;
+  const float cardH = (mPickerKind != PickerKind::None) ? kPickerCardH : kCardH;
+  const int rows = (n + cols - 1) / cols;
+  return rows * cardH + (rows - 1) * kCardGap + 2.f * kGridPad;
 }
 
 float LibraryView::gridViewportHeight() const
@@ -532,14 +594,18 @@ void LibraryView::layoutCards()
   const int n = static_cast<int>(mRows.size());
   const float gridL = mGridRect.L + kGridPad;
   const float gridT = mGridRect.T + kGridPad - mScrollOffset;
+  const bool pickerMode = mPickerKind != PickerKind::None;
+  const int cols = pickerMode ? kPickerCols : kCols;
+  const float cardW = pickerMode ? kPickerCardW : kCardW;
+  const float cardH = pickerMode ? kPickerCardH : kCardH;
 
   // Compute step sizes so the grid fills the available width even if
   // the body is wider than kCols * kCardW + gaps. We pin card width
   // and grow the gap until the row fits.
   const float availW = std::max<float>(0.f, mGridRect.W() - 2.f * kGridPad);
-  const float totalCardsW = kCols * kCardW;
-  const float gapX = (kCols > 1)
-                       ? std::max(kCardGap, (availW - totalCardsW) / (kCols - 1))
+  const float totalCardsW = cols * cardW;
+  const float gapX = (cols > 1)
+                       ? std::max(kCardGap, (availW - totalCardsW) / (cols - 1))
                        : 0.f;
 
   for (int i = 0; i < static_cast<int>(mCards.size()); ++i) {
@@ -549,24 +615,25 @@ void LibraryView::layoutCards()
       card->Hide(true);
       continue;
     }
-    const int row = i / kCols;
-    const int col = i % kCols;
-    const float x = gridL + col * (kCardW + gapX);
-    const float y = gridT + row * (kCardH + kCardGap);
-    const IRECT cardR(x, y, x + kCardW, y + kCardH);
+    const int row = i / cols;
+    const int col = i % cols;
+    const float x = gridL + col * (cardW + gapX);
+    const float y = gridT + row * (cardH + kCardGap);
+    const IRECT logicalR(x, y, x + cardW, y + cardH);
+    const IRECT clippedR(x,
+                         std::max(y, mGridRect.T),
+                         x + cardW,
+                         std::min(y + cardH, mGridRect.B));
 
     // Push the new data into the card.
     T3kLibraryCard::CardData d;
     d.id          = mRows[i].id;
     d.displayName = mRows[i].effectiveDisplayName();
-    d.creator     = mRows[i].t3k_creator;
-    d.gearType    = mRows[i].gear_type;
-    // 2026-05-26 — meta line used to read "creator · NAM" / "creator · IR".
-    // The user wants the gear-type name there instead ("Amp Head", "Cabinet",
-    // "Outboard", "Pedal", "Full Rig / Combo"), which is more useful than the
-    // model file format (NAM/IR is implicit from the gear category and
-    // already filterable via the Technical accordion).
-    d.format = GearLabelFor(mRows[i].gear_type);
+    d.gearType    = EffectiveGearFor(mRows[i]);
+    d.creator     = (mPickerKind == PickerKind::None)
+                      ? GearLabelFor(d.gearType)
+                      : mRows[i].t3k_creator;
+    d.format.clear();
     // Image — prefer the sidecar's t3k_image_path (already cached to
     // disk by Downloader / ModelSidecar). Fall back to t3k_image_url
     // and let ThumbnailCache pull it on first paint.
@@ -577,20 +644,12 @@ void LibraryView::layoutCards()
     card->setData(std::move(d));
     card->setSelected(mRows[i].id == mSelectedId);
 
-    // 2026-05-25 — require the card to fit ENTIRELY inside mGridRect.
-    // Previously we allowed any vertical overlap, which let
-    // partially-scrolled cards spill below mGridRect.B and paint over
-    // the detail strip (where the "click a card to load it..." hint
-    // lives) — cards are flat-attached to IGraphics and z-order
-    // strictly AFTER the LibraryView's own draw, so any pixel they
-    // paint covers the hint. Hiding partials keeps the boundary
-    // clean; the user just sees the next row of cards pop in cleanly
-    // when scrolled into view.
-    const bool visible = !IsHidden() &&
-                         cardR.T >= mGridRect.T - 1.f &&
-                         cardR.B <= mGridRect.B + 1.f;
-    card->Hide(!visible);
-    card->SetTargetAndDrawRECTs(cardR);
+    card->setLogicalRect(logicalR);
+    card->SetTargetAndDrawRECTs(clippedR);
+    const bool offscreen = clippedR.B <= clippedR.T ||
+                           logicalR.B < mGridRect.T ||
+                           logicalR.T > mGridRect.B;
+    card->Hide(IsHidden() || offscreen);
   }
   SetDirty(false);
 }
@@ -671,13 +730,32 @@ void LibraryView::showDetailFor(int64_t id)
   d.title       = row->effectiveDisplayName();
   d.creator     = row->t3k_creator;
   d.description = row->t3k_description;
+  if (mPickerKind == PickerKind::None) {
+    const int64_t editId = row->id;
+    d.onEditTitle = [this, editId](const std::string& name) {
+      ::t3k::library::LibraryDb::instance().setDisplayNameOverride(
+          editId,
+          name.empty() ? std::optional<std::string>(std::nullopt)
+                       : std::optional<std::string>(name));
+      ::t3k::library::EventBus::instance().post(
+          ::t3k::library::LibraryEvent::ModelUpdated, editId);
+      refresh();
+    };
+    d.onEditDescription = [this, editId](const std::string& desc) {
+      ::t3k::library::LibraryDb::instance().setDescription(editId, desc);
+      ::t3k::library::EventBus::instance().post(
+          ::t3k::library::LibraryEvent::ModelUpdated, editId);
+      refresh();
+    };
+  }
   if (row->t3k_image_path.has_value()) d.imagePath = *row->t3k_image_path;
   d.imageUrl    = row->t3k_image_url;
   // Subtitle: gear-type . variant count (single variant -> just gear).
   auto vit = mVariantsByToneId.find(toneKey);
   std::string sub;
-  if (!row->gear_type.empty()) {
-    sub = row->gear_type;
+  const std::string rowGear = EffectiveGearFor(*row);
+  if (!rowGear.empty()) {
+    sub = GearLabelFor(rowGear);
     // Title-case the first letter.
     if (!sub.empty()) sub[0] = static_cast<char>(std::toupper((unsigned char)sub[0]));
   }
@@ -695,11 +773,6 @@ void LibraryView::showDetailFor(int64_t id)
       std::string label = v.model_name.empty()
                             ? v.effectiveDisplayName()
                             : v.model_name;
-      if (!v.kind.empty()) {
-        std::string k = v.kind;
-        for (char& c : k) c = static_cast<char>(std::toupper((unsigned char)c));
-        label += "  \xC2\xB7  " + k;
-      }
       // Capture each variant's t3k ids so we load the right one.
       const std::string toneId  = v.t3k_tone_id;
       const std::string modelId = v.t3k_model_id;
@@ -709,6 +782,19 @@ void LibraryView::showDetailFor(int64_t id)
         if (mDetailModal) mDetailModal->Hide(true);
         if (mOnModelClicked) mOnModelClicked(toneId, modelId);
       };
+      if (mPickerKind == PickerKind::None) {
+        const int64_t rowId = v.id;
+        item.onRename = [this, rowId](const std::string& name) {
+          if (name.empty()) {
+            ::t3k::library::LibraryDb::instance().setDisplayNameOverride(rowId, std::nullopt);
+          } else {
+            ::t3k::library::LibraryDb::instance().setDisplayNameOverride(rowId, name);
+          }
+          ::t3k::library::EventBus::instance().post(
+              ::t3k::library::LibraryEvent::ModelUpdated, rowId);
+          refresh();
+        };
+      }
       d.pickables.push_back(std::move(item));
     }
   }
@@ -764,6 +850,13 @@ void LibraryView::OnMouseWheel(float x, float y,
                                const IMouseMod& /*mod*/, float d)
 {
   if (mGridRect.Contains(x, y)) scrollBy(d);
+}
+
+void LibraryView::OnMouseDrag(float x, float y, float /*dX*/, float dY,
+                              const IMouseMod& /*mod*/)
+{
+  if (!mGridRect.Contains(x, y)) return;
+  scrollBy(dY / 40.f);
 }
 
 void LibraryView::scrollBy(float d)
@@ -877,7 +970,7 @@ void LibraryView::renameSelected()
 
 void LibraryView::updateDetailButtons()
 {
-  const bool visible = !IsHidden() && mSelectedId > 0;
+  const bool visible = !IsHidden() && mPickerKind == PickerKind::None && mSelectedId > 0;
   if (mRenameBtn) mRenameBtn->Hide(!visible);
   if (mRevealBtn) mRevealBtn->Hide(!visible);
   if (mRemoveBtn) mRemoveBtn->Hide(!visible);
@@ -907,6 +1000,7 @@ void LibraryView::showRenameOverlay(int64_t modelId)
 
 bool LibraryView::handleSidebarClick(float x, float y)
 {
+  if (mPickerKind != PickerKind::None) return false;
   auto handle = [&](std::vector<std::pair<std::string, IRECT>>& rows,
                     std::unordered_set<std::string>& sel) -> bool {
     for (const auto& [v, rr] : rows) {
@@ -990,7 +1084,8 @@ void LibraryView::Draw(IGraphics& g)
                         mDetailRect.T + kDetailPad + iconSz);
       g.FillRoundRect(th::kBgSurface, iconR, th::kRadiusSm);
       g.DrawRoundRect(th::kBorder,    iconR, th::kRadiusSm, nullptr, 1.f);
-      if (ISVG svg = g.LoadSVG(GearIconResource(row->gear_type)); svg.IsValid()) {
+      const std::string rowGear = EffectiveGearFor(*row);
+      if (ISVG svg = g.LoadSVG(GearIconResource(rowGear)); svg.IsValid()) {
         g.DrawSVG(svg, iconR.GetPadded(-10.f));
       }
 
@@ -1006,17 +1101,12 @@ void LibraryView::Draw(IGraphics& g)
 
       std::string meta;
       if (!row->t3k_creator.empty()) meta = row->t3k_creator;
-      if (!row->gear_type.empty()) {
+      if (!rowGear.empty()) {
         if (!meta.empty()) meta += " \xC2\xB7 ";
-        meta += GearLabelFor(row->gear_type);
+        meta += GearLabelFor(rowGear);
       }
       meta += "  ";
       meta += FormatSize(row->size_bytes);
-      if (!row->kind.empty()) {
-        std::string k = row->kind;
-        for (char& c : k) c = static_cast<char>(std::toupper((unsigned char)c));
-        meta += " \xC2\xB7 " + k;
-      }
       const IRECT metaR(textL, nameR.B + 2.f, textR, nameR.B + 2.f + 16.f);
       g.DrawText(IText(th::kTypeSmall, th::kTextMuted, th::kFontBody,
                        EAlign::Near, EVAlign::Top),
@@ -1043,7 +1133,7 @@ void LibraryView::Draw(IGraphics& g)
                    hint, hintR);
       }
     }
-  } else {
+  } else if (mPickerKind == PickerKind::None) {
     g.DrawText(IText(th::kTypeBody, th::kTextDim,
                      th::kFontBody, EAlign::Center, EVAlign::Middle),
                "Click a card to load it into the chain or open its actions.",
@@ -1161,7 +1251,7 @@ void LibraryView::drawTechnicalAccordion(const IRECT& r)
   // those as a format filter under "Technical". Mirrors Cloud's Size
   // filter slot.
   const char* values[] = { "nam", "ir" };
-  const char* labels[] = { "NAM model", "Impulse response (IR)" };
+  const char* labels[] = { "Model", "Cabinet" };
   float y = r.T + 4.f;
   for (size_t i = 0; i < 2; ++i) {
     const std::string v = values[i];

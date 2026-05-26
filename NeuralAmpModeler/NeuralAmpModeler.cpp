@@ -88,6 +88,11 @@ void StripResizeChrome(IGraphics* g)
 inline void StripResizeChrome(IGraphics*) {}
 #endif
 
+int SafeMaxBlockSize(int hostBlockSize)
+{
+  return hostBlockSize > 0 ? hostBlockSize : 2048;
+}
+
 }  // namespace
 
 const double kDCBlockerFrequency = 5.0;
@@ -380,8 +385,14 @@ void NeuralAmpModeler::ProcessBlock(iplug::sample** inputs, iplug::sample** outp
       continue;
     // Apply per-slot input gain into scratch.
     const double inGain = DBToAmp(es.inGainDb);
+    const double inStart = es.smoothedInGain;
     for (size_t s = 0; s < numFrames; ++s)
-      chainScratch[s] = inGain * currentPointers[0][s];
+    {
+      const double t = static_cast<double>(s + 1) / static_cast<double>(numFrames);
+      const double g = inStart + (inGain - inStart) * t;
+      chainScratch[s] = g * currentPointers[0][s];
+    }
+    es.smoothedInGain = inGain;
 
     sample** processed = nullptr;
     if (es.model != nullptr)
@@ -405,16 +416,23 @@ void NeuralAmpModeler::ProcessBlock(iplug::sample** inputs, iplug::sample** outp
     // internal buffer — copy back unconditionally so subsequent stages
     // see a stable pointer.
     const double outGain = DBToAmp(es.outGainDb);
+    const double outStart = es.smoothedOutGain;
     // 2026-05-26 - apply per-slot output gain + dry/wet mix.
     // chainScratch[] holds the post-in-gain pre-process signal (the dry
     // reference); afterEq is the fully-processed signal.
-    const double w = es.dryWet;
+    const double w = std::clamp(es.dryWet, 0.0, 1.0);
+    const double wStart = es.smoothedDryWet;
     for (size_t s = 0; s < numFrames; ++s)
     {
+      const double t = static_cast<double>(s + 1) / static_cast<double>(numFrames);
+      const double og = outStart + (outGain - outStart) * t;
+      const double mix = wStart + (w - wStart) * t;
       const double wet = afterEq[0][s];
       const double dry = chainScratch[s];
-      mOutputArray[0][s] = outGain * (w * wet + (1.0 - w) * dry);
+      mOutputArray[0][s] = (mix * og * wet) + ((1.0 - mix) * dry);
     }
+    es.smoothedOutGain = outGain;
+    es.smoothedDryWet = w;
     currentPointers = mOutputPointers;
   }
 
@@ -457,7 +475,7 @@ void NeuralAmpModeler::ProcessBlock(iplug::sample** inputs, iplug::sample** outp
 void NeuralAmpModeler::OnReset()
 {
   const auto sampleRate = GetSampleRate();
-  const int maxBlockSize = GetBlockSize();
+  const int maxBlockSize = SafeMaxBlockSize(GetBlockSize());
 
   // Tail is because the HPF DC blocker has a decay.
   // 10 cycles should be enough to pass the VST3 tests checking tail behavior.
@@ -467,7 +485,7 @@ void NeuralAmpModeler::OnReset()
   mInputSender.Reset(sampleRate);
   mOutputSender.Reset(sampleRate);
   // If there is a model or IR loaded, they need to be checked for resampling.
-  _ResetModelAndIR(sampleRate, GetBlockSize());
+  _ResetModelAndIR(sampleRate, maxBlockSize);
   mToneStack->Reset(sampleRate, maxBlockSize);
   _UpdateLatency();
 }
@@ -699,12 +717,14 @@ void NeuralAmpModeler::OnParamChange(int paramIdx)
       if (!mInActiveSlotPush)
       {
         const double v = GetParam(kInputLevel)->Value();
-        if (mActiveSlot == 0)
+        if (mActiveSlot == 0) {
           mSlot0InGainDb = v;
-        else if (ExtraSlot* es = _Extra(mActiveSlot))
+          _SetInputGain();
+        } else if (ExtraSlot* es = _Extra(mActiveSlot)) {
           es->inGainDb = v;
+          mInputGain = 1.0;
+        }
       }
-      _SetInputGain();
       break;
     }
     case kOutputLevel:
@@ -712,12 +732,14 @@ void NeuralAmpModeler::OnParamChange(int paramIdx)
       if (!mInActiveSlotPush)
       {
         const double v = GetParam(kOutputLevel)->Value();
-        if (mActiveSlot == 0)
+        if (mActiveSlot == 0) {
           mSlot0OutGainDb = v;
-        else if (ExtraSlot* es = _Extra(mActiveSlot))
+          _SetOutputGain();
+        } else if (ExtraSlot* es = _Extra(mActiveSlot)) {
           es->outGainDb = v;
+          mOutputGain = 1.0;
+        }
       }
-      _SetOutputGain();
       break;
     }
     case kDryWet:
@@ -732,7 +754,9 @@ void NeuralAmpModeler::OnParamChange(int paramIdx)
       }
       break;
     }
-    case kOutputMode: _SetOutputGain(); break;
+    case kOutputMode:
+      if (mActiveSlot == 0) _SetOutputGain();
+      break;
     // Tone stack — route to whichever slot is currently active. Empty
     // slots still let the knob move and store the value for later.
     case kToneBass:
@@ -1083,7 +1107,7 @@ std::string NeuralAmpModeler::_StageModel(const WDL_String& modelPath)
     }
 
     std::unique_ptr<ResamplingNAM> temp = std::make_unique<ResamplingNAM>(std::move(model), GetSampleRate());
-    temp->Reset(GetSampleRate(), GetBlockSize());
+    temp->Reset(GetSampleRate(), SafeMaxBlockSize(GetBlockSize()));
     if (nam::SlimmableModel* slimmable = temp->GetSlimmableModel())
     {
       slimmable->SetSlimmableSize(GetParam(kSlim)->Value());
@@ -1243,7 +1267,7 @@ std::string NeuralAmpModeler::StageModelInSlot(int slot, const WDL_String& namPa
     if (model->NumInputChannels() != 1 || model->NumOutputChannels() != 1)
       throw std::runtime_error("Model must have 1 input + 1 output channel");
     auto temp = std::make_unique<ResamplingNAM>(std::move(model), GetSampleRate());
-    temp->Reset(GetSampleRate(), GetBlockSize());
+    temp->Reset(GetSampleRate(), SafeMaxBlockSize(GetBlockSize()));
     es->stagedModel = std::move(temp);
     es->namPath = namPath;
   }
@@ -1454,8 +1478,13 @@ void NeuralAmpModeler::_PushActiveSlotIntoParams()
   GetParam(kDryWet)     ->Set(dryWetPct);
   // Reapply EQ to the now-active slot's tone stack with these values.
   _ApplyEqToSlot(mActiveSlot);
-  _SetInputGain();
-  _SetOutputGain();
+  if (mActiveSlot == 0) {
+    _SetInputGain();
+    _SetOutputGain();
+  } else {
+    mInputGain = 1.0;
+    mOutputGain = 1.0;
+  }
   mInActiveSlotPush = false;
 }
 

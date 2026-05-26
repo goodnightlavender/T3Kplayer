@@ -36,6 +36,7 @@ struct PresetRow {
   int64_t id;
   std::string name;
   bool active;
+  int sort_order = 0;
 };
 
 class T3kPresetOverlay : public IControl
@@ -58,14 +59,20 @@ public:
   std::function<void()>                   onSave;
   std::function<void()>                   onSaveAs;
   std::function<void()>                   onMoreMenu;
+  std::function<void(const std::vector<int64_t>&)> onReorder;
   std::function<void(const std::string&)> onSearchChanged;
-  // Polish 3c — fired when a preset row is right-clicked. Parent
-  // typically opens a popup menu (Rename / Delete) at the row.
   std::function<void(int64_t /*id*/, const std::string& /*name*/)>
-                                          onRowContextMenu;
+                                          onRenamePreset;
+  std::function<void(int64_t /*id*/, const std::string& /*name*/)>
+                                          onDeletePreset;
+
+  void openContextMenu(int64_t id, const std::string& name);
 
   void Draw(IGraphics& g) override;
   void OnMouseDown(float x, float y, const IMouseMod& mod) override;
+  void OnMouseDblClick(float x, float y, const IMouseMod& mod) override;
+  void OnMouseDrag(float x, float y, float dX, float dY, const IMouseMod& mod) override;
+  void OnMouseUp(float x, float y, const IMouseMod& mod) override;
   void OnTextEntryCompletion(const char* str, int valIdx) override;
 
 private:
@@ -81,12 +88,22 @@ private:
   IRECT saveBtnRect()   const;
   IRECT saveAsBtnRect() const;
   IRECT moreBtnRect()   const;
+  IRECT contextMenuRect() const;
+  IRECT contextRenameRect() const;
+  IRECT contextDeleteRect() const;
 
   // Row rect for the `filteredIndex`-th row of the filtered list.
   IRECT listRowRect(int filteredIndex) const;
 
   // Returns the filtered subset (case-insensitive substring on mSearch).
   std::vector<const PresetRow*> filteredRows() const;
+
+  bool mContextOpen = false;
+  int64_t mContextId = 0;
+  std::string mContextName;
+  IRECT mContextAnchor;
+  bool mDraggingPreset = false;
+  int64_t mDragPresetId = 0;
 };
 
 }  // namespace t3k::ui

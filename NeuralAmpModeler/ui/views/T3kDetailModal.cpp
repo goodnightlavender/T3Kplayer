@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <utility>
 
 #include "IGraphics.h"
 
@@ -58,8 +59,15 @@ void T3kDetailModal::recomputeLayout()
 {
   const float cx = mRECT.MW();
   const float cy = mRECT.MH();
-  mCardRect = IRECT(cx - kCardW * 0.5f, cy - kCardH * 0.5f,
-                    cx + kCardW * 0.5f, cy + kCardH * 0.5f);
+  float cardH = mData.pickables.empty() ? 500.f : kCardH;
+  if (!mData.pickables.empty()) {
+    const size_t n = mData.pickables.size();
+    if (n <= 1)      cardH = 430.f;
+    else if (n <= 2) cardH = 460.f;
+    else if (n <= 4) cardH = 510.f;
+  }
+  mCardRect = IRECT(cx - kCardW * 0.5f, cy - cardH * 0.5f,
+                    cx + kCardW * 0.5f, cy + cardH * 0.5f);
 
   const float imgT = mCardRect.T + kCardPad;
   mImageRect = IRECT(mCardRect.L + kCardPad, imgT,
@@ -122,6 +130,11 @@ void T3kDetailModal::show(DetailData data, std::vector<Action> actions)
 
   mData = std::move(data);
   mActions = std::move(actions);
+  mDescriptionEditRect = IRECT();
+  mTitleEditRect = IRECT();
+  mPickableLabelRects.clear();
+  mEditTarget = EditTarget::None;
+  mEditPickableIndex = -1;
 
   // Reset bitmap cache.
   mBitmapLoaded     = false;
@@ -235,6 +248,88 @@ void T3kDetailModal::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
   if (!mCardRect.Contains(x, y)) {
     if (mOnClose) mOnClose();
   }
+}
+
+void T3kDetailModal::OnMouseDblClick(float x, float y, const IMouseMod& /*mod*/)
+{
+  namespace th = ::t3k::theme;
+  IGraphics* ui = GetUI();
+  if (!ui) return;
+
+  const IText editText = IText(13.f, th::kText, th::kFontBody,
+                               EAlign::Near, EVAlign::Middle)
+                             .WithTEColors(th::kBgSurface, th::kText);
+  const IText titleEditText = IText(28.f, th::kText, th::kFontBodyBold,
+                                    EAlign::Near, EVAlign::Top)
+                                  .WithTEColors(th::kBgSurface, th::kText);
+  const IText descEditText = IText(13.f, th::kTextMuted, th::kFontBody,
+                                   EAlign::Near, EVAlign::Top)
+                                 .WithTEColors(th::kBgSurface, th::kText);
+  if (mData.onEditTitle && mTitleEditRect.Contains(x, y)) {
+    mEditTarget = EditTarget::Title;
+    mEditPickableIndex = -1;
+    ui->CreateTextEntry(*this, titleEditText, mTitleEditRect, mData.title.c_str());
+    return;
+  }
+  if (mData.onEditDescription && mDescriptionEditRect.Contains(x, y)) {
+    mEditTarget = EditTarget::Description;
+    mEditPickableIndex = -1;
+    std::string editValue;
+    const auto lines = wrapText(mData.description, mDescriptionEditRect.W(),
+                                kBodyPxPerChar);
+    for (size_t i = 0; i < lines.size(); ++i) {
+      if (i > 0) editValue += "\n";
+      editValue += lines[i];
+    }
+    ui->CreateTextEntry(*this, descEditText, mDescriptionEditRect,
+                        editValue.c_str());
+    return;
+  }
+
+  for (size_t i = 0; i < mPickableLabelRects.size()
+                   && i < mData.pickables.size(); ++i) {
+    if (!mData.pickables[i].onRename) continue;
+    if (mPickableLabelRects[i].Contains(x, y)) {
+      mEditTarget = EditTarget::Pickable;
+      mEditPickableIndex = static_cast<int>(i);
+      ui->CreateTextEntry(*this, editText, mPickableLabelRects[i],
+                          mData.pickables[i].label.c_str());
+      return;
+    }
+  }
+}
+
+void T3kDetailModal::OnTextEntryCompletion(const char* str, int /*valIdx*/)
+{
+  std::string value = str ? str : "";
+  auto normalizeInlineText = [](std::string s) {
+    for (char& c : s) {
+      if (c == '\r' || c == '\n' || c == '\t') c = ' ';
+    }
+    size_t pos = std::string::npos;
+    while ((pos = s.find("  ")) != std::string::npos) {
+      s.replace(pos, 2, " ");
+    }
+    return s;
+  };
+  if (mEditTarget == EditTarget::Title) {
+    value = normalizeInlineText(std::move(value));
+    mData.title = value;
+    if (mData.onEditTitle) mData.onEditTitle(value);
+  } else if (mEditTarget == EditTarget::Description) {
+    value = normalizeInlineText(std::move(value));
+    mData.description = value;
+    if (mData.onEditDescription) mData.onEditDescription(value);
+  } else if (mEditTarget == EditTarget::Pickable &&
+             mEditPickableIndex >= 0 &&
+             mEditPickableIndex < static_cast<int>(mData.pickables.size())) {
+    auto& item = mData.pickables[static_cast<size_t>(mEditPickableIndex)];
+    item.label = value;
+    if (item.onRename) item.onRename(value);
+  }
+  mEditTarget = EditTarget::None;
+  mEditPickableIndex = -1;
+  SetDirty(false);
 }
 
 void T3kDetailModal::OnMouseDrag(float /*x*/, float y,
@@ -421,8 +516,10 @@ void T3kDetailModal::Draw(IGraphics& g)
     const float dstH = bh * scale;
     const float dstL = mImageRect.MW() - dstW * 0.5f;
     const float dstT = mImageRect.MH() - dstH * 0.5f;
+    g.PathClipRegion(mImageRect);
     g.DrawFittedBitmap(mBitmap,
                        IRECT(dstL, dstT, dstL + dstW, dstT + dstH));
+    g.PathClipRegion();
   } else {
     g.DrawText(IText(13.f, th::kTextDim, th::kFontBody,
                      EAlign::Center, EVAlign::Middle),
@@ -454,6 +551,7 @@ void T3kDetailModal::Draw(IGraphics& g)
   const float titleBlockH =
       static_cast<float>(titleLines.size()) * kTitleLineH;
   const IRECT titleR(tL, ty, tR, ty + titleBlockH);
+  mTitleEditRect = titleR;
   for (size_t li = 0; li < titleLines.size(); ++li) {
     const IRECT lineR(tL, ty + li * kTitleLineH,
                       tR, ty + (li + 1) * kTitleLineH);
@@ -499,12 +597,14 @@ void T3kDetailModal::Draw(IGraphics& g)
   ty += 14.f;
 
   // Description.
+  mDescriptionEditRect = IRECT();
   if (!mData.description.empty()) {
     const IRECT hdrR(tL, ty, tR, ty + 18.f);
     g.DrawText(IText(14.f, th::kText, th::kFontBodyBold,
                      EAlign::Near, EVAlign::Top),
                "Description", hdrR);
     ty = hdrR.B + 6.f;
+    const float bodyTop = ty;
     const float wrapW = tR - tL;
     auto lines = wrapText(mData.description, wrapW, kBodyPxPerChar);
     const size_t maxLines = 4;
@@ -519,6 +619,7 @@ void T3kDetailModal::Draw(IGraphics& g)
                  ln.c_str(), lineR);
       ty += kBodyLineH;
     }
+    mDescriptionEditRect = IRECT(tL, bodyTop, tR, ty);
     ty += 10.f;
   }
 
@@ -559,14 +660,15 @@ void T3kDetailModal::Draw(IGraphics& g)
 
     const float areaTop    = mPickablesAreaRect.T;
     const float areaBottom = mPickablesAreaRect.B;
+    mPickableLabelRects.assign(count, IRECT());
 
     for (size_t i = 0; i < count; ++i) {
       const float rowTop    = areaTop + static_cast<float>(i) * rowH
                               - mPickablesScrollOffset;
       const float rowBottom = rowTop + rowH;
-      const bool fullyInside =
-          rowTop >= areaTop - 0.5f && rowBottom <= areaBottom + 0.5f;
-      if (!fullyInside) {
+      const bool intersects =
+          rowBottom > areaTop + 0.5f && rowTop < areaBottom - 0.5f;
+      if (!intersects) {
         // Off-screen row — hide the PICK button so it can't be
         // clicked outside the visible area.
         if (i < mPickBtns.size() && mPickBtns[i]) mPickBtns[i]->Hide(true);
@@ -578,15 +680,26 @@ void T3kDetailModal::Draw(IGraphics& g)
       const IRECT rowR(tL, rowTop, tR, rowBottom);
       const IRECT labelR(rowR.L + 14.f, rowR.T,
                          rowR.R - pickBtnW - 8.f, rowR.B);
+      mPickableLabelRects[i] = IRECT(labelR.L,
+                                     std::max(labelR.T, areaTop),
+                                     labelR.R,
+                                     std::min(labelR.B, areaBottom));
+      g.PathClipRegion(mPickablesAreaRect);
       g.DrawText(IText(13.f, th::kTextMuted, th::kFontBody,
                        EAlign::Near, EVAlign::Middle),
                  mData.pickables[i].label.c_str(), labelR);
+      g.PathClipRegion();
       if (i < mPickBtns.size() && mPickBtns[i]) {
-        mPickBtns[i]->Hide(false);
         const float by = rowR.MH() - pickBtnH * 0.5f;
         const IRECT btnR(rowR.R - pickBtnW, by,
                          rowR.R,             by + pickBtnH);
-        mPickBtns[i]->SetTargetAndDrawRECTs(btnR);
+        const IRECT clippedBtnR(btnR.L,
+                                std::max(btnR.T, areaTop),
+                                btnR.R,
+                                std::min(btnR.B, areaBottom));
+        const bool visible = clippedBtnR.B > clippedBtnR.T + 0.5f;
+        mPickBtns[i]->Hide(!visible);
+        if (visible) mPickBtns[i]->SetTargetAndDrawRECTs(clippedBtnR);
       }
     }
 

@@ -22,6 +22,7 @@
 #include "../../cloud/OAuthFlow.h"
 #include "../../cloud/Session.h"
 #include "../../cloud/SessionEvent.h"
+#include "../../library/LibraryDb.h"
 
 namespace t3k::ui {
 
@@ -48,7 +49,7 @@ constexpr float kBodyPad       = 16.f;
 // cards below it don't jitter every time a download starts. The row
 // renders empty when there's no message — fine, it just becomes
 // transparent space.
-constexpr float kStatusBannerH = 22.f;
+constexpr float kStatusBannerH = 0.f;
 
 // Cycle through the TonesSort enum on each sort-button click.
 ::t3k::cloud::TonesSort nextSort(::t3k::cloud::TonesSort s) {
@@ -162,6 +163,7 @@ void CloudView::Hide(bool hide)
   if (mSignInPill)  mSignInPill ->Hide(hide || mState != State::SignedOut);
   if (mDetailModal) mDetailModal->Hide(true);  // always closed on tab switch
   for (T3kCard* c : mCards) if (c) c->Hide(hide);
+  if (!hide) refreshFromSession();
 }
 
 void CloudView::OnResize()
@@ -243,7 +245,7 @@ void CloudView::OnAttached()
 
   mSearchBar = new T3kSearchBar(mSearchRect,
       [this](const std::string& q) { this->onSearchChanged(q); },
-      "Search the TONE3000 catalog\xE2\x80\xA6");
+      "Search the TONE3000 catalog");
   g->AttachControl(mSearchBar);
 
   mSortBtn = new T3kButton(mSortRect, ::t3k::cloud::toLabel(mQuery.sort),
@@ -549,23 +551,20 @@ void CloudView::OnMouseDrag(float x, float /*y*/,
                             float /*dX*/, float dY,
                             const IMouseMod& /*mod*/)
 {
-  // Drag-to-scroll inside the body — mirrors the touchpad-style "grab
-  // the list" interaction. dY pixels scale down (~0.05 wheel notches
-  // per pixel) so the feel matches the wheel handler. Sign matches the
-  // existing wheel convention so dragging DOWN scrolls the list DOWN
-  // (content moves UP) — same as a wheel-down gesture.
-  //
-  // x is checked rather than y so a drag that starts inside the body
-  // and rolls into the header still scrolls; iPlug2 keeps dispatching
-  // OnMouseDrag to the control that received OnMouseDown.
+  // Drag-to-scroll inside the body — mirrors the variants list.
   if (x < mBodyRect.L || x > mBodyRect.R) return;
-  scrollBy(dY * 0.05f);
+  scrollPixels(dY);
 }
 
 void CloudView::scrollBy(float d)
 {
+  scrollPixels(d * 80.f);
+}
+
+void CloudView::scrollPixels(float pixels)
+{
   if (mState != State::Loaded) return;
-  mScrollOffset -= d * 80.f;
+  mScrollOffset -= pixels;
   if (mScrollOffset < 0.f) mScrollOffset = 0.f;
 
   const float totalH = static_cast<float>(mTones.size()) * (kCardH + kCardGapY);
@@ -812,6 +811,7 @@ void CloudView::rebuildCards()
     // the card (topmost control under the cursor) and our scrollBy
     // never runs — the list reads as unscrollable.
     c->setOnWheel([this](float d) { this->scrollBy(d); });
+    c->setOnDrag([this](float dY) { this->scrollPixels(dY); });
     c->setOnDetail([this, idx]() { this->onCardDetail(idx); });
     g->AttachControl(c);
     mCards.push_back(c);
@@ -845,6 +845,14 @@ void CloudView::rebuildCards()
   mToneIdToCardIdx.clear();
   mToneIdToCardIdx.reserve(mTones.size());
   std::lock_guard<std::mutex> lk(mDlStatusMtx);
+  std::unordered_map<int, bool> localToneIds;
+  for (const auto& row : ::t3k::library::LibraryDb::instance().queryByName("", 10000)) {
+    if (row.t3k_tone_id.empty()) continue;
+    try {
+      localToneIds[std::stoi(row.t3k_tone_id)] = true;
+    } catch (...) {
+    }
+  }
   for (std::size_t i = 0; i < mTones.size(); ++i) {
     const int tid = mTones[i].id;
     mToneIdToCardIdx[tid] = i;
@@ -852,6 +860,9 @@ void CloudView::rebuildCards()
       if (mCards[i]) {
         mCards[i]->setDownloadState(it->second.state, it->second.label);
       }
+    } else if (localToneIds.count(tid) > 0) {
+      mDlByToneId[tid] = ToneDlState{T3kCard::DownloadState::Done, {}};
+      if (mCards[i]) mCards[i]->setDownloadState(T3kCard::DownloadState::Done);
     } else if (mCards[i]) {
       mCards[i]->setDownloadState(T3kCard::DownloadState::Idle);
     }
@@ -900,7 +911,7 @@ void CloudView::layoutCards()
     const bool offscreen = (clipped.B <= clipped.T) ||
                            (bot < mBodyRect.T) ||
                            (top > mBodyRect.B);
-    c->Hide(offscreen || mState == State::SignedOut);
+    c->Hide(IsHidden() || offscreen || mState == State::SignedOut);
   }
 }
 
@@ -1041,13 +1052,6 @@ void CloudView::drawStateOverlay(IGraphics& g)
     case State::Loading: {
       if (mTones.empty()) {
         g.DrawText(body, "Loading\xE2\x80\xA6", mBodyRect);
-      } else {
-        // Render in the reserved top banner row — cards start at
-        // mBodyRect.T + kStatusBannerH + kBodyPad, so this rect can
-        // never be occluded by a card scrolling past the bottom.
-        const IRECT banner(mBodyRect.L, mBodyRect.T,
-                           mBodyRect.R, mBodyRect.T + kStatusBannerH);
-        g.DrawText(smallBody, "Loading more\xE2\x80\xA6", banner);
       }
       break;
     }
@@ -1056,7 +1060,7 @@ void CloudView::drawStateOverlay(IGraphics& g)
         g.DrawText(body, "No tones match these filters.", mBodyRect);
       } else if (!mErrorMessage.empty()) {
         const IRECT banner(mBodyRect.L, mBodyRect.T,
-                           mBodyRect.R, mBodyRect.T + kStatusBannerH);
+                           mBodyRect.R, mBodyRect.T + 22.f);
         g.DrawText(smallBody, mErrorMessage.c_str(), banner);
       }
       break;

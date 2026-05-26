@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -46,14 +47,20 @@ std::vector<std::string> wrapByWidth(const std::string& text,
     const size_t sp = text.find(' ', i);
     const size_t wend = (sp == std::string::npos) ? text.size() : sp;
     std::string word = text.substr(i, wend - i);
-    if (line.empty()) {
-      if (word.size() > maxCharsPerLine) {
-        lines.push_back(word.substr(0, maxCharsPerLine));
-        word.erase(0, maxCharsPerLine);
-        line = std::move(word);
-      } else {
-        line = std::move(word);
+    while (word.size() > maxCharsPerLine) {
+      const std::string chunk = word.substr(0, maxCharsPerLine);
+      word.erase(0, maxCharsPerLine);
+      if (!line.empty()) {
+        lines.push_back(std::move(line));
+        line.clear();
+        if (lines.size() >= maxLines) break;
       }
+      lines.push_back(chunk);
+      if (lines.size() >= maxLines) break;
+    }
+    if (lines.size() >= maxLines) break;
+    if (line.empty()) {
+      line = std::move(word);
     } else if (line.size() + 1 + word.size() <= maxCharsPerLine) {
       line += " ";
       line += word;
@@ -94,7 +101,8 @@ void T3kFocusedSlot::OnResize()
   const float gap = 18.f;
   const IRECT inner = mRECT.GetPadded(-pad);
 
-  mImageRect = IRECT(inner.L, inner.T, inner.L + 240.f, inner.B);
+  const float imageW = std::min(320.f, std::max(280.f, inner.W() * 0.28f));
+  mImageRect = IRECT(inner.L, inner.T, inner.L + imageW, inner.B);
   mBodyRect  = IRECT(mImageRect.R + gap, inner.T, inner.R, inner.B);
 
   const float titleH = 80.f;
@@ -104,11 +112,13 @@ void T3kFocusedSlot::OnResize()
 
   const float metersW = 80.f;
   const float midGap  = 14.f;
-  const float colW    = (mMidRect.W() - metersW - 2.f * midGap) * 0.5f;
+  const float availableColsW = (mMidRect.W() - metersW - 2.f * midGap);
+  const float infoW = availableColsW * 0.66f;
+  const float settingsW = availableColsW - infoW;
   mInfoColRect     = IRECT(mMidRect.L, mMidRect.T,
-                           mMidRect.L + colW, mMidRect.B);
+                           mMidRect.L + infoW, mMidRect.B);
   mSettingsColRect = IRECT(mInfoColRect.R + midGap, mMidRect.T,
-                           mInfoColRect.R + midGap + colW, mMidRect.B);
+                           mInfoColRect.R + midGap + settingsW, mMidRect.B);
   mMetersColRect   = IRECT(mSettingsColRect.R + midGap, mMidRect.T,
                            mMidRect.R, mMidRect.B);
 
@@ -194,7 +204,10 @@ void T3kFocusedSlot::rebuild()
       if (auto* p = knob->GetParam())
       {
         char buf[16];
-        std::snprintf(buf, sizeof(buf), "%+.1f", p->Value());
+        if (std::strcmp(label, "INPUT") == 0 || std::strcmp(label, "OUTPUT") == 0)
+          std::snprintf(buf, sizeof(buf), "%+.1f", p->Value());
+        else
+          std::snprintf(buf, sizeof(buf), "%.1f", p->Value());
         this->setActiveReadout(label, buf);
       }
     });
@@ -223,6 +236,7 @@ void T3kFocusedSlot::setSnapshot(ModelInfoSnapshot s)
                             (s.imageUrl  != mSnap.imageUrl);
   mSnap = std::move(s);
   mHasSnapshot = true;
+  Hide(IsHidden());
   if (imageChanged) {
     mBitmap            = iplug::igraphics::IBitmap();
     mBitmapLoaded      = false;
@@ -248,6 +262,7 @@ void T3kFocusedSlot::clear()
   mThumbForUrl.clear();
   mThumbPath.clear();
   mThumbLoadFailed = false;
+  Hide(IsHidden());
   SetDirty(false);
 }
 
@@ -259,15 +274,16 @@ void T3kFocusedSlot::setActiveReadout(std::string paramName, std::string formatt
 void T3kFocusedSlot::Hide(bool hide)
 {
   IControl::Hide(hide);
-  if (mReadout)        mReadout->Hide(hide);
-  if (mInfoHeader)     mInfoHeader->Hide(hide);
-  if (mSettingsHeader) mSettingsHeader->Hide(hide);
+  const bool hideChildren = hide || !mHasSnapshot;
+  if (mReadout)        mReadout->Hide(hideChildren);
+  if (mInfoHeader)     mInfoHeader->Hide(hideChildren);
+  if (mSettingsHeader) mSettingsHeader->Hide(hideChildren);
   for (auto* k : { mKnobBass, mKnobMids, mKnobTreble,
                    mKnobInput, mKnobOutput, mKnobDryWet }) {
-    if (k) k->Hide(hide);
+    if (k) k->Hide(hideChildren);
   }
-  if (mMeterIn)  mMeterIn->Hide(hide);
-  if (mMeterOut) mMeterOut->Hide(hide);
+  if (mMeterIn)  mMeterIn->Hide(hideChildren);
+  if (mMeterOut) mMeterOut->Hide(hideChildren);
 }
 
 void T3kFocusedSlot::Draw(IGraphics& g)
@@ -280,9 +296,14 @@ void T3kFocusedSlot::Draw(IGraphics& g)
 
   if (!mHasSnapshot)
   {
-    const IText t(13.f, th::kTextMuted, th::kFontBody,
-                  EAlign::Center, EVAlign::Middle);
-    g.DrawText(t, "Click + to load a model", mRECT);
+    const IText h2(30.f, th::kText, th::kFontBodyBold,
+                   EAlign::Center, EVAlign::Middle);
+    g.DrawText(h2, "Get started by loading a model",
+               IRECT(mRECT.L, mRECT.MH() - 38.f, mRECT.R, mRECT.MH()));
+    const IText sub(17.f, IColor(255, 190, 190, 190), th::kFontBody,
+                    EAlign::Center, EVAlign::Middle);
+    g.DrawText(sub, "Welcome to T3K PLAYER",
+               IRECT(mRECT.L, mRECT.MH() + 4.f, mRECT.R, mRECT.MH() + 32.f));
     return;
   }
 
@@ -336,15 +357,14 @@ void T3kFocusedSlot::Draw(IGraphics& g)
     const float bw = static_cast<float>(mBitmap.W());
     const float bh = static_cast<float>(mBitmap.H());
     if (bw > 0.f && bh > 0.f) {
-      // Cover-crop: scale to fully cover the image rect, then center.
-      // The earlier DrawFittedBitmap-with-computed-rect path drew a
-      // letterboxed image. v6 wants background-size:cover semantics.
       const float scale = std::max(mImageRect.W() / bw, mImageRect.H() / bh);
       const float dstW  = bw * scale;
       const float dstH  = bh * scale;
       const float dstL  = mImageRect.MW() - dstW * 0.5f;
       const float dstT  = mImageRect.MH() - dstH * 0.5f;
+      g.PathClipRegion(mImageRect);
       g.DrawFittedBitmap(mBitmap, IRECT(dstL, dstT, dstL + dstW, dstT + dstH));
+      g.PathClipRegion();
     }
   }
 
@@ -366,7 +386,7 @@ void T3kFocusedSlot::Draw(IGraphics& g)
   // Sub-line: creator - format (NAM / IR — reused as the gear-type label).
   // The separator is plain " - " (ASCII) because the Inter subset doesn't
   // carry U+00B7 either; same toAsciiSafe pass scrubs the creator string.
-  const IText sub(12.f, th::kTextMuted, th::kFontBody,
+  const IText sub(14.f, IColor(255, 190, 190, 190), th::kFontBody,
                   EAlign::Near, EVAlign::Top);
   std::string subStr = ::t3k::text_util::toAsciiSafe(mSnap.creator);
   if (!mSnap.format.empty()) {
@@ -386,16 +406,18 @@ void T3kFocusedSlot::Draw(IGraphics& g)
   // char budget, ellipsizing overflow past kDescMaxLines.
   constexpr float  kDescFontPx   = 14.f;
   constexpr float  kDescLineH    = 17.f;
-  constexpr size_t kDescMaxLines = 6;
-  constexpr float  kDescPxPerChar = 6.5f;
+  constexpr float  kDescPxPerChar = 7.2f;
 
   const IRECT descR(mInfoColRect.L, mInfoColRect.T + 22.f,
-                    mInfoColRect.R, mInfoColRect.B - 32.f);
+                    mInfoColRect.R,
+                    mSnap.tags.empty() ? mInfoColRect.B : mInfoColRect.B - 32.f);
   const IText descT(kDescFontPx, IColor(255, 170, 170, 170), th::kFontBody,
                     EAlign::Near, EVAlign::Top);
   const std::string safeDesc = ::t3k::text_util::toAsciiSafe(mSnap.description);
+  const size_t maxDescLines = std::max<size_t>(
+      1, static_cast<size_t>(std::floor(descR.H() / kDescLineH)));
   const auto descLines = wrapByWidth(safeDesc, descR.W(), kDescPxPerChar,
-                                     kDescMaxLines);
+                                     maxDescLines);
   for (size_t li = 0; li < descLines.size(); ++li) {
     const IRECT lineR(descR.L, descR.T + li * kDescLineH,
                       descR.R, descR.T + (li + 1) * kDescLineH);

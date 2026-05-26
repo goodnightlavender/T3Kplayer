@@ -129,6 +129,16 @@ void T3kTabBar::Draw(IGraphics& g)
   g.FillRect(th::kAccent, u);
 }
 
+void T3kTabBar::setActiveIndex(int index)
+{
+  if (index < 0 || index >= static_cast<int>(mTabs.size())) return;
+  if (index == mActiveIndex) return;
+
+  mActiveIndex = index;
+  mLabelRectsValid = false;
+  SetDirty(false);
+}
+
 void T3kTabBar::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
 {
   if (!mLabelRectsValid) return;

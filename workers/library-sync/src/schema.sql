@@ -40,3 +40,18 @@ CREATE TABLE IF NOT EXISTS library_entries (
 -- newest first" (GET /v1/library). Index covers that.
 CREATE INDEX IF NOT EXISTS idx_library_entries_user
   ON library_entries(user_id, synced_at DESC);
+
+CREATE TABLE IF NOT EXISTS presets (
+  user_id      TEXT NOT NULL,
+  preset_id    TEXT NOT NULL,
+  name         TEXT NOT NULL,
+  state_json   TEXT NOT NULL,
+  sort_order   INTEGER NOT NULL DEFAULT 0,
+  sync_version INTEGER NOT NULL DEFAULT 1,
+  synced_at    INTEGER NOT NULL,
+  deleted      INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, preset_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_presets_user
+  ON presets(user_id, sort_order ASC, synced_at DESC);

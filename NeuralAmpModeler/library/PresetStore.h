@@ -27,6 +27,7 @@ class PresetStore {
     int64_t     id;
     std::string name;
     bool        active;
+    int         sort_order = 0;
   };
 
   static PresetStore& instance();
@@ -48,9 +49,11 @@ class PresetStore {
 
   void rename(int64_t presetId, const std::string& newName);
   void remove(int64_t presetId);
+  void reorder(const std::vector<int64_t>& orderedIds);
 
   int64_t activeId() const;
   void    setActiveId(int64_t id);
+  void ensureDefaults();
 
  private:
   PresetStore();
@@ -60,7 +63,6 @@ class PresetStore {
 
   // Make sure a "Default Setting" row + the active_preset_id meta_kv
   // entry exist. Idempotent.
-  void ensureDefaults();
 };
 
 }  // namespace t3k::library

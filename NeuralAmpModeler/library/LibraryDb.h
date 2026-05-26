@@ -74,6 +74,9 @@ class LibraryDb {
   // Set or clear the user-rename column.
   void setDisplayNameOverride(int64_t id, std::optional<std::string> name);
 
+  // Update the user-visible description for the row.
+  void setDescription(int64_t id, const std::string& description);
+
   // Delete the row identified by `id`. Caller is responsible for any
   // filesystem cleanup (see `Paths::deleteModelFiles`). Returns true
   // if a row was actually removed.

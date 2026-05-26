@@ -104,13 +104,6 @@ void T3kVMeter::Draw(IGraphics& g)
   const IRECT fillR(barR.L, fillTop, barR.R, barR.B);
   g.FillRoundRect(th::kAccent, fillR, 2.f);
 
-  if (mPeak > 0.0)
-  {
-    const float peakY = barR.B - barR.H() * static_cast<float>(mPeak);
-    g.FillRect(th::kAccent,
-               IRECT(barR.L - 2.f, peakY - 0.5f, barR.R + 2.f, peakY + 0.5f));
-  }
-
   const IText numT(12.f, th::kText, th::kFontBody, EAlign::Center, EVAlign::Middle);
   char buf[16];
   if (mPeakDb <= -80.0)

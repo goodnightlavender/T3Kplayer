@@ -28,9 +28,9 @@ float T3kGearIcon::aspectFor(GearType t)
   // parent slot resizes.
   switch (t) {
     case GearType::Pedal:    return 40.f / 46.f;  // tall pedal
-    case GearType::Amp:      return 50.f / 24.f;  // wide amp head
-    case GearType::Cab:      return 56.f / 36.f;  // wide cab
-    case GearType::Outboard: return 56.f / 32.f;  // wide rack unit
+    case GearType::Amp:      return 1.f;          // current SVG viewBox is square
+    case GearType::Cab:      return 1.f;          // current SVG viewBox is square
+    case GearType::Outboard: return 1.f;          // current SVG viewBox is square
     case GearType::FullRig:  return 56.f / 52.f;  // squarish
   }
   return 1.f;

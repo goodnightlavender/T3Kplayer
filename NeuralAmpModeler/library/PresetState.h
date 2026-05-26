@@ -22,6 +22,11 @@ struct PresetState {
     std::string modelId;
     double      dryWet   = 1.0;   // 0..1, default 100% wet
     bool        bypassed = false; // default not bypassed
+    float       input_db  = 0.f;
+    float       bass      = 5.f;
+    float       mid       = 5.f;
+    float       treble    = 5.f;
+    float       output_db = 0.f;
   };
   std::vector<SlotEntry> slots;
 

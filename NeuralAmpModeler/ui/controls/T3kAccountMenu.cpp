@@ -87,6 +87,11 @@ void T3kAccountMenu::Draw(IGraphics& g)
                      th::kFontBodyMed, EAlign::Near, EVAlign::Middle),
                label.c_str(),
                IRECT(hr.L + 4.f, hr.T, hr.R, hr.B));
+  } else if (mItems.showSignOut) {
+    g.DrawText(IText(th::kTypeSmall, th::kText,
+                     th::kFontBodyMed, EAlign::Near, EVAlign::Middle),
+               "Signed in",
+               IRECT(hr.L + 4.f, hr.T, hr.R, hr.B));
   } else {
     // Signed-out greeting — keeps the menu from collapsing visually.
     g.DrawText(IText(th::kTypeSmall, th::kTextMuted,
@@ -109,7 +114,7 @@ void T3kAccountMenu::Draw(IGraphics& g)
   };
 
   // ── Settings row ───────────────────────────────────────────────
-  drawRow(settingsRect(), "Settings", th::kTextMuted);
+  drawRow(settingsRect(), "Settings", th::kText);
 
   // ── Dev mock sign-in (only when explicitly requested) ─────────
   if (mItems.showMockSignIn) {

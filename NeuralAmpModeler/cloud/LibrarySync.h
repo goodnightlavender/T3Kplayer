@@ -52,6 +52,9 @@ public:
   // completion logs errors but otherwise has no visible effect.
   // No-op when !isConfigured() or when not signed in.
   void pushEntry(const ::t3k::library::ModelRow& row);
+  void pushPreset(int64_t presetId);
+  void deletePreset(int64_t presetId);
+  void pullPresets();
 
   // Fetch the user's entire library from the Worker and upsert each
   // entry into LibraryDb. onDone fires on the HTTP worker thread.

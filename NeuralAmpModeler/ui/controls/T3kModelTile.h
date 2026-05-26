@@ -35,7 +35,8 @@ public:
                GearType iconType,
                std::function<void(int)> onSelect,
                std::function<void(int)> onAdd,
-               std::function<void(int)> onBypassToggle);
+               std::function<void(int)> onBypassToggle,
+               std::function<void(int)> onDelete = {});
 
   void setVariant(Variant v);
   void setIconType(GearType t);
@@ -43,11 +44,14 @@ public:
   void setValues(Values v);
   void setSelected(bool s);
   void setBypassed(bool b);
+  void setDisabled(bool d);
+  Variant variant() const { return mVariant; }
 
   void setOnDragStart(std::function<void(int)> cb)               { mOnDragStart = std::move(cb); }
   void setOnDragMove (std::function<void(int, float, float)> cb) { mOnDragMove  = std::move(cb); }
   void setOnDragEnd  (std::function<void(int, float, float)> cb) { mOnDragEnd   = std::move(cb); }
   void setDragBoundsX(float minOffsetX, float maxOffsetX);
+  void setHomeRect(const iplug::igraphics::IRECT& r);
 
   void Draw(iplug::igraphics::IGraphics& g) override;
   void OnMouseDown(float x, float y, const iplug::igraphics::IMouseMod& mod) override;
@@ -63,10 +67,12 @@ private:
   Values   mValues;
   bool     mSelected = false;
   bool     mBypassed = false;
+  bool     mDisabled = false;
 
   std::function<void(int)> mOnSelect;
   std::function<void(int)> mOnAdd;
   std::function<void(int)> mOnBypassToggle;
+  std::function<void(int)> mOnDelete;
   std::function<void(int)>               mOnDragStart;
   std::function<void(int, float, float)> mOnDragMove;
   std::function<void(int, float, float)> mOnDragEnd;
@@ -75,8 +81,12 @@ private:
   float mDragOffsetX   = 0.f;
   float mDragMinOffset = -1e6f;
   float mDragMaxOffset =  1e6f;
+  iplug::igraphics::IRECT mHomeRect;
+  bool mHasHomeRect = false;
 
   std::optional<iplug::igraphics::ISVG> mIconSvg;
+
+  iplug::igraphics::IRECT deleteRect(const iplug::igraphics::IRECT& body) const;
 };
 
 }  // namespace t3k::ui

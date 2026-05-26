@@ -60,6 +60,26 @@ constexpr int kCabSlot         = 4;
 constexpr int kOutboardSlotMin = 5;
 constexpr int kOutboardSlotMax = 7;
 
+GearType iconForRow(const ::t3k::library::ModelRow& row)
+{
+  if (row.gear_type == "amp") return GearType::Amp;
+  if (row.gear_type == "cab" || row.gear_type == "ir" || row.kind == "ir")
+    return GearType::Cab;
+  if (row.gear_type == "outboard") return GearType::Outboard;
+  if (row.gear_type == "full-rig") return GearType::FullRig;
+  return GearType::Pedal;
+}
+
+const char* modelTypeLabelFor(const ::t3k::library::ModelRow& row)
+{
+  if (row.gear_type == "full-rig") return "Full Rig / Combo";
+  if (row.gear_type == "amp") return "Amp Head";
+  if (row.gear_type == "cab" || row.gear_type == "ir" || row.kind == "ir")
+    return "Cabinet";
+  if (row.gear_type == "outboard") return "Outboard";
+  return "Pedal";
+}
+
 int slotCategory(int slotIndex)
 {
   if (slotIndex >= kPedalSlotMin    && slotIndex <= kPedalSlotMax)    return 0;
@@ -159,8 +179,8 @@ void ToneView::Draw(IGraphics& g)
       const float xR = mTiles[endSlot]->GetRECT().R;
       g.DrawText(labelT, text, IRECT(xL, labelY, xR, labelY + labelH));
     };
-    drawLabel(kPedalSlotMin,    kPedalSlotMax,    "PEDALS");
-    drawLabel(kAmpSlot,         kAmpSlot,         "AMP");
+    drawLabel(kPedalSlotMin,    kPedalSlotMax,    "PEDAL");
+    drawLabel(kAmpSlot,         kAmpSlot,         "AMP HEAD");
     drawLabel(kCabSlot,         kCabSlot,         "CABINET");
     drawLabel(kOutboardSlotMin, kOutboardSlotMax, "OUTBOARD");
   }
@@ -184,6 +204,13 @@ bool ToneView::IsDirty()
     T3kModelTile::Values v;
     if (const auto* es = mPlugin.GetExtraSlot(ls.dspSlot))
     {
+      ls.bass     = static_cast<float>(es->bass);
+      ls.mid      = static_cast<float>(es->mid);
+      ls.treble   = static_cast<float>(es->treble);
+      ls.inputDb  = static_cast<float>(es->inGainDb);
+      ls.outputDb = static_cast<float>(es->outGainDb);
+      ls.dryWet   = es->dryWet;
+      ls.bypassed = es->bypassed;
       v.bass   = static_cast<int>(std::round(es->bass));
       v.mid    = static_cast<int>(std::round(es->mid));
       v.treble = static_cast<int>(std::round(es->treble));
@@ -277,7 +304,9 @@ void ToneView::layoutStripTiles()
     if (i == kAmpSlot)         x += kGroupGap - kTileGapWithinGroup;
     if (i == kOutboardSlotMin) x += kGroupGap - kTileGapWithinGroup;
     if (mTiles[i]) {
-      mTiles[i]->SetTargetAndDrawRECTs(IRECT(x, topY, x + tileW, topY + tileH));
+      const IRECT tileR(x, topY, x + tileW, topY + tileH);
+      mTiles[i]->SetTargetAndDrawRECTs(tileR);
+      mTiles[i]->setHomeRect(tileR);
     }
     x += tileW + kTileGapWithinGroup;
   }
@@ -314,12 +343,16 @@ void ToneView::rebuildStrip()
         ph, /*slotIndex*/ i, variant, iconType,
         /*onSelect*/        [this](int slot) { onSlotSelected(slot); },
         /*onAdd*/           [this](int slot) { onSlotAdded(slot); },
-        /*onBypassToggle*/  [this](int slot) { onSlotBypassToggle(slot); });
+        /*onBypassToggle*/  [this](int slot) { onSlotBypassToggle(slot); },
+        /*onDelete*/        [this](int slot) { onSlotDelete(slot); });
 
     if (isLoaded) {
       tile->setName(it->info.displayName);
       tile->setSelected(i == mChain.selectedIndex);
       tile->setBypassed(it->bypassed);
+    }
+    if (!isLoaded && i == kCabSlot && isCabinetDisabledByFullRig()) {
+      tile->setDisabled(true);
     }
 
     // Only pedal / outboard tiles support drag-to-reorder. Amp / Cab live
@@ -335,8 +368,19 @@ void ToneView::rebuildStrip()
       });
     }
 
-    g->AttachControl(tile);
     mTiles[i] = tile;
+  }
+
+  // Attach empty slots first so loaded/reorderable tiles paint above empty
+  // drop targets while they are dragged across the strip.
+  for (int pass = 0; pass < 2; ++pass) {
+    for (int i = 0; i < ::kNumChainSlots; ++i) {
+      if (!mTiles[i]) continue;
+      const bool loaded = mTiles[i]->variant() == T3kModelTile::Variant::Loaded;
+      if ((pass == 0 && !loaded) || (pass == 1 && loaded)) {
+        g->AttachControl(mTiles[i]);
+      }
+    }
   }
 
   // Position the freshly-attached tiles and seed their drag bounds.
@@ -347,6 +391,7 @@ void ToneView::rebuildStrip()
   // control would now sit BELOW the strip in z-order. Notify any listener
   // (ToneRoot, currently) so it can re-promote overlays that should stay
   // on top.
+  Hide(IsHidden());
   if (mOnStripRebuilt) mOnStripRebuilt();
 }
 
@@ -476,14 +521,10 @@ void ToneView::onSlotDragEnd(int slotIndex, float x, float y)
   if (mChain.selectedIndex >= 0) onSlotSelected(mChain.selectedIndex);
 }
 
-void ToneView::onSlotAdded(int /*slotIndex*/)
+void ToneView::onSlotAdded(int slotIndex)
 {
-  // The Empty tile click now opens the Library tab — the user picks a
-  // model there and clicks LOAD INTO CHAIN to land it back in this strip.
-  // We currently ignore the slot index; loadModelIntoSlot picks the first
-  // free pedal slot. Wiring the click to pre-target a specific slot is
-  // a Phase G/X follow-up.
-  if (mOnAddRequested) mOnAddRequested();
+  if (slotIndex == kCabSlot && isCabinetDisabledByFullRig()) return;
+  if (mOnAddRequested) mOnAddRequested(slotIndex);
 }
 
 ::t3k::library::PresetState ToneView::snapshotPresetState() const
@@ -518,10 +559,21 @@ void ToneView::onSlotAdded(int /*slotIndex*/)
   for (size_t i = 0; i < mChain.loaded.size(); ++i)
   {
     s.slots[i].bypassed = mChain.loaded[i].bypassed;
-    if (const auto* es = mPlugin.GetExtraSlot(mChain.loaded[i].dspSlot))
+    if (const auto* es = mPlugin.GetExtraSlot(mChain.loaded[i].dspSlot)) {
       s.slots[i].dryWet = es->dryWet;
-    else
+      s.slots[i].input_db  = static_cast<float>(es->inGainDb);
+      s.slots[i].bass      = static_cast<float>(es->bass);
+      s.slots[i].mid       = static_cast<float>(es->mid);
+      s.slots[i].treble    = static_cast<float>(es->treble);
+      s.slots[i].output_db = static_cast<float>(es->outGainDb);
+    } else {
       s.slots[i].dryWet = 1.0;
+      s.slots[i].input_db  = mChain.loaded[i].inputDb;
+      s.slots[i].bass      = mChain.loaded[i].bass;
+      s.slots[i].mid       = mChain.loaded[i].mid;
+      s.slots[i].treble    = mChain.loaded[i].treble;
+      s.slots[i].output_db = mChain.loaded[i].outputDb;
+    }
   }
   return s;
 }
@@ -558,15 +610,16 @@ void ToneView::applyPresetState(const ::t3k::library::PresetState& s)
     ls.slotIndex            = e.slotIndex;
     ls.toneId               = e.toneId;
     ls.modelId              = e.modelId;
-    // Derive icon type from gear_type — fall back to Pedal.
-    if (row->gear_type == "amp")        ls.iconType = GearType::Amp;
-    else if (row->gear_type == "cab")   ls.iconType = GearType::Cab;
-    else if (row->gear_type == "outboard") ls.iconType = GearType::Outboard;
-    else if (row->gear_type == "full-rig") ls.iconType = GearType::FullRig;
-    else                                   ls.iconType = GearType::Pedal;
+    // Derive icon type from gear_type/kind — fall back to Pedal.
+    ls.iconType           = iconForRow(*row);
     ls.kind                = row->kind;  // 2026-05-26 — see loadModelIntoSlot.
     ls.bypassed            = e.bypassed;
     ls.dryWet              = e.dryWet;
+    ls.inputDb             = e.input_db;
+    ls.bass                = e.bass;
+    ls.mid                 = e.mid;
+    ls.treble              = e.treble;
+    ls.outputDb            = e.output_db;
     // 2026-05-26 — also restore absPath + image fields so the audio
     // chain gets re-staged on the syncDspChain() call below. Without
     // this, applyPresetState was a UI-only snapshot — restoring a
@@ -578,12 +631,13 @@ void ToneView::applyPresetState(const ::t3k::library::PresetState& s)
     ls.info.imageUrl       = ls.imageUrl;
     ls.info.displayName    = row->effectiveDisplayName();
     ls.info.creator        = row->t3k_creator;
-    ls.info.format         = (row->kind == "ir") ? "IR" : "NAM";
+    ls.info.format         = modelTypeLabelFor(*row);
     ls.info.sizeBytes      = row->size_bytes;
     ls.info.downloadedAtMs = row->added_at;
     ls.info.description    = row->t3k_description;
     mChain.loaded.push_back(std::move(ls));
   }
+  if (isCabinetDisabledByFullRig()) removeLoadedAtSlot(kCabSlot);
   // The Phase-2b fallback that seeded a demo chain when the preset
   // came back empty was retired on 2026-05-25 — it dropped sample
   // pedals into the strip on every "Default Setting" recall. The
@@ -603,6 +657,16 @@ void ToneView::applyPresetState(const ::t3k::library::PresetState& s)
     {
       es->dryWet   = mChain.loaded[i].dryWet;
       es->bypassed = mChain.loaded[i].bypassed;
+      es->inGainDb = mChain.loaded[i].inputDb;
+      es->bass     = mChain.loaded[i].bass;
+      es->mid      = mChain.loaded[i].mid;
+      es->treble   = mChain.loaded[i].treble;
+      es->outGainDb = mChain.loaded[i].outputDb;
+      if (es->toneStack) {
+        es->toneStack->SetParam("bass", es->bass);
+        es->toneStack->SetParam("middle", es->mid);
+        es->toneStack->SetParam("treble", es->treble);
+      }
     }
   }
   writeParam(::kMasterOutput, static_cast<float>(s.master_output_db));
@@ -618,6 +682,8 @@ void ToneView::loadModelIntoSlot(int slotIndex,
   auto row = ::t3k::library::LibraryDb::instance()
                .findByToneAndModelId(toneId, modelId);
   if (!row.has_value()) return;
+
+  if (slotIndex == kCabSlot && isCabinetDisabledByFullRig()) return;
 
   // Pick the destination slot index. -1 means "first empty pedal slot
   // (0..2)" — wrapping to 0 if none free.
@@ -638,15 +704,14 @@ void ToneView::loadModelIntoSlot(int slotIndex,
   ls.slotIndex            = dst;
   ls.toneId               = toneId;
   ls.modelId              = modelId;
-  if (row->gear_type == "amp")        ls.iconType = GearType::Amp;
-  else if (row->gear_type == "cab")   ls.iconType = GearType::Cab;
-  else if (row->gear_type == "outboard") ls.iconType = GearType::Outboard;
-  else if (row->gear_type == "full-rig") ls.iconType = GearType::FullRig;
-  else                                   ls.iconType = GearType::Pedal;
+  ls.iconType            = iconForRow(*row);
+  if (row->gear_type == "full-rig" && dst == kAmpSlot) {
+    removeLoadedAtSlot(kCabSlot);
+  }
   ls.kind                = row->kind;  // "nam" / "ir" — drives syncDspChain routing.
   ls.info.displayName    = row->effectiveDisplayName();
   ls.info.creator        = row->t3k_creator;
-  ls.info.format         = (row->kind == "ir") ? "IR" : "NAM";
+  ls.info.format         = modelTypeLabelFor(*row);
   ls.info.sizeBytes      = row->size_bytes;
   ls.info.downloadedAtMs = row->added_at;
   ls.info.description    = row->t3k_description;
@@ -678,6 +743,37 @@ void ToneView::loadModelIntoSlot(int slotIndex,
   rebuildStrip();
   syncDspChain();
   onSlotSelected(dst);
+}
+
+bool ToneView::isCabinetDisabledByFullRig() const
+{
+  return std::any_of(
+      mChain.loaded.begin(), mChain.loaded.end(),
+      [](const ChainView::LoadedSlot& s) {
+        return s.slotIndex == kAmpSlot && s.iconType == GearType::FullRig;
+      });
+}
+
+void ToneView::removeLoadedAtSlot(int slotIndex)
+{
+  const auto oldSize = mChain.loaded.size();
+  mChain.loaded.erase(
+      std::remove_if(mChain.loaded.begin(), mChain.loaded.end(),
+                     [slotIndex](const ChainView::LoadedSlot& s) {
+                       return s.slotIndex == slotIndex;
+                     }),
+      mChain.loaded.end());
+  if (mChain.loaded.size() != oldSize) {
+    if (mChain.selectedIndex == slotIndex) mChain.selectedIndex = -1;
+    syncDspChain();
+  }
+}
+
+void ToneView::onSlotDelete(int slotIndex)
+{
+  removeLoadedAtSlot(slotIndex);
+  if (mFocusedSlot && mChain.selectedIndex < 0) mFocusedSlot->clear();
+  rebuildStrip();
 }
 
 void ToneView::syncDspChain()

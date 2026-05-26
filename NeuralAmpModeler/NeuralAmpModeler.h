@@ -250,6 +250,9 @@ struct ExtraSlot
   // UI shows 0..100%. Backed by kDryWet iPlug param (Task A4), shadowed
   // by SetActiveSlot like the other per-slot params.
   double dryWet = 1.0;
+  double smoothedInGain = 1.0;
+  double smoothedOutGain = 1.0;
+  double smoothedDryWet = 1.0;
 };
 
 class NeuralAmpModeler final : public iplug::Plugin

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <vector>
 
 #include "theme.h"
@@ -62,19 +63,59 @@ constexpr float kLooseW         = 18.f;
 constexpr float kLooseGap       = 4.f;
 constexpr float kPresetPillW    = 160.f;
 constexpr float kPresetPillH    = 24.f;
-constexpr float kAvatarW        = 32.f;   // 2026-05-26 polish-pass: 28 → 32 to match pill heights at 1.35× scale
+constexpr float kAvatarW        = 24.f;
 constexpr float kPresetGap      = 10.f;  // between preset pill and avatar
 constexpr float kPresetOverlayW = 280.f;
 constexpr float kPresetOverlayH = 210.f;
-constexpr float kDownloadsPillW = 60.f;
+constexpr float kDownloadsPillW = 46.f;
 constexpr float kDownloadsPopoverW = 320.f;
 constexpr float kDownloadsPopoverH = 260.f;
-constexpr float kGatePillW         = 100.f;  // 2026-05-26 — GATE header pill (polish-pass: 80 → 100 so the bigger numerals fit)
+constexpr float kGatePillW         = 86.f;
 constexpr float kGatePillGap       =  8.f;   // gap between GATE pill and downloads pill
 
 // Phase 5 — account menu sized to comfortably hold the header + 3 rows.
 constexpr float kAccountMenuW = 220.f;
-constexpr float kAccountMenuH = 140.f;
+constexpr float kAccountMenuH = 104.f;
+
+LibraryView::PickerKind PickerKindForSlot(int slot)
+{
+  if (slot >= 0 && slot <= 2) return LibraryView::PickerKind::Pedal;
+  if (slot == 3)              return LibraryView::PickerKind::AmpHead;
+  if (slot == 4)              return LibraryView::PickerKind::Cabinet;
+  if (slot >= 5 && slot <= 7) return LibraryView::PickerKind::Outboard;
+  return LibraryView::PickerKind::None;
+}
+
+void FillAvatarCornerMask(IGraphics& g, const IColor& col, float cx, float cy,
+                          float r, int corner)
+{
+  constexpr float pi = 3.14159265358979323846f;
+  const float left = cx - r, right = cx + r, top = cy - r, bottom = cy + r;
+  float start = 0.f, end = 0.f, firstX = cx, firstY = cy;
+  if (corner == 0) { firstX = cx;    firstY = top;    start = -pi * 0.5f; end = -pi; }
+  if (corner == 1) { firstX = right; firstY = cy;     start = 0.f;        end = -pi * 0.5f; }
+  if (corner == 2) { firstX = cx;    firstY = bottom; start = pi * 0.5f;  end = 0.f; }
+  if (corner == 3) { firstX = left;  firstY = cy;     start = pi;         end = pi * 0.5f; }
+
+  const float cornerX = (corner == 1 || corner == 2) ? right : left;
+  const float cornerY = (corner >= 2) ? bottom : top;
+  g.PathClear();
+  g.PathMoveTo(cornerX, cornerY);
+  g.PathLineTo(firstX, firstY);
+  for (int i = 0; i <= 14; ++i) {
+    const float t = static_cast<float>(i) / 14.f;
+    const float a = start + (end - start) * t;
+    g.PathLineTo(cx + std::cos(a) * r, cy + std::sin(a) * r);
+  }
+  g.PathLineTo(cornerX, cornerY);
+  g.PathFill(col);
+}
+
+void MaskAvatarCorners(IGraphics& g, const IColor& col, float cx, float cy, float r)
+{
+  for (int i = 0; i < 4; ++i)
+    FillAvatarCornerMask(g, col, cx, cy, r, i);
+}
 
 }  // namespace
 
@@ -271,7 +312,7 @@ void ToneRoot::OnAttached()
       mPresetPillRect,
       /*onToggleOverlay*/ [this] { this->togglePresetOverlay(); });
   // Pull the active preset name from PresetStore (defaults to
-  // "Default Setting" on a fresh install — ensureDefaults() guarantees
+  // "Default" on a fresh install — ensureDefaults() guarantees
   // a row exists by the time we get here).
   if (auto st = ::t3k::library::PresetStore::instance().load(
           ::t3k::library::PresetStore::instance().activeId());
@@ -284,7 +325,7 @@ void ToneRoot::OnAttached()
       }
     }
   } else {
-    mPresetPill->setActivePresetName("Default Setting");
+    mPresetPill->setActivePresetName("Default");
   }
   mPresetPill->setDirty(false);
   g->AttachControl(mPresetPill);
@@ -301,10 +342,10 @@ void ToneRoot::OnAttached()
         // (Polish 3c). commitUndo writes the "after" half once the
         // mutation lands.
         this->pushUndo();
-        // -1 → ToneView::loadModelIntoSlot picks the first free pedal
-        // slot. The user can still drop the model into a specific
-        // slot by selecting that slot first (Phase 3.5 wiring).
-        mToneView->loadModelIntoSlot(-1, toneId, modelId);
+        const int dstSlot = mPendingTonePickerSlot;
+        mToneView->loadModelIntoSlot(dstSlot, toneId, modelId);
+        mPendingTonePickerSlot = -1;
+        if (mLibraryView) mLibraryView->setPickerKind(LibraryView::PickerKind::None);
         switchTab(Tab::Tone);
         if (mPresetPill) mPresetPill->setDirty(true);
         this->commitUndo();
@@ -329,7 +370,9 @@ void ToneRoot::OnAttached()
   // 2026-05-25 — the "+" tile on the chain strip now routes the user
   // to the Library tab (the real picker). LibraryView's LOAD INTO
   // CHAIN brings them back here.
-  mToneView->setOnAddSlotRequested([this]() {
+  mToneView->setOnAddSlotRequested([this](int slot) {
+    mPendingTonePickerSlot = slot;
+    if (mLibraryView) mLibraryView->setPickerKind(PickerKindForSlot(slot));
     this->switchTab(Tab::Library);
   });
 
@@ -481,22 +524,28 @@ void ToneRoot::OnAttached()
         const int missing =
             ::t3k::cloud::sync::LibrarySync::instance().countLocalMissing();
         if (missing <= 0) return;
-        if (!mRestoreModal) return;
         mRestoreModalShownOnce = true;
-        mRestoreModal->setMissingCount(missing);
-        mRestoreModal->Hide(false);
+        ::t3k::cloud::sync::LibrarySync::instance().restoreAllMissing({});
         SetDirty(false);
       });
 
-  // Load the active preset's state into the chain so the UI restores
-  // across DAW restarts. Falls back to the demo seed inside ToneView
-  // if the preset is empty.
-  const int64_t activeId = ::t3k::library::PresetStore::instance().activeId();
-  if (activeId > 0 && mToneView) {
-    auto st = ::t3k::library::PresetStore::instance().load(activeId);
-    if (st.has_value() && !st->slots.empty()) {
+  // New plugin instances always start from the immutable empty Default
+  // preset. User presets remain saved, but are only loaded explicitly.
+  ::t3k::library::PresetStore::instance().setActiveId(1);
+  if (mToneView) {
+    auto st = ::t3k::library::PresetStore::instance().load(1);
+    if (st.has_value()) {
       mToneView->applyPresetState(*st);
+    } else {
+      mToneView->applyPresetState(::t3k::library::PresetState{});
     }
+  }
+  if (mPresetPill) {
+    mPresetPill->setActivePresetName("Default");
+    mPresetPill->setDirty(false);
+  }
+  if (mPresetOverlay) {
+    mPresetOverlay->setActiveId(1);
   }
 
   // Resize all children to their proper bounds now that they exist.
@@ -518,7 +567,7 @@ void ToneRoot::Draw(IGraphics& g)
     const IRECT& a = mAvatarRect;
     const float cx = a.MW();
     const float cy = a.MH();
-    const float r  = std::min(a.W(), a.H()) * 0.5f - 2.f;
+    const float r  = std::min(a.W(), a.H()) * 0.5f;
 
     // 2026-05-26 polish-pass — try to paint the user's TONE3000 avatar.
     // We fetch the image via cloud::ThumbnailCache (same disk-cached HTTP
@@ -561,9 +610,8 @@ void ToneRoot::Draw(IGraphics& g)
 
     if (mAvatarBitmapLoaded)
     {
-      // Cover-crop the avatar into the circle. iPlug2 has no
-      // "clip to circle" path on every backend; draw a fitted bitmap
-      // then paint a 2px ring on top to mask the corners visually.
+      // Cover-crop the avatar into the circle, then mask the square
+      // bitmap corners with the header background.
       const float bw = static_cast<float>(mAvatarBitmap.W());
       const float bh = static_cast<float>(mAvatarBitmap.H());
       if (bw > 0.f && bh > 0.f) {
@@ -574,6 +622,7 @@ void ToneRoot::Draw(IGraphics& g)
         g.DrawFittedBitmap(mAvatarBitmap,
                            IRECT(cx - dstW * 0.5f, cy - dstH * 0.5f,
                                  cx + dstW * 0.5f, cy + dstH * 0.5f));
+        MaskAvatarCorners(g, th::kBgBase, cx, cy, r);
       }
     }
     else
@@ -638,9 +687,22 @@ void ToneRoot::OnMouseDown(float x, float y, const IMouseMod& /*mod*/)
 
 void ToneRoot::switchTab(Tab tab)
 {
-  if (tab == mActiveTab) return;
+  if (tab == mActiveTab) {
+    if (tab == Tab::Library && mLibraryView &&
+        mLibraryView->pickerKind() != LibraryView::PickerKind::None) {
+      mLibraryView->setPickerKind(LibraryView::PickerKind::None);
+      mPendingTonePickerSlot = -1;
+    }
+    return;
+  }
+  if (tab != Tab::Library && mLibraryView &&
+      mLibraryView->pickerKind() != LibraryView::PickerKind::None) {
+    mLibraryView->setPickerKind(LibraryView::PickerKind::None);
+    mPendingTonePickerSlot = -1;
+  }
   hideAllBodies();
   mActiveTab = tab;
+  if (mTabBar) mTabBar->setActiveIndex(static_cast<int>(tab));
   IControl* next = nullptr;
   switch (tab) {
     case Tab::Tone:    next = mToneView;    break;
@@ -698,7 +760,7 @@ void ToneRoot::attachPresetOverlay(bool startVisible, int64_t activeId)
   // to convert namespaces (the overlay's PresetRow lives in t3k::ui).
   std::vector<PresetRow> rows;
   for (const auto& r : ::t3k::library::PresetStore::instance().list()) {
-    rows.push_back({ r.id, r.name, r.active });
+    rows.push_back({ r.id, r.name, r.active, r.sort_order });
   }
   mPresetOverlay->setPresets(std::move(rows));
   mPresetOverlay->setActiveId(activeId);
@@ -723,25 +785,34 @@ void ToneRoot::attachPresetOverlay(bool startVisible, int64_t activeId)
       ui->CreateTextEntry(*this, t, prompt, "New preset");
     }
   };
-  // Per-row right-click → Rename/Delete popup. The overlay calls this
-  // whenever the user right-clicks a preset row; we stash the row id
-  // + name and open iPlug2's CreatePopupMenu. OnPopupMenuSelection
-  // (overridden below) routes the choice back to PresetStore.
-  mPresetOverlay->onRowContextMenu = [this](int64_t id, const std::string& name) {
+  mPresetOverlay->onRenamePreset = [this](int64_t id, const std::string& name) {
+    if (id <= 0) return;
+    mPendingPresetMenuId = id;
+    mPendingPresetMenuName = name;
     if (auto* ui = GetUI()) {
-      mPendingPresetMenuId = id;
-      mPendingPresetMenuName = name;
-      mPendingMenuKind = PendingMenuKind::PresetRowAction;
-      // Single static menu; reused. iPlug2 owns its lifetime via the
-      // CreatePopupMenu call's reference.
-      static iplug::igraphics::IPopupMenu rowMenu;
-      rowMenu.Clear();
-      rowMenu.AddItem("Rename\xE2\x80\xA6");
-      rowMenu.AddItem("Delete\xE2\x80\xA6");
-      const IRECT anchor(mPresetPillRect.L, mPresetPillRect.B,
-                         mPresetPillRect.R, mPresetPillRect.B + 4.f);
-      ui->CreatePopupMenu(*this, rowMenu, anchor);
+      namespace th = ::t3k::theme;
+      const IText t = IText(th::kTypeBody, th::kText, th::kFontBody,
+                            EAlign::Near, EVAlign::Middle)
+                          .WithTEColors(th::kBgSurface, th::kText);
+      const IRECT prompt(mPresetPillRect.L,
+                         mPresetPillRect.B + t3k::theme::kS2,
+                         mPresetPillRect.R,
+                         mPresetPillRect.B + t3k::theme::kS2 + 28.f);
+      mPendingTextEntry = PendingTextEntry::RenamePreset;
+      ui->CreateTextEntry(*this, t, prompt, name.c_str());
     }
+  };
+  mPresetOverlay->onDeletePreset = [this](int64_t id, const std::string&) {
+    if (id <= 0) return;
+    ::t3k::library::PresetStore::instance().remove(id);
+    ::t3k::cloud::sync::LibrarySync::instance().deletePreset(id);
+    refreshPresetList();
+  };
+  mPresetOverlay->onReorder = [this](const std::vector<int64_t>& ids) {
+    ::t3k::library::PresetStore::instance().reorder(ids);
+    for (const int64_t id : ids)
+      ::t3k::cloud::sync::LibrarySync::instance().pushPreset(id);
+    refreshPresetList();
   };
   mPresetOverlay->onMoreMenu = [this]() {
     // The overflow "⋯" button on the action row now opens the
@@ -756,9 +827,7 @@ void ToneRoot::attachPresetOverlay(bool startVisible, int64_t activeId)
     for (const auto& r : ::t3k::library::PresetStore::instance().list()) {
       if (r.id == active) { activeName = r.name; break; }
     }
-    if (mPresetOverlay && mPresetOverlay->onRowContextMenu) {
-      mPresetOverlay->onRowContextMenu(active, activeName);
-    }
+    if (mPresetOverlay) mPresetOverlay->openContextMenu(active, activeName);
   };
   g->AttachControl(mPresetOverlay);
   mPresetOverlay->Hide(!startVisible);
@@ -777,7 +846,7 @@ void ToneRoot::refreshPresetList()
   if (!mPresetOverlay) return;
   std::vector<PresetRow> rows;
   for (const auto& r : ::t3k::library::PresetStore::instance().list()) {
-    rows.push_back({ r.id, r.name, r.active });
+    rows.push_back({ r.id, r.name, r.active, r.sort_order });
   }
   mPresetOverlay->setPresets(std::move(rows));
   mPresetOverlay->setActiveId(
@@ -789,7 +858,8 @@ void ToneRoot::saveCurrentPreset()
 {
   if (!mToneView) return;
   const auto state = mToneView->snapshotPresetState();
-  ::t3k::library::PresetStore::instance().saveCurrent(state);
+  const int64_t id = ::t3k::library::PresetStore::instance().saveCurrent(state);
+  ::t3k::cloud::sync::LibrarySync::instance().pushPreset(id);
   if (mPresetPill) mPresetPill->setDirty(false);
   refreshPresetList();
 }
@@ -801,6 +871,7 @@ void ToneRoot::saveAsPreset(const std::string& name)
   const int64_t id = ::t3k::library::PresetStore::instance().saveAs(name, state);
   if (id > 0) {
     ::t3k::library::PresetStore::instance().setActiveId(id);
+    ::t3k::cloud::sync::LibrarySync::instance().pushPreset(id);
   }
   if (mPresetPill) mPresetPill->setDirty(false);
   refreshPresetList();
@@ -859,6 +930,7 @@ void ToneRoot::OnTextEntryCompletion(const char* str, int /*valIdx*/)
     case PendingTextEntry::RenamePreset:
       if (mPendingPresetMenuId > 0) {
         ::t3k::library::PresetStore::instance().rename(mPendingPresetMenuId, name);
+        ::t3k::cloud::sync::LibrarySync::instance().pushPreset(mPendingPresetMenuId);
         mPendingPresetMenuId = 0;
         mPendingPresetMenuName.clear();
         refreshPresetList();
@@ -1241,6 +1313,7 @@ void ToneRoot::OnPopupMenuSelection(iplug::igraphics::IPopupMenu* pSelectedMenu,
       mPendingMenuKind = PendingMenuKind::None;
       if (idx == 0 && mPendingPresetMenuId > 0) {
         ::t3k::library::PresetStore::instance().remove(mPendingPresetMenuId);
+        ::t3k::cloud::sync::LibrarySync::instance().deletePreset(mPendingPresetMenuId);
         mPendingPresetMenuId = 0;
         mPendingPresetMenuName.clear();
         refreshPresetList();

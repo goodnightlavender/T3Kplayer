@@ -21,7 +21,7 @@ constexpr float kImageSize       = 88.f;
 constexpr float kAvatarSize      = 18.f;
 // DOWNLOAD pill — wider than the old "GET" so the full word fits at
 // 11pt Inter SemiBold without truncation.
-constexpr float kDownloadPillW   = 86.f;
+constexpr float kDownloadPillW   = 104.f;
 constexpr float kDownloadPillH   = 22.f;
 constexpr float kCardHoverTime   = float(::t3k::theme::kAnimCardHover);
 
@@ -329,7 +329,8 @@ void T3kCard::Draw(IGraphics& g)
       defaultLabel = "DOWNLOAD";
       break;
     case DownloadState::Active:
-      pillFill = th::kAccent;
+      pillFill = IColor(255, 255, 255, 255);
+      pillTextCol = IColor(255, 0, 0, 0);
       defaultLabel = "DOWNLOADING\xE2\x80\xA6";
       break;
     case DownloadState::Done:
@@ -477,6 +478,11 @@ void T3kCard::OnMouseDblClick(float x, float y, const IMouseMod& /*mod*/)
   // pill — that should remain a single-click action.
   if (mDownloadRect.Contains(x, y)) return;
   if (mOnDetail) mOnDetail();
+}
+
+void T3kCard::OnMouseDrag(float, float, float, float dY, const IMouseMod&)
+{
+  if (mOnDrag) mOnDrag(dY);
 }
 
 void T3kCard::OnMouseOver(float x, float y, const IMouseMod& mod)

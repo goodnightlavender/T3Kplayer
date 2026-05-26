@@ -182,6 +182,7 @@ void Session::signIn()
     ev.kind = SessionEvent::Kind::SignedIn;
     ev.user = std::nullopt;  // username comes from Phase 6
     publish(ev);
+    fetchCurrentUserAsync();
     mCv.notify_all();  // wake the refresh thread to pick up new expiry
   });
 }
@@ -230,6 +231,45 @@ void Session::mockSignIn()
   ev.user = u;
   publish(ev);
   mCv.notify_all();
+}
+
+void Session::fetchCurrentUserAsync()
+{
+  auto token = accessTokenIfValid();
+  if (!token.has_value() || token->rfind("MOCK-", 0) == 0) return;
+
+  ::t3k::net::HttpRequest req;
+  req.method = ::t3k::net::HttpMethod::Get;
+  req.url = ::t3k::cloud::oauth::kUserUrl;
+  req.headers["Authorization"] = "Bearer " + *token;
+  req.headers["Accept"] = "application/json";
+  req.headers["User-Agent"] = "TONE3000Player/0.1";
+  req.timeout_ms = 15'000;
+
+  ::t3k::net::HttpClient::instance().send(std::move(req),
+      [this](const ::t3k::net::HttpResponse& res) {
+        if (res.status_code < 200 || res.status_code >= 300 || res.body.empty()) return;
+        try {
+          const std::string body(res.body.begin(), res.body.end());
+          const json j = json::parse(body);
+          User u;
+          u.id = j.value("id", std::string{});
+          u.username = j.value("username", std::string{});
+          u.display_name = j.value("display_name", std::string{});
+          u.email = j.value("email", std::string{});
+          u.avatar_url = j.value("avatar_url", std::string{});
+          if (u.avatar_url.empty()) u.avatar_url = j.value("avatar", std::string{});
+          {
+            std::lock_guard<std::mutex> lk(mMtx);
+            mUser = u;
+          }
+          SessionEvent ev;
+          ev.kind = SessionEvent::Kind::SignedIn;
+          ev.user = u;
+          publish(ev);
+        } catch (...) {
+        }
+      });
 }
 
 int Session::subscribe(Listener cb)
@@ -352,6 +392,7 @@ void Session::attemptRefresh(const std::string& refreshToken)
     ev.kind = SessionEvent::Kind::SignedIn;
     ev.user = std::nullopt;
     publish(ev);
+    fetchCurrentUserAsync();
   } catch (const std::exception& e) {
     TokenStore::clearRefreshToken();
     {

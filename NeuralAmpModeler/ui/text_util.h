@@ -9,7 +9,10 @@
 // replace the offenders with ASCII-safe equivalents:
 //
 //   U+00B7 (middle dot, "\xC2\xB7")     -> " - "
+//   U+2013 (en dash,    "\xE2\x80\x93") -> " - "
 //   U+2014 (em dash,    "\xE2\x80\x94") -> " - "
+//   U+2018/2019 curly apostrophes        -> "'"
+//   U+201C/201D curly quotes             -> "\""
 //   U+2026 (ellipsis,   "\xE2\x80\xA6") -> "..."
 //
 // Inputs are assumed to be UTF-8. Bytes that aren't part of one of the
@@ -34,6 +37,13 @@ inline std::string toAsciiSafe(const std::string& in)
   for (size_t i = 0; i < in.size();)
   {
     // U+00B7 middle dot — 0xC2 0xB7
+    const unsigned char ch = static_cast<unsigned char>(in[i]);
+    if (in[i] == '\r' || in[i] == '\n' || in[i] == '\t' || ch < 0x20)
+    {
+      if (out.empty() || out.back() != ' ') out += " ";
+      ++i;
+      continue;
+    }
     if (i + 1 < in.size()
         && static_cast<unsigned char>(in[i])     == 0xC2
         && static_cast<unsigned char>(in[i + 1]) == 0xB7)
@@ -46,9 +56,32 @@ inline std::string toAsciiSafe(const std::string& in)
     if (i + 2 < in.size()
         && static_cast<unsigned char>(in[i])     == 0xE2
         && static_cast<unsigned char>(in[i + 1]) == 0x80
-        && static_cast<unsigned char>(in[i + 2]) == 0x94)
+        && (static_cast<unsigned char>(in[i + 2]) == 0x93 ||
+            static_cast<unsigned char>(in[i + 2]) == 0x94))
     {
       out += " - ";
+      i += 3;
+      continue;
+    }
+    // U+2018 / U+2019 curly apostrophes
+    if (i + 2 < in.size()
+        && static_cast<unsigned char>(in[i])     == 0xE2
+        && static_cast<unsigned char>(in[i + 1]) == 0x80
+        && (static_cast<unsigned char>(in[i + 2]) == 0x98 ||
+            static_cast<unsigned char>(in[i + 2]) == 0x99))
+    {
+      out += "'";
+      i += 3;
+      continue;
+    }
+    // U+201C / U+201D curly quotes
+    if (i + 2 < in.size()
+        && static_cast<unsigned char>(in[i])     == 0xE2
+        && static_cast<unsigned char>(in[i + 1]) == 0x80
+        && (static_cast<unsigned char>(in[i + 2]) == 0x9C ||
+            static_cast<unsigned char>(in[i + 2]) == 0x9D))
+    {
+      out += "\"";
       i += 3;
       continue;
     }
@@ -60,6 +93,25 @@ inline std::string toAsciiSafe(const std::string& in)
     {
       out += "...";
       i += 3;
+      continue;
+    }
+    // U+00A0 non-breaking space
+    if (i + 1 < in.size()
+        && static_cast<unsigned char>(in[i])     == 0xC2
+        && static_cast<unsigned char>(in[i + 1]) == 0xA0)
+    {
+      out += " ";
+      i += 2;
+      continue;
+    }
+    if (static_cast<unsigned char>(in[i]) >= 0x80)
+    {
+      const unsigned char b = static_cast<unsigned char>(in[i]);
+      if ((b & 0xE0) == 0xC0) i += 2;
+      else if ((b & 0xF0) == 0xE0) i += 3;
+      else if ((b & 0xF8) == 0xF0) i += 4;
+      else ++i;
+      out += " ";
       continue;
     }
     out += in[i];

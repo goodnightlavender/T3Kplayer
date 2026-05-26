@@ -37,6 +37,7 @@ public:
   void OnMouseDown(float x, float y, const IMouseMod& mod) override;
 
   int activeIndex() const { return mActiveIndex; }
+  void setActiveIndex(int index);
 
 private:
   // Compute the rect each label occupies. Cached on first draw or whenever

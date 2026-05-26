@@ -107,6 +107,7 @@ private:
   // to the topmost control under the cursor, so cards have to
   // forward explicitly).
   void scrollBy(float d);
+  void scrollPixels(float pixels);
 
   // Pull any worker-thread completion result into UI state. Called
   // from Draw at the start of each paint cycle so the GUI thread owns

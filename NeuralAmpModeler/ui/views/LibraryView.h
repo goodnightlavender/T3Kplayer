@@ -51,6 +51,8 @@ class T3kDetailModal;
 
 class LibraryView : public iplug::igraphics::IControl {
  public:
+  enum class PickerKind { None, Pedal, AmpHead, Cabinet, Outboard };
+
   using OnModelClicked = std::function<void(const std::string& toneId,
                                              const std::string& modelId)>;
 
@@ -58,11 +60,15 @@ class LibraryView : public iplug::igraphics::IControl {
               OnModelClicked onClick = {});
 
   void setOnModelClicked(OnModelClicked cb) { mOnModelClicked = std::move(cb); }
+  void setPickerKind(PickerKind kind);
+  PickerKind pickerKind() const { return mPickerKind; }
 
   void Draw(iplug::igraphics::IGraphics& g) override;
   void OnResize() override;
   void OnAttached() override;
   void OnMouseDown(float x, float y, const iplug::igraphics::IMouseMod& mod) override;
+  void OnMouseDrag(float x, float y, float dX, float dY,
+                   const iplug::igraphics::IMouseMod& mod) override;
   void OnMouseWheel(float x, float y,
                     const iplug::igraphics::IMouseMod& mod, float d) override;
   void OnPopupMenuSelection(iplug::igraphics::IPopupMenu* pSelectedMenu,
@@ -230,6 +236,7 @@ class LibraryView : public iplug::igraphics::IControl {
   float mScrollOffset = 0.f;
 
   OnModelClicked mOnModelClicked;
+  PickerKind mPickerKind = PickerKind::None;
 };
 
 }  // namespace t3k::ui
