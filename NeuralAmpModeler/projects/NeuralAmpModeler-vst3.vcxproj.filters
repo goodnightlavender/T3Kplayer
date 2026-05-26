@@ -255,6 +255,9 @@
     <ClCompile Include="..\ui\controls\T3kGlobalKnob.cpp">
       <Filter>ui\controls</Filter>
     </ClCompile>
+    <ClCompile Include="..\ui\controls\T3kModelTile.cpp">
+      <Filter>ui\controls</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\Dependencies\sqlite\sqlite3.c">
       <Filter>Dependencies\sqlite</Filter>
     </ClCompile>
@@ -731,6 +734,9 @@
       <Filter>ui\controls</Filter>
     </ClInclude>
     <ClInclude Include="..\ui\controls\T3kGlobalKnob.h">
+      <Filter>ui\controls</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ui\controls\T3kModelTile.h">
       <Filter>ui\controls</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Dependencies\sqlite\sqlite3.h">
