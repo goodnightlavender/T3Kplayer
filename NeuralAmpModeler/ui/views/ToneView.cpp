@@ -22,13 +22,25 @@ using namespace iplug::igraphics;
 
 namespace {
 
-// 2026-05-26 — strip height pinned to the v6 mockup's `.plg-strip`. The body
-// below the strip is the focused-slot panel (image + title + columns).
-constexpr float kStripH      = 96.f;
-constexpr float kStripGap    = 8.f;
-// MASTER knob bookend (Phase E3). Lives at the right edge of the strip.
-constexpr float kMasterW     = 64.f;
-constexpr float kMasterGap   = 8.f;  // space between rack and master knob
+// 2026-05-26 polish-pass — strip + tile sizing scaled ~1.5× from the
+// 720 px v6 mockup so the chain strip reads correctly at the plug-in's
+// ~1024 px design canvas. Old (96 / 64 / 8 / 16) values produced
+// disproportionately small tiles in the actual rendered plug-in.
+//
+//   strip height: 96 → 148 (reserves a top 18 px band for category
+//                            labels PEDALS / AMP / CABINET / OUTBOARD)
+//   master knob : 64 → 88
+//
+// kStripPadH adds inner horizontal padding so the leftmost tile no
+// longer flushes against the window edge (fixes the "first tile clipped"
+// report) — mirrors the `.t3k-flow{padding:8px 6px}` chrome in the
+// mockup, scaled up.
+constexpr float kStripH        = 148.f;
+constexpr float kStripGap      = 8.f;
+constexpr float kStripPadH     = 10.f;   // inner left/right padding inside the strip
+constexpr float kStripLabelBandH = 18.f;  // top band reserved for group labels
+constexpr float kMasterW       = 88.f;
+constexpr float kMasterGap     = 12.f;   // space between rack and master knob
 
 // Inter-tile gap inside a single category group (pedals / amp+cab / outboard).
 constexpr float kTileGapWithinGroup = 8.f;
@@ -196,9 +208,13 @@ void ToneView::computeStripLayout(float& outStartX, float& outTopY) const
 {
   // Layout split: rack (8 equal-width tiles in 3 groups) on the left,
   // MASTER knob (kMasterW) on the right with kMasterGap between them.
-  const float tileH  = std::min(mStripRect.H() - 4.f, 84.f);
-  outStartX = mStripRect.L;
-  outTopY   = mStripRect.MH() - tileH * 0.5f;
+  // Vertical: the top kStripLabelBandH band is reserved for category
+  // labels; tiles live in the remaining height.
+  const float tileBandT = mStripRect.T + kStripLabelBandH;
+  const float tileBandH = mStripRect.B - tileBandT;
+  const float tileH  = std::min(tileBandH - 4.f, 122.f);
+  outStartX = mStripRect.L + kStripPadH;
+  outTopY   = tileBandT + (tileBandH - tileH) * 0.5f;
 }
 
 void ToneView::layoutStripTiles()
@@ -206,22 +222,33 @@ void ToneView::layoutStripTiles()
   if (mTiles.empty()) return;
   if (static_cast<int>(mTiles.size()) != ::kNumChainSlots) return;
 
-  // MASTER knob owns the right edge.
-  const IRECT masterR(mStripRect.R - kMasterW, mStripRect.T,
-                      mStripRect.R,            mStripRect.B);
+  // MASTER knob owns the right edge (vertically centered in the full strip).
+  const IRECT masterR(mStripRect.R - kStripPadH - kMasterW, mStripRect.T,
+                      mStripRect.R - kStripPadH,            mStripRect.B);
   if (mMasterKnob) mMasterKnob->SetTargetAndDrawRECTs(masterR);
 
-  // The remaining rack hosts the 8 equal-width tiles.
+  // 2026-05-26 polish-pass — reserve the top kStripLabelBandH band for the
+  // PEDALS / AMP / CABINET / OUTBOARD group labels (drawn in Draw()). Tiles
+  // live in the remainder, vertically centered.
+  const float tileBandT = mStripRect.T + kStripLabelBandH;
+  const float tileBandB = mStripRect.B;
+  const float tileBandH = tileBandB - tileBandT;
+  const float tileH = std::min(tileBandH - 4.f, 122.f);
+  const float topY  = tileBandT + (tileBandH - tileH) * 0.5f;
+
+  // The rack hosts the 8 equal-width tiles between kStripPadH inset and
+  // the MASTER knob bookend. The earlier implementation flushed the first
+  // tile to mStripRect.L which sat the leftmost icon against the window
+  // edge — now we pad inward by kStripPadH on both sides.
+  const float rackL = mStripRect.L + kStripPadH;
   const float rackR = masterR.L - kMasterGap;
-  const float rackW = rackR - mStripRect.L;
-  const float tileH = std::min(mStripRect.H() - 4.f, 84.f);
+  const float rackW = rackR - rackL;
   const float tileW =
       (rackW - 2.f * kGroupGap - 5.f * kTileGapWithinGroup) / 8.f;
-  const float topY  = mStripRect.MH() - tileH * 0.5f;
 
   // Walk the 8 slots in chain order, inserting a kGroupGap when we cross
   // pedals→amp/cab (idx 2→3) and amp/cab→outboard (idx 4→5).
-  float x = mStripRect.L;
+  float x = rackL;
   for (int i = 0; i < ::kNumChainSlots; ++i) {
     if (i == kAmpSlot)         x += kGroupGap - kTileGapWithinGroup;
     if (i == kOutboardSlotMin) x += kGroupGap - kTileGapWithinGroup;

@@ -1,6 +1,9 @@
 #include "T3kModelTile.h"
 
+#include <algorithm>
 #include <cstdio>
+#include <string>
+#include <vector>
 #include "IGraphics.h"
 #include "../theme.h"
 #include "../text_util.h"
@@ -90,6 +93,82 @@ void T3kModelTile::OnMouseUp(float, float, const IMouseMod&)
   SetDirty(false);
 }
 
+namespace {
+
+// 2026-05-26 polish-pass — sizing constants scaled ~1.5× from the 720 px
+// mockup so the tile reads at the plug-in's actual ~1024 px design canvas.
+//
+//   icon: 22 → 36
+//   name: 9  → 13 (wrapped to 2 lines with ellipsis)
+//   numeral row: 8 → 11
+//
+// Tile total content height = icon (36) + 4 + name (2 × 14 ≈ 28) + 4 +
+// 2 numeral rows (12 each + 2 gap) ≈ 100. Add a few pixels of vertical
+// padding and the parent strip needs ~110 px of slot space; ToneView
+// bumps kStripH accordingly.
+constexpr float kIconSide      = 36.f;
+constexpr float kIconTopPad    = 6.f;
+constexpr float kIconNameGap   = 3.f;
+constexpr float kNameFontPx    = 13.f;
+constexpr float kNameLineH     = 14.f;
+constexpr float kNameMaxLines  = 2;
+constexpr float kNameNumGap    = 4.f;
+constexpr float kNumFontPx     = 11.f;
+constexpr float kNumLineH      = 13.f;
+constexpr float kNumRowGap     = 1.f;
+
+// Word-wrap `s` into at most `maxLines` of width ~`maxCharsPerLine`.
+// Mirrors T3kDetailModal::wrapText but stays inline because the tile
+// doesn't already pull that helper. If the source overflows, the last
+// emitted line gets an ASCII "..." ellipsis (text_util already runs
+// before this so we don't have to re-sanitize).
+std::vector<std::string> wrapNameTwoLines(const std::string& s,
+                                          size_t maxCharsPerLine,
+                                          size_t maxLines)
+{
+  std::vector<std::string> out;
+  if (s.empty() || maxCharsPerLine == 0) {
+    out.push_back(s);
+    return out;
+  }
+  std::string line;
+  size_t i = 0;
+  while (i < s.size() && out.size() < maxLines) {
+    const size_t sp = s.find(' ', i);
+    const size_t wend = (sp == std::string::npos) ? s.size() : sp;
+    std::string word = s.substr(i, wend - i);
+    if (line.empty()) {
+      // Word longer than a line on its own — hard-clip mid-word.
+      if (word.size() > maxCharsPerLine) {
+        out.push_back(word.substr(0, maxCharsPerLine));
+        word.erase(0, maxCharsPerLine);
+        // Push the remainder back into the loop as the next line's seed.
+        line = std::move(word);
+      } else {
+        line = std::move(word);
+      }
+    } else if (line.size() + 1 + word.size() <= maxCharsPerLine) {
+      line += " ";
+      line += word;
+    } else {
+      out.push_back(std::move(line));
+      line = std::move(word);
+    }
+    i = (sp == std::string::npos) ? s.size() : sp + 1;
+  }
+  if (!line.empty() && out.size() < maxLines) out.push_back(std::move(line));
+  // If we ran out of lines but text remains, append ellipsis to the last.
+  if (i < s.size() && !out.empty()) {
+    std::string& last = out.back();
+    // Trim until "..." fits.
+    while (!last.empty() && last.size() + 3 > maxCharsPerLine) last.pop_back();
+    last += "...";
+  }
+  return out;
+}
+
+}  // namespace
+
 void T3kModelTile::Draw(IGraphics& g)
 {
   namespace th = ::t3k::theme;
@@ -97,7 +176,7 @@ void T3kModelTile::Draw(IGraphics& g)
   if (mVariant == Variant::Empty)
   {
     g.DrawDottedRect(IColor(255, 34, 34, 34), mRECT, nullptr, 1.f, 4.f);
-    const IText plus(18.f, IColor(255, 68, 68, 68), th::kFontBodyBold,
+    const IText plus(24.f, IColor(255, 68, 68, 68), th::kFontBodyBold,
                      EAlign::Center, EVAlign::Middle);
     g.DrawText(plus, "+", mRECT);
     return;
@@ -114,39 +193,57 @@ void T3kModelTile::Draw(IGraphics& g)
   if (mBypassed)
     g.FillRoundRect(IColor(128, 10, 10, 10), body, 5.f);
 
-  const float iconSide = 22.f;
-  const IRECT iconR(body.MW() - iconSide * 0.5f,
-                    body.T + 6.f,
-                    body.MW() + iconSide * 0.5f,
-                    body.T + 6.f + iconSide);
+  // Icon — centered horizontally on the tile, sized 36 px (was 22).
+  const IRECT iconR(body.MW() - kIconSide * 0.5f,
+                    body.T + kIconTopPad,
+                    body.MW() + kIconSide * 0.5f,
+                    body.T + kIconTopPad + kIconSide);
   if (!mIconSvg.has_value())
     mIconSvg.emplace(g.LoadSVG(T3kGearIcon::filenameFor(mIconType)));
   if (mIconSvg.has_value())
     T3kGearIcon::drawInto(g, *mIconSvg, mIconType, iconR);
 
-  const IRECT nameR(body.L + 2.f, iconR.B + 3.f, body.R - 2.f, iconR.B + 13.f);
-  const IText nameT(9.f, th::kText, th::kFontBodyBold,
-                    EAlign::Center, EVAlign::Middle);
   // Pipe model name through the ASCII sanitizer so middle dots / em dashes
   // / ellipses from the catalog don't paint as tofu boxes.
   const std::string safeName = ::t3k::text_util::toAsciiSafe(mName);
-  g.DrawText(nameT, safeName.c_str(), nameR);
+  // Approximate char width for 13 px Inter Bold ~7 px/char. Tile widths in
+  // the new scale sit around 110 px → ~14 chars per line — enough for most
+  // model names; long ones wrap to a second line, anything still too long
+  // gets "..." ellipsized.
+  const float pxPerChar = 7.f;
+  const size_t maxCharsPerLine = std::max<size_t>(
+      4, static_cast<size_t>((body.W() - 4.f) / pxPerChar));
+  std::vector<std::string> nameLines =
+      wrapNameTwoLines(safeName, maxCharsPerLine,
+                       static_cast<size_t>(kNameMaxLines));
 
-  const float numY = nameR.B + 2.f;
-  const IText numT(8.f, th::kTextMuted, th::kFontBody,
+  const IText nameT(kNameFontPx, th::kText, th::kFontBodyBold,
+                    EAlign::Center, EVAlign::Middle);
+  const float nameTop = iconR.B + kIconNameGap;
+  for (size_t li = 0; li < nameLines.size(); ++li) {
+    const IRECT nameR(body.L + 2.f,
+                      nameTop + li * kNameLineH,
+                      body.R - 2.f,
+                      nameTop + (li + 1) * kNameLineH);
+    g.DrawText(nameT, nameLines[li].c_str(), nameR);
+  }
+  const float nameBottom = nameTop + nameLines.size() * kNameLineH;
+
+  const float numY = nameBottom + kNameNumGap;
+  const IText numT(kNumFontPx, th::kTextMuted, th::kFontBody,
                    EAlign::Center, EVAlign::Top);
   auto drawRow = [&](float y, int a, int b, int c) {
     const float colW = (body.W() - 6.f) / 3.f;
     char buf[8];
     std::snprintf(buf, sizeof(buf), "%d", a);
-    g.DrawText(numT, buf, IRECT(body.L + 3.f, y, body.L + 3.f + colW, y + 10.f));
+    g.DrawText(numT, buf, IRECT(body.L + 3.f, y, body.L + 3.f + colW, y + kNumLineH));
     std::snprintf(buf, sizeof(buf), "%d", b);
-    g.DrawText(numT, buf, IRECT(body.L + 3.f + colW, y, body.L + 3.f + 2.f * colW, y + 10.f));
+    g.DrawText(numT, buf, IRECT(body.L + 3.f + colW, y, body.L + 3.f + 2.f * colW, y + kNumLineH));
     std::snprintf(buf, sizeof(buf), "%d", c);
-    g.DrawText(numT, buf, IRECT(body.L + 3.f + 2.f * colW, y, body.R - 3.f, y + 10.f));
+    g.DrawText(numT, buf, IRECT(body.L + 3.f + 2.f * colW, y, body.R - 3.f, y + kNumLineH));
   };
-  drawRow(numY,        mValues.bass,  mValues.mid,    mValues.treble);
-  drawRow(numY + 11.f, mValues.inDb,  mValues.outDb,  mValues.dryWet);
+  drawRow(numY,                      mValues.bass,  mValues.mid,    mValues.treble);
+  drawRow(numY + kNumLineH + kNumRowGap, mValues.inDb,  mValues.outDb,  mValues.dryWet);
 }
 
 }  // namespace t3k::ui
