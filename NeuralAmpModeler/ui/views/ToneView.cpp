@@ -3,6 +3,7 @@
 #include "ToneView.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "../theme.h"
 #include "../layout.h"
@@ -127,6 +128,44 @@ void ToneView::Draw(IGraphics& /*g*/)
 {
   // The strip + focused-slot panel paint themselves; ToneView is purely
   // a layout shell with no chrome of its own.
+}
+
+bool ToneView::IsDirty()
+{
+  // Push the live ExtraSlot values for each loaded entry into its tile so
+  // the strip's per-slot numeric readouts stay in sync with knob changes
+  // (which may come from the focused panel, the host, or a preset apply).
+  // iPlug2's IsDirty is called every display refresh — side-effecting here
+  // gives us per-frame updates while still forwarding to the base
+  // dirty-flag mechanism so ToneView itself only repaints when needed.
+  for (auto& ls : mChain.loaded)
+  {
+    T3kModelTile::Values v;
+    if (const auto* es = mPlugin.GetExtraSlot(ls.dspSlot))
+    {
+      v.bass   = static_cast<int>(std::round(es->bass));
+      v.mid    = static_cast<int>(std::round(es->mid));
+      v.treble = static_cast<int>(std::round(es->treble));
+      v.inDb   = static_cast<int>(std::round(es->inGainDb));
+      v.outDb  = static_cast<int>(std::round(es->outGainDb));
+      v.dryWet = static_cast<int>(std::round(es->dryWet * 100.0));
+    }
+    if (ls.slotIndex >= 0 && ls.slotIndex < static_cast<int>(mTiles.size())
+        && mTiles[ls.slotIndex])
+    {
+      mTiles[ls.slotIndex]->setValues(v);
+    }
+  }
+
+  // Meter placeholder — real audio levels land in Phase G2 via
+  // IPeakAvgSender + OnMessage. Pushing zero here keeps the meters'
+  // last-known levels from going stale during the placeholder phase.
+  if (mFocusedSlot)
+  {
+    mFocusedSlot->setMeterLevels(0.0, 0.0, -80.0, 0.0, 0.0, -80.0);
+  }
+
+  return IControl::IsDirty();
 }
 
 void ToneView::Hide(bool hide)

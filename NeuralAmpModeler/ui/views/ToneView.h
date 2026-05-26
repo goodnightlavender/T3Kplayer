@@ -47,6 +47,12 @@ public:
   void Draw(iplug::igraphics::IGraphics& g) override;
   void OnResize() override;
   void OnAttached() override;
+  // 2026-05-26 — every-frame pull of live ExtraSlot values into each Loaded
+  // tile + meter-level placeholder into the focused panel. iPlug2 calls
+  // IsDirty() every display refresh on every visible control; we hijack
+  // the ToneView call to do the side-effect pull and forward to the base
+  // implementation for the actual dirty flag.
+  bool IsDirty() override;
 
   // iPlug2 attaches all controls flat — a hidden view does NOT propagate
   // to its children. Override Hide to manually propagate so tab-switches
