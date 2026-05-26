@@ -59,6 +59,8 @@ std::string SerializeState(const PresetState& s)
     o["index"]    = slot.slotIndex;
     o["tone_id"]  = slot.toneId.empty()  ? json(nullptr) : json(slot.toneId);
     o["model_id"] = slot.modelId.empty() ? json(nullptr) : json(slot.modelId);
+    o["dry_wet"]  = slot.dryWet;
+    o["bypassed"] = slot.bypassed;
     slots.push_back(std::move(o));
   }
   j["chain"]["slots"] = std::move(slots);
@@ -93,6 +95,16 @@ std::optional<PresetState> DeserializeState(const std::string& blob)
         }
         if (o.contains("model_id") && o["model_id"].is_string()) {
           e.modelId = o["model_id"].get<std::string>();
+        }
+        if (o.contains("dry_wet") && o["dry_wet"].is_number()) {
+          e.dryWet = o["dry_wet"].get<double>();
+        } else {
+          e.dryWet = 1.0;
+        }
+        if (o.contains("bypassed") && o["bypassed"].is_boolean()) {
+          e.bypassed = o["bypassed"].get<bool>();
+        } else {
+          e.bypassed = false;
         }
         s.slots.push_back(std::move(e));
       }

@@ -20,6 +20,8 @@ struct PresetState {
     int         slotIndex = 0;    // 0..11 — chain DSP index
     std::string toneId;           // empty => slot is unloaded
     std::string modelId;
+    double      dryWet   = 1.0;   // 0..1, default 100% wet
+    bool        bypassed = false; // default not bypassed
   };
   std::vector<SlotEntry> slots;
 
